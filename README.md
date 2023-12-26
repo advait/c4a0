@@ -19,7 +19,10 @@ A simple alpha-zero-style Connect Four neural network trained via self play.
   - Value output: (-1 to 1) scalar (tanh activation)
 - Architecture:
   - Consider some CNN structure
-  - Determine how many layers are needed
+  - Still TBD:
+    - Layer count
+    - Filter count
+    - Activation functions
 
 ### Monte Carlo Tree Search (MCTS)
 - MCTS is critical to both learning and playing (both self-play and competitive-play)
@@ -39,7 +42,10 @@ A simple alpha-zero-style Connect Four neural network trained via self play.
   - `uct_value()`: `exploitation_value()` + `exploration_constant` * `exploration_value()`
     - How appealing is this node to visit in the context of MCTS
     - The constant hyperparameter `exploration_constant` weights the balance between exploitation
-      vs. exploration.
+      vs. exploration. The higher the constant, the more `utc_value()` prefers exploration.
+    - In early training, we should seek a high exploration constant (as the neural network's)
+      policy and value outputs are unreliable. Over time, this constant should decrease to prefer
+      objectively better lines.
   - `children`: An array of child nodes, initially initialized to null indicating that this is
     a leaf node (as-yet unexplored)
 - The process of generating lines is as follows:
@@ -63,3 +69,28 @@ A simple alpha-zero-style Connect Four neural network trained via self play.
   2. More accurate `exploitation_value()`s for the root's children.
     - When normalized, this vector is comparable to the `policy` output of the neural network
     - This more-accurate policy is then used for self- and competitive play
+
+### Self play
+- We use self-play to generate training examples for the network to improve
+- Here is the rough process:
+  1. Start with a network
+  2. Play a game:
+    1. pos = fresh game (all zeroes)
+    2. Run MCTS and select the move with the maximum `exploitation_value()`
+    3. pos = move according to #3
+    4. Repeat #2 until we reach a terminal node (game over)
+  3. For all pos values in the game, preserve a tuple of
+    - The pos itself
+    - The final game outcome/value (-1, 0, 1) from the perspective of the player
+      - Note that this value should oscillate from -1 to 1 as players alternate
+    - The `exploitation_value()`s for all child moves generated via MCTS
+    - The network id / generation number
+    - This tuple is training data where the final game outcome anchors the network's value output
+      and the `exploitation_value()`s anchor the network's policy output
+    - Connect Four is horizontally symmetrical so also emit a flipped position with the same values
+      and a flipped policy vector
+  4. Play N number of games
+  5. Train the network with the training examples to produce a new network
+    - Also preserve games from prior generations and train on them with smaller learning rates
+  6. Play M games between the new network and the old network. If the new network wins >55% of the
+     time then loop back to step #1 with the new network
