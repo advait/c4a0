@@ -131,5 +131,6 @@ def test_draw():
     assert is_game_over(pos) == TerminalState.DRAW
 
     # The next move should raise an IllegalMove exception
-    with pytest.raises(IllegalMove):
-        make_move(pos, 6)
+    for move in range(N_COLS):
+        with pytest.raises(IllegalMove):
+            make_move(pos, move)
