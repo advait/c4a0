@@ -1,0 +1,6 @@
+# Aider
+.aider*
+
+.pytest_cache/
+__pycache__/
+
