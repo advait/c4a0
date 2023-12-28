@@ -110,6 +110,14 @@ def is_game_over(pos: Pos) -> Optional[TerminalState]:
     return None
 
 
+def get_legal_moves(pos: Pos) -> np.ndarray:
+    """
+    Returns a boolean array indicating which columns are legal to play in.
+    This array can be used to mask the policy output of the neural network.
+    """
+    return pos[0] == CellValue.EMPTY.value
+
+
 class IllegalMove(Exception):
     """Raised when a move is played in a full column."""
 
