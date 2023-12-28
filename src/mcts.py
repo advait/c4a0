@@ -2,6 +2,7 @@
 Logic for Monte Carlo Tree Search
 """
 
+import logging
 from typing import List, Optional
 from c4 import N_COLS, Pos, get_legal_moves, is_game_over, make_move
 
@@ -47,7 +48,7 @@ class Node:
             parent_visit_count = self.parent.visit_count
 
         return (
-            np.sqrt(np.log(parent_visit_count) / self.visit_count)
+            np.sqrt(np.log(parent_visit_count) / (self.visit_count + 1))
             * self.initial_policy_value
         )
 
@@ -61,12 +62,14 @@ class Node:
 
     def expand_children(self, evaluate_pos: EvaluatePos) -> None:
         """Expands the children of this leaf node and backpropagates the value up the tree."""
+        logger = logging.getLogger(__name__)
+
         assert self.children is None, "expand_children() called on a node with children"
 
         # If the game is over, simply backpropagate the objective game outcome
         terminal_value = is_game_over(self.pos)
         if terminal_value is not None:
-            self._backpropagate(terminal_value)
+            self._backpropagate(terminal_value.value)
             return
 
         policy, value = evaluate_pos(self.pos)
@@ -74,6 +77,13 @@ class Node:
         # Renormalize policy after masking with legal moves
         legal_moves = get_legal_moves(self.pos)
         policy &= legal_moves
+        if np.sum(policy) == 0.0:
+            # It may be possible for the policy to be all zeros after masking with legal moves.
+            # In this case, we set the policy to be uniform over legal moves.
+            logger.warning(
+                "Zero policy after masking with legal moves. Using uniform policy."
+            )
+            policy = legal_moves
         policy /= np.sum(policy)
 
         self.children = [
@@ -108,7 +118,7 @@ def _select_leaf(node: Node, exploration_constant: float) -> Node:
             return float("-inf")
         return n.uct_value(exploration_constant)
 
-    while node.children:
+    while node.children is not None:
         node = max(node.children, key=sort_key)
 
     return node
