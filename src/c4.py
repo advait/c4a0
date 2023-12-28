@@ -112,10 +112,10 @@ def is_game_over(pos: Pos) -> Optional[TerminalState]:
 
 def get_legal_moves(pos: Pos) -> np.ndarray:
     """
-    Returns a boolean array indicating which columns are legal to play in.
+    Returns an array indicating which columns are legal to play in (1 is legal, 0 is not).
     This array can be used to mask the policy output of the neural network.
     """
-    return pos[0] == CellValue.EMPTY.value
+    return (pos[0] == CellValue.EMPTY.value).astype(np.float64)
 
 
 class IllegalMove(Exception):

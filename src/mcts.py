@@ -36,7 +36,7 @@ class Node:
 
     def exploitation_value(self) -> float:
         """The exploitation component of the UTC value, i.e. the average win rate."""
-        return self.exploitation_value_sum / self.visit_count
+        return self.exploitation_value_sum / (self.visit_count + 1)
 
     def exploration_value(self) -> float:
         """
@@ -76,7 +76,7 @@ class Node:
 
         # Renormalize policy after masking with legal moves
         legal_moves = get_legal_moves(self.pos)
-        policy &= legal_moves
+        policy *= legal_moves
         if np.sum(policy) == 0.0:
             # It may be possible for the policy to be all zeros after masking with legal moves.
             # In this case, we set the policy to be uniform over legal moves.
@@ -125,7 +125,7 @@ def _select_leaf(node: Node, exploration_constant: float) -> Node:
 
 
 def mcts(
-    pos: Pos, n_iterations: int, exploration_constant: float, evaluate_pos: EvaluatePos
+    pos: Pos, n_iterations: int, exploration_constant: float, eval_pos: EvaluatePos
 ) -> Policy:
     """
     Runs the MCTS algorithm to determine the best move from the given position.
@@ -134,7 +134,7 @@ def mcts(
     root = Node(pos)
     for _ in range(n_iterations):
         leaf = _select_leaf(root, exploration_constant)
-        leaf.expand_children(evaluate_pos)
+        leaf.expand_children(eval_pos)
 
     child_visits = np.array(
         [child.visit_count if child is not None else 0 for child in root.children]
