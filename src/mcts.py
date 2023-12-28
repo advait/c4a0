@@ -10,6 +10,8 @@ import numpy as np
 
 from nn import EvaluatePos, Policy
 
+EPS = 1e-8
+
 
 class Node:
     """Represents a node in the MCTS tree."""
@@ -41,16 +43,16 @@ class Node:
     def exploration_value(self) -> float:
         """
         The exploration component of the UCT value. Higher visit counts result in lower values.
+        We also weight the exploration value by the initial policy value to allow the network
+        to guide the search.
         """
         if self.parent is None:
             parent_visit_count = self.visit_count
         else:
             parent_visit_count = self.parent.visit_count
 
-        return (
-            np.sqrt(np.log(parent_visit_count) / (self.visit_count + 1))
-            * self.initial_policy_value
-        )
+        exploration_value = np.sqrt(np.log(parent_visit_count) / (self.visit_count + 1))
+        return exploration_value * (self.initial_policy_value + EPS)
 
     def uct_value(self, exploration_constant: float) -> float:
         """
