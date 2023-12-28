@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 from c4 import (
+    get_ply,
     make_move,
     is_game_over,
     N_ROWS,
@@ -14,13 +15,14 @@ from c4 import (
 
 def test_initial_position():
     assert np.array_equal(STARTING_POS, np.zeros((N_ROWS, N_COLS), dtype=np.int8))
+    assert get_ply(STARTING_POS) == 0
 
 
 def test_legal_move():
     pos = make_move(STARTING_POS, 0)
     # Because the board is inverted, the last move should be the opponent's
     assert pos[-1][0] == CellValue.OPPONENT_MOVE.value
-    assert pos[-1][1] == CellValue.EMPTY.value
+    assert pos[-2][0] == CellValue.EMPTY.value
 
 
 def test_illegal_move():

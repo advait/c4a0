@@ -21,5 +21,5 @@ Represents the value of a position, a continuous number in [-1, 1].
 0 is a draw.
 """
 
-EvaluatePos = Callable[[Pos], Tuple[Value, Policy]]
+EvaluatePos = Callable[[Pos], Tuple[Policy, Value]]
 """Function that evaluates a position and returns its value and a policy."""

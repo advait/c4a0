@@ -4,6 +4,7 @@ from numpy.testing import assert_array_equal
 from c4 import N_COLS, STARTING_POS
 
 from mcts import mcts
+from test_utils import mock_eval_pos
 
 
 def test_mcts_depth_one():
@@ -41,9 +42,3 @@ def test_mcts_depth_uneven():
     )
     uniform_policy = np.ones(N_COLS) / N_COLS
     assert np.all(policy != uniform_policy)
-
-
-def mock_eval_pos(pos):
-    policy = np.ones(N_COLS) / N_COLS
-    value = 0.0
-    return policy, value

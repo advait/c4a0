@@ -118,6 +118,14 @@ def get_legal_moves(pos: Pos) -> np.ndarray:
     return (pos[0] == CellValue.EMPTY.value).astype(np.float64)
 
 
+def get_ply(pos: Pos) -> int:
+    """
+    Returns the ply of the position or the number of moves that have been played.
+    Ply of 0 is the starting position.
+    """
+    return np.sum(pos != CellValue.EMPTY.value)
+
+
 class IllegalMove(Exception):
     """Raised when a move is played in a full column."""
 
