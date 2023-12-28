@@ -24,8 +24,8 @@ def test_legal_move():
 
 
 def test_illegal_move():
-    pos = make_move(STARTING_POS, 0)
-    for _ in range(5):
+    pos = STARTING_POS
+    for _ in range(N_ROWS):
         pos = make_move(pos, 0)
 
     with pytest.raises(IllegalMove):
@@ -129,8 +129,5 @@ def test_draw():
     assert is_game_over(pos) == TerminalState.DRAW
 
     # The next move should raise an IllegalMove exception
-    try:
+    with pytest.raises(IllegalMove):
         make_move(pos, 6)
-        raise AssertionError("Expected IllegalMove exception")
-    except IllegalMove:
-        pass
