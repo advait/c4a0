@@ -62,6 +62,22 @@ class Node:
             self.exploitation_value() + exploration_constant * self.exploration_value()
         )
 
+    def select_leaf(self, exploration_constant: float) -> "Node":
+        """
+        Selects a leaf node or terminal node from the tree according to the UCT value.
+        """
+
+        def sort_key(n: Optional[Node]) -> float:
+            if n is None:
+                return float("-inf")
+            return n.uct_value(exploration_constant)
+
+        node = self
+        while node.children is not None:
+            node = max(node.children, key=sort_key)
+
+        return node
+
     def expand_children(self, evaluate_pos: EvaluatePos) -> None:
         """Expands the children of this leaf node and backpropagates the value up the tree."""
         logger = logging.getLogger(__name__)
@@ -110,22 +126,6 @@ class Node:
             pos = pos.parent
 
 
-def _select_leaf(node: Node, exploration_constant: float) -> Node:
-    """
-    Selects a leaf node or terminal node from the tree according to the UCT value.
-    """
-
-    def sort_key(n: Optional[Node]) -> float:
-        if n is None:
-            return float("-inf")
-        return n.uct_value(exploration_constant)
-
-    while node.children is not None:
-        node = max(node.children, key=sort_key)
-
-    return node
-
-
 def mcts(
     pos: Pos, n_iterations: int, exploration_constant: float, eval_pos: EvaluatePos
 ) -> Policy:
@@ -135,7 +135,7 @@ def mcts(
     """
     root = Node(pos)
     for _ in range(n_iterations):
-        leaf = _select_leaf(root, exploration_constant)
+        leaf = root.select_leaf(exploration_constant)
         leaf.expand_children(eval_pos)
 
     child_visits = np.array(
