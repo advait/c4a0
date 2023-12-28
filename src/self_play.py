@@ -68,12 +68,12 @@ def _gen_game(
         move = np.random.choice(range(len(policy)), p=policy)
         pos = make_move(pos, move)
 
-    # Because there isn't a policy a terminal state, we simply use a uniform policy
+    # Because there isn't a valid policy a terminal state, we simply use a uniform policy
     final_policy = np.ones(N_COLS) / N_COLS
     results.append((game_id, pos, final_policy))
 
     final_value = res.value
     for t in reversed(results):
         yield t + (final_value,)
-        # Alternate the final value as the board perspective changes between each move
+        # Alternate the sign of the final value as the board perspective changes between each move
         final_value *= -1

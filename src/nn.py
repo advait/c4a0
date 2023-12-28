@@ -7,6 +7,8 @@ from typing import Callable, NewType, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+import torchmetrics
 import pytorch_lightning as pl
 from einops import rearrange
 
@@ -45,6 +47,10 @@ class ConnectFourNet(pl.LightningModule):
         self.softmax = nn.Softmax(dim=1)
         self.tanh = nn.Tanh()
 
+        # Metrics
+        self.policy_kl_div = torchmetrics.KLDivergence()
+        self.value_mse = torchmetrics.MeanSquaredError()
+
     def forward(self, x):
         x = rearrange(x, "b h w -> b 1 h w")
         x = self.relu(self.conv1(x))
@@ -71,10 +77,43 @@ class ConnectFourNet(pl.LightningModule):
         return optimizer
 
     def single(self, pos: Pos) -> Tuple[Policy, Value]:
-        """Helper function to evaluate a single position (unbatched)."""
+        """Helper function to evaluate a single position (unbatched) in a no_grad context."""
         pos = torch.from_numpy(pos).float()
         x = rearrange(pos, "h w -> 1 h w")
-        policy, value = self(x)
+        with torch.no_grad():
+            policy, value = self.forward(x)
         policy = rearrange(policy, "1 c -> c")
         value = rearrange(value, "1 v -> v")
         return policy, value
+
+    def training_step(self, batch, batch_idx):
+        # Forward pass
+        inputs, policy_labels, value_labels = batch
+        policy_pred, value_pred = self.forward(inputs)
+        value_pred = rearrange(value_pred, "b 1 -> b")
+
+        # Losses
+        policy_labels_log = F.log_softmax(policy_labels, dim=1)
+        policy_pred_log = F.log_softmax(policy_pred, dim=1)
+        policy_loss = self.policy_kl_div(policy_pred_log, policy_labels_log)
+        value_loss = F.mse_loss(value_pred, value_labels)
+
+        loss = policy_loss + value_loss
+        self.log("train_loss", loss)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        inputs, policy_labels, value_labels = batch
+        policy_pred, value_pred = self.forward(inputs)
+        value_pred = rearrange(value_pred, "b 1 -> b")
+
+        # Losses
+        policy_labels_log = F.log_softmax(policy_labels, dim=1)
+        policy_pred_log = F.log_softmax(policy_pred, dim=1)
+        policy_loss = self.policy_kl_div(policy_pred_log, policy_labels_log)
+        value_loss = F.mse_loss(value_pred, value_labels)
+
+        loss = policy_loss + value_loss
+        self.log("val_loss", loss)
+        self.log("val_policy_kl_div", policy_loss)
+        self.log("val_value_mse", value_loss)
