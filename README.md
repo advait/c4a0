@@ -8,11 +8,11 @@ A simple alpha-zero-style Connect Four neural network trained via self play.
 - 6-row, 7-col board (6x7 matrix)
 - Array values are -1 (opponent), 0 (empty), 1 (player)
 - Move policy (recommendation) is given by 7 dim stochastic vector
-- A given game state has a value range (-1 to 1) that indicates whether the position is winning 
+- A given game state has a value range (-1 to 1) that indicates whether the position is winning
   (1) or losing (-1)
 
 ### Neural network
-- Input: Game State `s` (from the perspective of the playing player) (7x6 matrix)
+- Input: Game State `s` (from the perspective of the playing player) (6x7 matrix)
 - Two outputs:
   - Policy output: 7 dim stochastic vector suggesting which moves are favorable
       - Illegal moves are masked out (and the vector is re-normalized)
@@ -54,10 +54,10 @@ A simple alpha-zero-style Connect Four neural network trained via self play.
   3. Repeat #2 until we arrive at a leaf node
 - Upon arriving a leaf node, we perform the following steps (expansion):
   1. Run the neural network on the leaf node to determine a `policy` vector and a `value` scalar
-    - If this leaf node is actually a terminal node (game end), use 1, 0, or -1 as the `value`
-      based on whether this was a win, draw, or loss
+     - If this leaf node is actually a terminal node (game end), use 1, 0, or -1 as the `value`
+       based on whether this was a win, draw, or loss
   2. For each legal move from the leaf node, add one child node representing the resulting states
-    - Each child node's `initial_policy_value` is based on the policy from #1
+     - Each child node's `initial_policy_value` is based on the policy from #1
   3. The value from #1 is then backpropagated up the tree
 - The backpropagation process is as follows
   1. Increase this node's `visit_count` by 1
@@ -65,32 +65,31 @@ A simple alpha-zero-style Connect Four neural network trained via self play.
   3. Repeat #1 for this node's parent until we get to the root
 - By repeating the MCTS process, we gain the following:
   1. A more accurate `exploitation_value()` for the root
-    - This scalar is comparable to the `value` output of the neural network
+     - This scalar is comparable to the `value` output of the neural network
   2. More accurate `exploitation_value()`s for the root's children.
-    - When normalized, this vector is comparable to the `policy` output of the neural network
-    - This more-accurate policy is then used for self- and competitive play
+     - When normalized, this vector is comparable to the `policy` output of the neural network
+     - This more-accurate policy is then used for self- and competitive play
 
 ### Self play
 - We use self-play to generate training examples for the network to improve
 - Here is the rough process:
   1. Start with a network
   2. Play a game:
-    1. pos = fresh game (all zeroes)
-    2. Run MCTS and select the move with the maximum `exploitation_value()`
-    3. pos = move according to #3
-    4. Repeat #2 until we reach a terminal node (game over)
+     1. pos = fresh game (all zeroes)
+     2. Run MCTS and select the move with the maximum `exploitation_value()`
+     3. Repeat #2 until we reach a terminal node (game over)
   3. For all pos values in the game, preserve a tuple of
-    - The pos itself
-    - The final game outcome/value (-1, 0, 1) from the perspective of the player
-      - Note that this value should oscillate from -1 to 1 as players alternate
-    - The `exploitation_value()`s for all child moves generated via MCTS
-    - The network id / generation number
-    - This tuple is training data where the final game outcome anchors the network's value output
-      and the `exploitation_value()`s anchor the network's policy output
-    - Connect Four is horizontally symmetrical so also emit a flipped position with the same values
-      and a flipped policy vector
+     - The pos itself
+     - The final game outcome/value (-1, 0, 1) from the perspective of the player
+       - Note that this value should oscillate from -1 to 1 as players alternate
+     - The `exploitation_value()`s for all child moves generated via MCTS (essentialy a Policy)
+     - The network id / generation number
+     - This tuple is training data where the final game outcome anchors the network's value output
+       and the `exploitation_value()`s anchor the network's policy output
+     - Connect Four is horizontally symmetrical so also emit a flipped position with the same values
+       and a flipped policy vector
   4. Play N number of games
   5. Train the network with the training examples to produce a new network
-    - Also preserve games from prior generations and train on them with smaller learning rates
+     - Also preserve games from prior generations and train on them with smaller learning rates
   6. Play M games between the new network and the old network. If the new network wins >55% of the
      time then loop back to step #1 with the new network
