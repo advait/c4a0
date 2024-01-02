@@ -2,7 +2,7 @@
 Generating training data via self-play
 """
 
-from typing import Iterable, NewType, Optional, Tuple
+from typing import Iterable, List, NewType, Optional, Tuple
 
 import numpy as np
 
@@ -21,20 +21,20 @@ Sample = NewType("Sample", Tuple[GameID, Pos, Policy, Value])
 
 
 def gen_samples(
-    p1: EvaluatePos,
-    p2: Optional[EvaluatePos],
+    eval1: EvaluatePos,
     n_games: int,
     mcts_iterations: int,
     exploration_constant: float,
+    eval2: Optional[EvaluatePos] = None,
 ) -> Iterable[Sample]:
     """Generates a seqence of Samples for n_games number of games."""
-    if p2 is None:
-        p2 = p1
+    if eval2 is None:
+        eval2 = eval1
 
     for game_id in range(n_games):
         yield from _gen_game(
-            p1,
-            p2,
+            eval1,
+            eval2,
             game_id,
             mcts_iterations,
             exploration_constant,
@@ -50,9 +50,8 @@ def _gen_game(
 ) -> Iterable[Sample]:
     """
     Generates a single game of self-play, yielding a move at a time.
-    The moves are generated in reverse order.
     """
-    results = []
+    results: List[Tuple[GameID, Pos, Policy]] = []
 
     # Generate moves until terminal state
     pos = STARTING_POS
@@ -73,7 +72,11 @@ def _gen_game(
     results.append((game_id, pos, final_policy))
 
     final_value = res.value
-    for t in reversed(results):
+    if len(results) % 2 == 0:
+        # If there are an even number of positions, the final value is flipped for the first move
+        final_value *= -1
+
+    for t in results:
         yield t + (final_value,)
         # Alternate the sign of the final value as the board perspective changes between each move
         final_value *= -1

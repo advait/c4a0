@@ -15,7 +15,7 @@ from einops import rearrange
 from c4 import N_COLS, N_ROWS, Pos
 
 
-Policy = NewType("Pos", np.ndarray)
+Policy = NewType("Policy", np.ndarray)
 """Represents a N_COLS-dimensional vector of probabilities."""
 
 Value = NewType("Value", float)

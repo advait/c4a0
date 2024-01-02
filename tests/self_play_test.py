@@ -7,15 +7,15 @@ from test_utils import mock_eval_pos
 def test_gen_sample():
     poss = list(
         gen_samples(
-            p1=mock_eval_pos,
-            p2=mock_eval_pos,
+            eval1=mock_eval_pos,
+            eval2=mock_eval_pos,
             n_games=1,
             mcts_iterations=50,
             exploration_constant=1.4,
         )
     )
 
-    _, pos, _, value = poss[0]
+    _, pos, _, value = poss[-1]  # The last position in the game
 
     assert len(poss) > 6
     assert value == -1 or value == 0 or value == 1
