@@ -73,19 +73,6 @@ class ConnectFourNet(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
         return optimizer
 
-    def single(self, pos: Pos) -> Tuple[Policy, Value]:
-        """
-        Helper function to evaluate a single position (unbatched) in a no_grad context.
-        Returns numpy arrays instead of torch tensors.
-        """
-        pos = torch.from_numpy(pos).float()
-        x = rearrange(pos, "h w -> 1 h w")
-        with torch.no_grad():
-            policy, value = self.forward(x)
-        policy = rearrange(policy, "1 c -> c")
-        value = rearrange(value, "1 v -> v")
-        return policy.numpy(), value.numpy()
-
     def training_step(self, batch, batch_idx):
         # Forward pass
         game_ids, inputs, policy_labels, value_labels = batch
