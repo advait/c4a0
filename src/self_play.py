@@ -7,7 +7,6 @@ from collections import defaultdict
 import logging
 from typing import Awaitable, List, NewType, Optional, Tuple
 
-
 import numpy as np
 from pytorch_lightning.loggers import TensorBoardLogger
 import torch
@@ -16,6 +15,7 @@ from c4 import (
     N_COLS,
     STARTING_POS,
     Pos,
+    flip_horizontally,
     get_ply,
     is_game_over,
     make_move,
@@ -119,7 +119,7 @@ async def _gen_game(
         out_samples.append((game_id, pos, policy, final_value))
 
         # If the position is horizontally asymmetric, add the flipped variation as well
-        flipped_pos = np.flip(pos, axis=0)
+        flipped_pos = flip_horizontally(pos)
         if not np.array_equal(pos, flipped_pos):
             out_samples.append((game_id, flipped_pos, policy, final_value))
 

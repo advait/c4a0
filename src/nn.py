@@ -2,7 +2,7 @@
 The Neural Network is used to evaluate the position of the game.
 """
 
-from typing import NewType, Tuple
+from typing import NewType
 
 import numpy as np
 import torch
@@ -12,7 +12,7 @@ import torchmetrics
 import pytorch_lightning as pl
 from einops import rearrange
 
-from c4 import N_COLS, N_ROWS, Pos
+from c4 import N_COLS, N_ROWS
 
 
 Policy = NewType("Policy", np.ndarray)
