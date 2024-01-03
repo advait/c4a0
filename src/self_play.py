@@ -9,10 +9,10 @@ from typing import Awaitable, List, NewType, Optional, Tuple
 import numpy as np
 import torch
 
-from c4 import N_COLS, STARTING_POS, Pos, get_ply, is_game_over, make_move, pos_str
+from c4 import N_COLS, STARTING_POS, Pos, get_ply, is_game_over, make_move
 from mcts import AsyncEvaluatePos, mcts_async
 from nn import ConnectFourNet, Policy, Value
-from utils import unzip
+from utils import model_forward_bg_thread, unzip
 
 NetworkID = NewType("NetworkID", int)
 """Which network generation this sample is from.""" ""
@@ -33,22 +33,19 @@ async def gen_samples(
 ) -> List[Sample]:
     """Generates a seqence of Samples for n_games number of games."""
     logger = logging.getLogger(__name__)
+
+    async_eval_1, stop_batching_1 = batch_model(eval1)
+    async_eval_2, stop_batching_2 = async_eval_1, stop_batching_1
     if eval2 is not None:
-        raise NotImplementedError("TODO: Implement two-player self-play")
+        async_eval_2, stop_batching_2 = batch_model(eval2)
 
+    logger.info("Started game generation")
     out_samples: List[Sample] = []
-    pos_processing_queue: List[Tuple(Pos, asyncio.Future)] = []
-
-    async def enqueue_pos(pos: Pos):
-        future = asyncio.get_running_loop().create_future()
-        pos_processing_queue.append((pos, future))
-        return await future
-
-    game_gen_coro = asyncio.gather(
+    await asyncio.gather(
         *[
             _gen_game(
-                enqueue_pos,
-                enqueue_pos,
+                async_eval_1,
+                async_eval_2,
                 game_id,
                 mcts_iterations,
                 exploration_constant,
@@ -57,35 +54,12 @@ async def gen_samples(
             for game_id in range(n_games)
         ]
     )
-    logger.info("Started game generation")
+    logger.info(f"Finished game generation with {len(out_samples)} samples")
 
-    async def process_pos_queue():
-        """
-        Asynchronously process position queue by batching multiple positions together for nn
-        inference.
-        """
-        logger.info("Starting processing queue")
-        while True:
-            if len(pos_processing_queue) > 0:
-                positions, futures = unzip(pos_processing_queue)
-                pos_processing_queue.clear()
-                pos_tensor = torch.from_numpy(np.array(positions)).float().to("cuda")
-                policies, values = await eval1.forward_bg_thread(pos_tensor)
-                policies = policies.cpu().numpy()
-                values = values.cpu().numpy()
-                for i in range(len(futures)):
-                    futures[i].set_result((policies[i], values[i]))
-            elif game_gen_coro.done():
-                logger.info(
-                    "Finished game generation, exiting queue processing coroutine"
-                )
-                return
-            else:
-                await asyncio.sleep(0)
-
-    process_queue_coro = process_pos_queue()  # Start queue processing coroutine
-    await process_queue_coro  # Block on queue processing coroutine
-    await game_gen_coro  # Block on game generation
+    # Stop the batching loops
+    stop_batching_1.set_result(None)
+    if stop_batching_2 is not stop_batching_1:
+        stop_batching_2.set_result(None)
 
     # Sort by game_id and then ply
     out_samples.sort(key=lambda t: (t[0], get_ply(t[1])))
@@ -132,3 +106,47 @@ async def _gen_game(
         out_samples.append(result + (final_value,))
         # Alternate the sign of the final value as the board perspective changes between each move
         final_value *= -1
+
+
+def batch_model(
+    model: ConnectFourNet,
+) -> Tuple[AsyncEvaluatePos, asyncio.Future]:
+    """
+    Given a model, returns a function that batches multiple calls together for more efficient
+    inference. Also returns a future that, when set, will cause the batching loop to stop.
+    """
+    logger = logging.getLogger(__name__)
+
+    pos_queue: List[Tuple(Pos, asyncio.Future)] = []
+
+    async def ret_fn(pos: Pos) -> Tuple[Policy, Value]:
+        future = asyncio.get_running_loop().create_future()
+        pos_queue.append((pos, future))
+        return await future
+
+    stop_loop_future = asyncio.get_running_loop().create_future()
+
+    async def process_pos_queue():
+        logger.info("Starting processing queue")
+        while True:
+            if len(pos_queue) > 0:
+                positions, futures = unzip(pos_queue)
+                pos_queue.clear()
+                pos_tensor = torch.from_numpy(np.array(positions)).float().to("cuda")
+                policies, values = await model_forward_bg_thread(model, pos_tensor)
+                policies = policies.cpu().numpy()
+                values = values.cpu().numpy()
+                for i in range(len(futures)):
+                    futures[i].set_result((policies[i], values[i]))
+            elif stop_loop_future.done():
+                logger.info(
+                    "Finished game generation, exiting queue processing coroutine"
+                )
+                return
+            else:
+                await asyncio.sleep(0)
+
+    # Run process_pos_queue on current loop without blocking
+    asyncio.create_task(process_pos_queue())
+
+    return ret_fn, stop_loop_future

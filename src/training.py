@@ -44,13 +44,6 @@ async def train_gen(mcts_iterations=100, exploration_constant=1.4, n_games=100):
 
 
 def split_samples(samples, split_ratio=0.8):
-    def sample_game_id(sample, f=lambda x: x):
-        return f(sample[0])
-
-    min_game_id = min(samples, key=sample_game_id)
-    max_game_id = max(samples, key=sample_game_id)
-    n_games = max_game_id - min_game_id + 1
-    split_id = int(n_games * split_ratio) + min_game_id
-    return list(
-        itertools.groupby(samples, key=sample_game_id(f=lambda id: id > split_id))
-    )
+    game_ids = set(sample[0] for sample in samples)
+    split_id = int(len(game_ids) * split_ratio) + min(game_ids)
+    return list(itertools.groupby(samples, key=lambda sample: sample[0] < split_id))

@@ -78,20 +78,6 @@ class ConnectFourNet(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
         return optimizer
 
-    def forward_no_grad(self, x):
-        """Runs the forward pass in a no_grad context."""
-        with torch.no_grad():
-            return self.forward(x)
-
-    async def forward_bg_thread(self, x):
-        """
-        Runs the forward pass in a background thread with an async coroutine interface with a
-        no_grad context.
-        """
-        loop = asyncio.get_running_loop()
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            return await loop.run_in_executor(executor, self.forward_no_grad, x)
-
     def single(self, pos: Pos) -> Tuple[Policy, Value]:
         """
         Helper function to evaluate a single position (unbatched) in a no_grad context.
