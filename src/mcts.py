@@ -133,7 +133,6 @@ class Node:
 async def mcts(
     pos: Pos, n_iterations: int, exploration_constant: float, eval_pos: EvaluatePos
 ) -> Policy:
-    pass
     """
     Runs the MCTS algorithm to determine the best move from the given position.
     Returns a policy vector indicating the probability of playing in each column.

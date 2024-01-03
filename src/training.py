@@ -95,17 +95,20 @@ def load_latest_model() -> (ModelGen, ConnectFourNet):
 
 def store_samples(samples: List[Sample], gen: ModelGen):
     """Cache samples for re-use."""
-    path = os.path.join("samples", str(gen), "samples.pkl")
-    with open(path, "wb") as f:
+    gen_path = os.path.join("samples", str(gen))
+    if not os.path.exists(gen_path):
+        os.mkdir(gen_path)
+    pkl_path = os.path.join(gen_path, "samples.pkl")
+    with open(pkl_path, "wb") as f:
         pickle.dump(samples, f)
 
 
 def load_cached_samples(gen: ModelGen) -> Optional[List[Sample]]:
     """Attempts to load previously generated samples to skip self play."""
-    path = os.path.join("samples", str(gen), "samples.pkl")
-    if not os.path.exists(path):
+    pkl_path = os.path.join("samples", str(gen), "samples.pkl")
+    if not os.path.exists(pkl_path):
         return None
-    with open(path, "rb") as f:
+    with open(pkl_path, "rb") as f:
         return pickle.load(f)
 
 

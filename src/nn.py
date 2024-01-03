@@ -2,7 +2,7 @@
 The Neural Network is used to evaluate the position of the game.
 """
 
-from typing import Callable, NewType, Tuple
+from typing import NewType, Tuple
 
 import numpy as np
 import torch
