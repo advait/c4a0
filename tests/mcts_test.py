@@ -1,44 +1,48 @@
 import numpy as np
 from numpy.testing import assert_array_equal
 
+import pytest
+
 from c4 import N_COLS, STARTING_POS
-
 from mcts import mcts
-from test_utils import mock_eval_pos
+from test_utils import uniform_eval_pos
 
 
-def test_mcts_depth_one():
-    policy = mcts(
+@pytest.mark.asyncio
+async def test_mcts_depth_one():
+    policy = await mcts(
         pos=STARTING_POS,
         n_iterations=1 + N_COLS + N_COLS,
         exploration_constant=1.0,
-        eval_pos=mock_eval_pos,
+        eval_pos=uniform_eval_pos,
     )
     desired_policy = np.ones(N_COLS) / N_COLS
     assert_array_equal(policy, desired_policy)
 
 
-def test_mcts_depth_two():
-    policy = mcts(
+@pytest.mark.asyncio
+async def test_mcts_depth_two():
+    policy = await mcts(
         pos=STARTING_POS,
         n_iterations=1 + N_COLS + (N_COLS * N_COLS) + (N_COLS * N_COLS),
         exploration_constant=1.0,
-        eval_pos=mock_eval_pos,
+        eval_pos=uniform_eval_pos,
     )
     desired_policy = np.ones(N_COLS) / N_COLS
     assert_array_equal(policy, desired_policy)
 
 
-def test_mcts_depth_uneven():
+@pytest.mark.asyncio
+async def test_mcts_depth_uneven():
     """
     Because we have an uneven number of iterations, child nodes will be expanded unevenly resulting
     in a non-uniform policy
     """
-    policy = mcts(
+    policy = await mcts(
         pos=STARTING_POS,
         n_iterations=47,
         exploration_constant=1.0,
-        eval_pos=mock_eval_pos,
+        eval_pos=uniform_eval_pos,
     )
     uniform_policy = np.ones(N_COLS) / N_COLS
     assert np.all(policy != uniform_policy)

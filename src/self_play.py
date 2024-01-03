@@ -22,7 +22,7 @@ from c4 import (
     pos_from_str,
     post_to_str,
 )
-from mcts import AsyncEvaluatePos, mcts_async
+from mcts import EvaluatePos, mcts
 from nn import ConnectFourNet, Policy, Value
 from utils import model_forward_bg_thread
 
@@ -80,8 +80,8 @@ async def gen_samples(
 
 
 async def _gen_game(
-    eval1: AsyncEvaluatePos,
-    eval2: AsyncEvaluatePos,
+    eval1: EvaluatePos,
+    eval2: EvaluatePos,
     game_id: GameID,
     mcts_iterations: int,
     exploration_constant: float,
@@ -96,7 +96,7 @@ async def _gen_game(
     pos = STARTING_POS
     while (res := is_game_over(pos)) is None:
         f = eval1 if get_ply(pos) % 2 == 0 else eval2
-        policy = await mcts_async(
+        policy = await mcts(
             pos,
             eval_pos=f,
             n_iterations=mcts_iterations,
@@ -130,7 +130,7 @@ async def _gen_game(
 def batch_model(
     model: ConnectFourNet,
     max_batch_size: int = 20000,
-) -> Tuple[AsyncEvaluatePos, asyncio.Future]:
+) -> Tuple[EvaluatePos, asyncio.Future]:
     """
     Given a model, returns a function that batches multiple model calls together for more efficient
     inference. Also returns a future that, when set, will cause the batching loop to stop.
