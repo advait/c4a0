@@ -3,14 +3,15 @@
 import asyncio
 import logging
 
-from training import train_gen
+from training import train
 
 
 async def main():
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
-    await train_gen()
+
+    await train()
 
 
 if __name__ == "__main__":

@@ -4,3 +4,7 @@
 .pytest_cache/
 __pycache__/
 
+checkpoints/
+lightning_logs/
+samples/
+

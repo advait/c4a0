@@ -52,6 +52,13 @@ def make_move(pos: Pos, col: ColIndex) -> Pos:
     raise IllegalMove(pos, col)
 
 
+class IllegalMove(Exception):
+    """Raised when a move is played in a full column."""
+
+    def __init__(self, pos: Pos, col: int):
+        super().__init__(f"Illegal move in column {col} of position {pos}")
+
+
 def _is_consecutive_four(cells):
     """Check if four cells are the same and not empty."""
     return len(set(cells)) == 1 and cells[0] != CellValue.EMPTY.value
@@ -126,18 +133,27 @@ def get_ply(pos: Pos) -> int:
     return np.sum(pos != CellValue.EMPTY.value)
 
 
-def pos_str(pos: Pos) -> str:
+cell_colors = {
+    CellValue.PLAYER_MOVE.value: "🔴",
+    CellValue.OPPONENT_MOVE.value: "🔵",
+    CellValue.EMPTY.value: "⚫",
+}
+colors_to_cell = {v: k for k, v in cell_colors.items()}
+
+
+def post_to_str(pos: Pos) -> str:
     """Returns a string representation of the position."""
-    d = {
-        CellValue.PLAYER_MOVE.value: "🔴",
-        CellValue.OPPONENT_MOVE.value: "🔵",
-        CellValue.EMPTY.value: "⚫",
-    }
-    return "\n".join(["".join([d[cell] for cell in row]) for row in pos])
+    return "\n".join(["".join([cell_colors[cell] for cell in row]) for row in pos])
 
 
-class IllegalMove(Exception):
-    """Raised when a move is played in a full column."""
+def pos_from_str(s: str) -> Pos:
+    """Returns a position from a string representation."""
+    return np.array(
+        [[colors_to_cell[c] for c in row] for row in s.split("\n")], dtype=np.int8
+    )
 
-    def __init__(self, pos: Pos, col: int):
-        super().__init__(f"Illegal move in column {col} of position {pos}")
+
+def flip_horizontally(pos: Pos) -> Pos:
+    """Flips the position horizontally."""
+    # We copy the array to eliminate "negative stride" as fliplr is just a view over the original
+    return np.fliplr(pos).copy()

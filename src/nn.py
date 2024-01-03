@@ -2,8 +2,6 @@
 The Neural Network is used to evaluate the position of the game.
 """
 
-import asyncio
-import concurrent.futures
 from typing import Callable, NewType, Tuple
 
 import numpy as np
@@ -93,7 +91,7 @@ class ConnectFourNet(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         # Forward pass
-        inputs, policy_labels, value_labels = batch
+        game_ids, inputs, policy_labels, value_labels = batch
         policy_pred, value_pred = self.forward(inputs)
         value_pred = rearrange(value_pred, "b 1 -> b")
 
@@ -104,11 +102,11 @@ class ConnectFourNet(pl.LightningModule):
         value_loss = F.mse_loss(value_pred, value_labels)
 
         loss = policy_loss + value_loss
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        inputs, policy_labels, value_labels = batch
+        game_ids, inputs, policy_labels, value_labels = batch
         policy_pred, value_pred = self.forward(inputs)
         value_pred = rearrange(value_pred, "b 1 -> b")
 
@@ -119,6 +117,6 @@ class ConnectFourNet(pl.LightningModule):
         value_loss = F.mse_loss(value_pred, value_labels)
 
         loss = policy_loss + value_loss
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, prog_bar=True)
         self.log("val_policy_kl_div", policy_loss)
         self.log("val_value_mse", value_loss)
