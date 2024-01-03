@@ -126,6 +126,16 @@ def get_ply(pos: Pos) -> int:
     return np.sum(pos != CellValue.EMPTY.value)
 
 
+def pos_str(pos: Pos) -> str:
+    """Returns a string representation of the position."""
+    d = {
+        CellValue.PLAYER_MOVE.value: "🔴",
+        CellValue.OPPONENT_MOVE.value: "🔵",
+        CellValue.EMPTY.value: "⚫",
+    }
+    return "\n".join(["".join([d[cell] for cell in row]) for row in pos])
+
+
 class IllegalMove(Exception):
     """Raised when a move is played in a full column."""
 
