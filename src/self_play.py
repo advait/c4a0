@@ -10,6 +10,7 @@ from typing import Awaitable, List, NewType, Optional, Tuple
 import numpy as np
 from pytorch_lightning.loggers import TensorBoardLogger
 import torch
+from tqdm import tqdm
 
 from c4 import (
     N_COLS,
@@ -129,7 +130,7 @@ async def _gen_game(
 
 def batch_model(
     model: ConnectFourNet,
-    max_batch_size: int = 20000,
+    max_batch_size: int = 1,
 ) -> Tuple[EvaluatePos, asyncio.Future]:
     """
     Given a model, returns a function that batches multiple model calls together for more efficient
@@ -153,32 +154,41 @@ def batch_model(
 
     async def process_pos_queue():
         logger.info("Starting batch inference pos processing")
-        while True:
-            if len(pos_queue) > 0:
-                # Group identical positions together to avoid duplicate work
-                pos_dict = defaultdict(list)
-                for pos, future in pos_queue[:max_batch_size]:
-                    # Note that we convert np.ndarray into a string for hashing
-                    pos_dict[post_to_str(pos)].append(future)
-                del pos_queue[:max_batch_size]
-                positions = [pos_from_str(s) for s in pos_dict.keys()]
-                futures = list(pos_dict.values())
+        with tqdm(desc="MCTS NN Eval", unit="pos", total=None) as pbar:
+            n_pos_done = 0
+            pbar.update(n_pos_done)
 
-                pos_tensor = torch.from_numpy(np.array(positions)).float().to("cuda")
-                policies, values = await model_forward_bg_thread(model, pos_tensor)
-                policies = policies.cpu().numpy()
-                values = values.cpu().numpy()
+            while True:
+                if len(pos_queue) > 0:
+                    # Group identical positions together to avoid duplicate work
+                    pos_dict = defaultdict(list)
+                    for pos, future in pos_queue[:max_batch_size]:
+                        # Note that we convert np.ndarray into a string for hashing
+                        pos_dict[post_to_str(pos)].append(future)
+                    del pos_queue[:max_batch_size]
+                    positions = [pos_from_str(s) for s in pos_dict.keys()]
+                    futures = list(pos_dict.values())
 
-                for i in range(len(positions)):
-                    for future in futures[i]:
-                        future.set_result((policies[i], values[i]))
-            elif stop_loop_future.done():
-                logger.info(
-                    "Finished game generation, exiting queue processing coroutine"
-                )
-                return
-            else:
-                await asyncio.sleep(0)  # Yield to other coroutines
+                    pos_tensor = (
+                        torch.from_numpy(np.array(positions)).float().to("cuda")
+                    )
+                    policies, values = await model_forward_bg_thread(model, pos_tensor)
+                    n_pos_done += len(positions)
+                    pbar.update(len(positions))
+
+                    policies = policies.cpu().numpy()
+                    values = values.cpu().numpy()
+
+                    for i in range(len(positions)):
+                        for future in futures[i]:
+                            future.set_result((policies[i], values[i]))
+                elif stop_loop_future.done():
+                    logger.info(
+                        "Finished game generation, exiting queue processing coroutine"
+                    )
+                    return
+                else:
+                    await asyncio.sleep(0)  # Yield to other coroutines
 
     # Run process_pos_queue on current loop without blocking
     asyncio.create_task(process_pos_queue())

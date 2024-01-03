@@ -21,6 +21,9 @@ def unzip(tuples: List[Tuple[*Ts]]) -> Tuple[*Ls]:
     return ret
 
 
+bg_thread_executor = concurrent.futures.ThreadPoolExecutor()
+
+
 async def model_forward_bg_thread(model, x):
     """
     Runs a forward pass on the model (in a no_grad context) on a background thread with an async
@@ -32,5 +35,4 @@ async def model_forward_bg_thread(model, x):
             return model(x_)
 
     loop = asyncio.get_running_loop()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        return await loop.run_in_executor(executor, run_model_no_grad, x)
+    return await loop.run_in_executor(bg_thread_executor, run_model_no_grad, x)
