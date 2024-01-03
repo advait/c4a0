@@ -1,11 +1,12 @@
+from typing import Tuple
 import numpy as np
 from numpy.testing import assert_array_equal
 
 import pytest
 
-from c4 import N_COLS, STARTING_POS
+from c4 import N_COLS, STARTING_POS, Pos
 from mcts import mcts
-from test_utils import uniform_eval_pos
+from nn import Policy, Value
 
 
 @pytest.mark.asyncio
@@ -46,3 +47,10 @@ async def test_mcts_depth_uneven():
     )
     uniform_policy = np.ones(N_COLS) / N_COLS
     assert np.all(policy != uniform_policy)
+
+
+async def uniform_eval_pos(pos: Pos) -> Tuple[Policy, Value]:
+    """Simple position evaluator that always returns a value of zero and a uniform policy."""
+    policy = np.ones(N_COLS) / N_COLS
+    value = 0.0
+    return policy, value
