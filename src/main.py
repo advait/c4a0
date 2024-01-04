@@ -11,7 +11,8 @@ async def main():
         level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
     )
 
-    await train()
+    while True:
+        await train()
 
 
 if __name__ == "__main__":

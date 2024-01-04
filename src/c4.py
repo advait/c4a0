@@ -153,6 +153,16 @@ def pos_from_str(s: str) -> Pos:
     )
 
 
+def pos_to_bytes(pos: Pos) -> bytes:
+    """Serializes a position into bytes."""
+    return pos.tobytes()
+
+
+def pos_from_bytes(b: bytes) -> Pos:
+    """Returns a position that was serialized with pos_to_bytes."""
+    return np.frombuffer(b, dtype=np.int8).reshape((N_ROWS, N_COLS))
+
+
 def flip_horizontally(pos: Pos) -> Pos:
     """Flips the position horizontally."""
     # We copy the array to eliminate "negative stride" as fliplr is just a view over the original

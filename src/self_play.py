@@ -20,8 +20,8 @@ from c4 import (
     get_ply,
     is_game_over,
     make_move,
-    pos_from_str,
-    post_to_str,
+    pos_from_bytes,
+    pos_to_bytes,
 )
 from mcts import EvaluatePos, mcts
 from nn import ConnectFourNet, Policy, Value
@@ -54,6 +54,7 @@ async def gen_samples(
         async_eval_2, stop_batching_2 = batch_model(eval2)
 
     logger.info("Started game generation")
+    mcts_tqdm = tqdm(desc="MCTS iterations", unit="iters", total=None)
     out_samples: List[Sample] = []
     await asyncio.gather(
         *[
@@ -64,10 +65,12 @@ async def gen_samples(
                 mcts_iterations,
                 exploration_constant,
                 out_samples,
+                mcts_tqdm=mcts_tqdm,
             )
             for game_id in range(n_games)
         ]
     )
+    mcts_tqdm.close()
     logger.info(f"Finished game generation with {len(out_samples)} samples")
 
     # Stop the batching loops
@@ -87,6 +90,7 @@ async def _gen_game(
     mcts_iterations: int,
     exploration_constant: float,
     out_samples: List[Sample],
+    mcts_tqdm: tqdm,
 ) -> Awaitable[None]:
     """
     Generates a single game of self-play, appending the results to out_queue.
@@ -102,6 +106,7 @@ async def _gen_game(
             eval_pos=f,
             n_iterations=mcts_iterations,
             exploration_constant=exploration_constant,
+            tqdm=mcts_tqdm,
         )
         results.append((game_id, pos, policy))
         move = np.random.choice(range(len(policy)), p=policy)
@@ -130,7 +135,7 @@ async def _gen_game(
 
 def batch_model(
     model: ConnectFourNet,
-    max_batch_size: int = 1,
+    max_batch_size: int = 20000,
 ) -> Tuple[EvaluatePos, asyncio.Future]:
     """
     Given a model, returns a function that batches multiple model calls together for more efficient
@@ -138,6 +143,7 @@ def batch_model(
     """
     logger = logging.getLogger(__name__)
 
+    eval_cache = {}
     pos_queue: List[Tuple(Pos, asyncio.Future)] = []
 
     async def ret_fn(pos: Pos) -> Tuple[Policy, Value]:
@@ -145,9 +151,19 @@ def batch_model(
         Queues a position for batch evaluation, returning a future that will be set with the result
         after the batch inference happens.
         """
+        pos_bytes = pos.tobytes()
+        if pos_bytes in eval_cache:
+            return eval_cache[pos_bytes]
+
         future = asyncio.get_running_loop().create_future()
         pos_queue.append((pos, future))
-        return await future
+        ret = await future
+
+        # Cache position evals for the first 10 moves
+        if get_ply(pos) < 10:
+            eval_cache[pos_bytes] = ret
+
+        return ret
 
     # Future that, when set, will cause the batching loop below to stop
     stop_loop_future = asyncio.get_running_loop().create_future()
@@ -155,26 +171,22 @@ def batch_model(
     async def process_pos_queue():
         logger.info("Starting batch inference pos processing")
         with tqdm(desc="MCTS NN Eval", unit="pos", total=None) as pbar:
-            n_pos_done = 0
-            pbar.update(n_pos_done)
-
             while True:
                 if len(pos_queue) > 0:
                     # Group identical positions together to avoid duplicate work
                     pos_dict = defaultdict(list)
                     for pos, future in pos_queue[:max_batch_size]:
                         # Note that we convert np.ndarray into a string for hashing
-                        pos_dict[post_to_str(pos)].append(future)
+                        pos_dict[pos_to_bytes(pos)].append(future)
                     del pos_queue[:max_batch_size]
-                    positions = [pos_from_str(s) for s in pos_dict.keys()]
+                    positions = [pos_from_bytes(s) for s in pos_dict.keys()]
                     futures = list(pos_dict.values())
 
                     pos_tensor = (
                         torch.from_numpy(np.array(positions)).float().to("cuda")
                     )
                     policies, values = await model_forward_bg_thread(model, pos_tensor)
-                    n_pos_done += len(positions)
-                    pbar.update(len(positions))
+                    pbar.update(pos_tensor.shape[0])
 
                     policies = policies.cpu().numpy()
                     values = values.cpu().numpy()

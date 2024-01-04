@@ -64,10 +64,12 @@ async def train(
         ],
     )
     data_module = PosDataModule(samples, batch_size)
+    logger.info("Beginning training gen f{gen}")
     trainer.fit(
         model,
         data_module,
     )
+    logger.info("Finished training gen f{gen}")
 
 
 ModelGen = NewType("ModelGen", int)
