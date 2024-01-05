@@ -54,7 +54,14 @@ def gen_samples_mp(
     """Uses multiprocessing to generate Samples for n_games number of games."""
     logger = logging.getLogger(__name__)
 
-    logger.info(f"Starting game generation with {n_processes} processes")
+    n_coroutines_per_process = max(n_games // n_processes, 1)
+    logger.info(
+        f"Starting game generation:\n"
+        f"- n_games: {n_games}\n"
+        f"- n_processes: {n_processes}\n"
+        f"- n_coroutines_per_process: {n_coroutines_per_process}\n"
+        f"- max_nn_batch_size: {max_nn_batch_size}\n"
+    )
 
     game_id_queue = mp.Queue()  # Input game_id queue
     for game_id in range(n_games):
@@ -99,12 +106,16 @@ def gen_samples_mp(
 
     for process in processes:
         process.join()
+        process.close()
+    print("All processes finished")
 
     # Poison pill for the inference thread and stats threads
     pos_in_queue.put(None)
-    tqdm_mcts_iters_queue.put(None)
     inference_thread.join()
+    print("Inference thread finished")
+    tqdm_mcts_iters_queue.put(None)
     stats_thread.join()
+    print("Stats thread finished")
 
     samples = []
     while True:
@@ -166,6 +177,7 @@ def batch_nn_inference_loop(
         try:
             item = pos_in_queue.get(block=False)
             if item is None:  # None is a poison pill for this loop
+                print("Batch inference loop terminating")
                 return
             accumulated_batch.append(item)
         except queue.Empty:
@@ -204,27 +216,19 @@ async def mp_sample_generator(
 ) -> None:
     """Background process that takes game_ids and outputs samples."""
 
-    stop_pos_manager = False
     pos_result_futures: Dict[(GameID, Ply), asyncio.Future] = {}
 
     async def pos_out_queue_manager():
         """
         Reads results from pos_out_queue and dispatches them to the appropriate futures.
         """
-        nonlocal stop_pos_manager
 
         while True:
             try:
                 game_id, ply, policy, value = pos_out_queue.get(block=False)
             except queue.Empty:
-                if stop_pos_manager:
-                    assert game_id_queue.empty()
-                    assert pos_out_queue.empty()
-                    assert len(pos_result_futures) == 0
-                    return
-                else:
-                    await asyncio.sleep(0.02)
-                    continue
+                await asyncio.sleep(0.02)
+                continue
 
             future = pos_result_futures[(game_id, ply)]
             future.set_result((policy, value))
@@ -243,12 +247,13 @@ async def mp_sample_generator(
 
     pos_manager_task = asyncio.create_task(pos_out_queue_manager())
 
-    async def game_gen_coro():
+    async def game_gen_coro(coro_id: int):
         """Loop that generates games and puts them into sample_out_queue."""
         while True:
             try:
                 game_id = game_id_queue.get(block=False)
             except queue.Empty:
+                print(f"Coroutine {coro_id} for process {process_id} terminating")
                 return
 
             samples = await gen_game(
@@ -261,10 +266,12 @@ async def mp_sample_generator(
             for sample in samples:
                 sample_out_queue.put(sample)
 
-    await asyncio.gather(*[game_gen_coro() for _ in range(n_coroutines_per_process)])
+    await asyncio.gather(*[game_gen_coro(i) for i in range(n_coroutines_per_process)])
+    print(f"P{process_id} Game gen coros finished")
 
     stop_pos_manager = True
-    await pos_manager_task
+    pos_manager_task.cancel()
+    print(f"P{process_id} Pos manager task finished")
 
 
 async def gen_game(

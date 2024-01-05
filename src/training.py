@@ -9,7 +9,6 @@ import numpy as np
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
-from pytorch_lightning.loggers import TensorBoardLogger
 import torch
 from torch.utils.data import DataLoader
 
@@ -18,7 +17,7 @@ from self_play import Sample, gen_samples_mp
 
 
 async def train(
-    mcts_iterations=100, exploration_constant=1.4, n_games=2000, batch_size=100
+    n_games=10, mcts_iterations=5, exploration_constant=1.4, batch_size=100
 ):
     logger = logging.getLogger(__name__)
 
@@ -27,7 +26,7 @@ async def train(
     model.to("cuda")
     gen += 1  # Training next gen
 
-    tb_logger = TensorBoardLogger("lightning_logs", name=f"gen_{gen}")
+    # tb_logger = TensorBoardLogger("lightning_logs", name=f"gen_{gen}")
     logger.info(
         f"Generating self_play games to train next gen\n"
         f"- gen: {gen}\n"
@@ -43,6 +42,8 @@ async def train(
         samples = gen_samples_mp(
             nn=model,
             n_games=n_games,
+            n_processes=2,
+            n_coroutines_per_process=1,
             mcts_iterations=mcts_iterations,
             exploration_constant=exploration_constant,
         )

@@ -21,7 +21,10 @@ def unzip(tuples: List[Tuple[*Ts]]) -> Tuple[*Ls]:
     return ret
 
 
-bg_thread_executor = concurrent.futures.ThreadPoolExecutor()
+bg_thread_executor = concurrent.futures.ThreadPoolExecutor(
+    thread_name_prefix="nn_bg_thread",
+    max_workers=1,
+)
 
 
 async def model_forward_bg_thread(model, x):
@@ -39,9 +42,15 @@ async def model_forward_bg_thread(model, x):
 
 
 def async_to_sync(func):
-    """Wraps an asyncio function to produce a synchronous/blocking version"""
+    """
+    Wraps an asyncio function to produce a synchronous/blocking version.
+
+    Intended to run in its own process that doesn't have an event loop yet.
+    """
 
     def wrapper(*args):
-        return asyncio.run(func(*args))
+        ret = asyncio.run(func(*args))
+        print("async_to_sync wrapper returning")
+        return ret
 
     return wrapper
