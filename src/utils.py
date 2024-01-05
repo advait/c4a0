@@ -36,3 +36,12 @@ async def model_forward_bg_thread(model, x):
 
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(bg_thread_executor, run_model_no_grad, x)
+
+
+def async_to_sync(func):
+    """Wraps an asyncio function to produce a synchronous/blocking version"""
+
+    def wrapper(*args):
+        return asyncio.run(func(*args))
+
+    return wrapper

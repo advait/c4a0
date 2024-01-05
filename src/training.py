@@ -5,6 +5,7 @@ import logging
 import os
 import pickle
 from typing import List, NewType, Optional
+import numpy as np
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
@@ -13,7 +14,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from nn import ConnectFourNet
-from self_play import Sample, gen_samples
+from self_play import Sample, gen_samples_mp
 
 
 async def train(
@@ -39,12 +40,11 @@ async def train(
     samples = load_cached_samples(gen)
     if not samples:
         logger.info("No cached samples found. Generating samples from self-play.")
-        samples = await gen_samples(
-            eval1=model,
+        samples = gen_samples_mp(
+            nn=model,
             n_games=n_games,
             mcts_iterations=mcts_iterations,
             exploration_constant=exploration_constant,
-            tb_logger=tb_logger,
         )
         store_samples(samples, gen)
         logger.info(f"Done generating {len(samples)} samples. Caching for re-use.")
@@ -64,12 +64,12 @@ async def train(
         ],
     )
     data_module = PosDataModule(samples, batch_size)
-    logger.info("Beginning training gen f{gen}")
+    logger.info(f"Beginning training gen {gen}")
     trainer.fit(
         model,
         data_module,
     )
-    logger.info("Finished training gen f{gen}")
+    logger.info(f"Finished training gen {gen}")
 
 
 ModelGen = NewType("ModelGen", int)
@@ -118,6 +118,7 @@ class PosDataModule(pl.LightningDataModule):
     def __init__(self, samples: List[Sample], batch_size: int):
         super().__init__()
         self.batch_size = batch_size
+        samples = samples + [self.flip_sample(s) for s in samples]
         samples = [
             (
                 game_id,
@@ -129,7 +130,16 @@ class PosDataModule(pl.LightningDataModule):
         ]
         self.training_data, self.validation_data = self.split_samples(samples)
 
+    def flip_sample(self, sample: Sample) -> Sample:
+        """Flips the sample and policy horizontally to account for connect four symmetry."""
+        game_id, pos, policy, value = sample
+        # copy is needed as flip returns a view with negative stride that is incompatible w torch
+        pos = np.fliplr(pos).copy()
+        policy = np.flip(policy).copy()
+        return game_id, pos, policy, value
+
     def split_samples(self, samples, split_ratio=0.8):
+        """Splits samples into training and validation sets."""
         game_ids = set(sample[0] for sample in samples)
         split_game_id = int(len(game_ids) * split_ratio) + min(game_ids)
         training_data = []

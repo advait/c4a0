@@ -33,8 +33,11 @@ Pos = NewType("Pos", np.ndarray)
 ColIndex = NewType("ColIndex", int)
 """Represents playing a move in the given column."""
 
-STARTING_POS: Pos = np.zeros((N_ROWS, N_COLS), dtype=np.int8)
+STARTING_POS: Pos = np.zeros((N_ROWS, N_COLS), dtype=np.float32)
 """The starting position of a connect four game."""
+
+Ply = NewType("Ply", int)
+"""The number of moves that have been played. A ply of 0 is the starting position."""
 
 
 def make_move(pos: Pos, col: ColIndex) -> Pos:
@@ -125,7 +128,7 @@ def get_legal_moves(pos: Pos) -> np.ndarray:
     return (pos[0] == CellValue.EMPTY.value).astype(np.float64)
 
 
-def get_ply(pos: Pos) -> int:
+def get_ply(pos: Pos) -> Ply:
     """
     Returns the ply of the position or the number of moves that have been played.
     Ply of 0 is the starting position.
@@ -138,32 +141,18 @@ cell_colors = {
     CellValue.OPPONENT_MOVE.value: "🔵",
     CellValue.EMPTY.value: "⚫",
 }
-colors_to_cell = {v: k for k, v in cell_colors.items()}
 
 
-def post_to_str(pos: Pos) -> str:
+def pos_to_str(pos: Pos) -> str:
     """Returns a string representation of the position."""
     return "\n".join(["".join([cell_colors[cell] for cell in row]) for row in pos])
 
 
-def pos_from_str(s: str) -> Pos:
-    """Returns a position from a string representation."""
-    return np.array(
-        [[colors_to_cell[c] for c in row] for row in s.split("\n")], dtype=np.int8
-    )
-
-
 def pos_to_bytes(pos: Pos) -> bytes:
-    """Serializes a position into bytes."""
+    """Serializes a position into bytes. Useful for using positions as dict keys (hashable)."""
     return pos.tobytes()
 
 
 def pos_from_bytes(b: bytes) -> Pos:
     """Returns a position that was serialized with pos_to_bytes."""
-    return np.frombuffer(b, dtype=np.int8).reshape((N_ROWS, N_COLS))
-
-
-def flip_horizontally(pos: Pos) -> Pos:
-    """Flips the position horizontally."""
-    # We copy the array to eliminate "negative stride" as fliplr is just a view over the original
-    return np.fliplr(pos).copy()
+    return np.frombuffer(b, dtype=np.float32).reshape((N_ROWS, N_COLS))

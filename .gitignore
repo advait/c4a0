@@ -1,4 +1,3 @@
-# Aider
 .aider*
 
 .pytest_cache/
@@ -9,3 +8,4 @@ checkpoints/
 lightning_logs/
 samples/
 
+*.bak

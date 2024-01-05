@@ -3,9 +3,9 @@ Logic for Monte Carlo Tree Search
 """
 
 import logging
+import multiprocessing as mp
 from typing import Awaitable, Callable, List, Optional, Tuple
 
-from tqdm import tqdm
 from c4 import N_COLS, Pos, get_legal_moves, is_game_over, make_move
 
 import numpy as np
@@ -137,7 +137,7 @@ async def mcts(
     n_iterations: int,
     exploration_constant: float,
     eval_pos: EvaluatePos,
-    tqdm: Optional[tqdm] = None,
+    tqdm_mcts_iters_queue: Optional[mp.Queue] = None,
 ) -> Policy:
     """
     Runs the MCTS algorithm to determine the best move from the given position.
@@ -147,8 +147,8 @@ async def mcts(
     for _ in range(n_iterations):
         leaf = root.select_leaf(exploration_constant)
         await leaf.expand_children(eval_pos)
-        if tqdm is not None:
-            tqdm.update(1)
+        if tqdm_mcts_iters_queue is not None:
+            tqdm_mcts_iters_queue.put(1)
 
     child_visits = np.array(
         [child.visit_count if child is not None else 0 for child in root.children]
