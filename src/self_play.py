@@ -1,25 +1,31 @@
 """
-Generating training data via self-play
+Concurrent self-play to generate training data.
+
+- Uses multiprocessing to take advantage of CPU parallelism
+- generate_samples() is the main entrypoint. It spawns worker_process() processes.
+- Uses multiprocessing.Pipe as IPC between the workers and the parent.
+- worker_process() is the entrypoint for each worker process. It spawns worker_coro() coroutines.
+- See the various Req and Res subclasses to understand IPC.
+- We batch many NNReq requests together before submitting to the GPU.
 """
 
 import asyncio
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 import logging
 import multiprocessing as mp
-import queue
 import sys
-import threading
+from textwrap import dedent
 import time
 from typing import Awaitable, Callable, Dict, List, NewType, Optional, Tuple
 
 import numpy as np
 import torch
-from tqdm import tqdm
 
 from c4 import (
     N_COLS,
     STARTING_POS,
-    Ply,
     Pos,
     get_ply,
     is_game_over,
@@ -29,10 +35,8 @@ from c4 import (
 )
 from mcts import mcts
 from nn import ConnectFourNet, Policy, Value
-from utils import async_to_sync
 
-NetworkID = NewType("NetworkID", int)
-"""Which network generation this sample is from.""" ""
+ReqID = NewType("ReqID", int)
 
 GameID = NewType("GameID", int)
 """Which game this sample is from."""
@@ -43,304 +47,298 @@ Sample = NewType("Sample", Tuple[GameID, Pos, Policy, Value])
 ProcessID = NewType("ProcessID", int)
 
 
-def gen_samples_mp(
-    nn: ConnectFourNet,
+@dataclass
+class Req:
+    """A request sent from the child process to the parent process."""
+
+    req_id: ReqID
+
+
+@dataclass
+class Res:
+    """A response from the parent process to the child process."""
+
+    req_id: ReqID
+
+
+@dataclass
+class GetGameIDReq(Req):
+    """Request a new game ID to be generated."""
+
+
+@dataclass
+class GetGameIDRes(Res):
+    """
+    Response to GetGameIDReq. If game_id is None, then no more game IDs are available, signaling to
+    the child process that it should exit.
+    """
+
+    game_id: Optional[int]
+
+
+@dataclass
+class NNReq(Req):
+    """Request to run NN inference on a position."""
+
+    pos: Pos
+
+
+@dataclass
+class NNRes(Res):
+    """Response to NNReq."""
+
+    policy: Policy
+    value: Value
+
+
+@dataclass
+class SubmitGameReq(Req):
+    """Submits a completed game to the parent process. No response is needed."""
+
+    samples: List[Sample]
+
+
+@dataclass
+class WorkerExitSignalReq(Req):
+    """Signal from the worker indicating that it has exited. No responses is needed."""
+
+    worker_id: ProcessID
+
+
+async def generate_samples(
+    model: ConnectFourNet,
     n_games: int,
     mcts_iterations: int,
     exploration_constant: float,
-    n_processes: int = mp.cpu_count() * 2,
-    n_coroutines_per_process: int = 100,
-    max_nn_batch_size: int = 20000,
+    n_processes: int = mp.cpu_count() - 1,
+    nn_flush_freq_s: float = 0.01,
+    nn_max_batch_size: int = 20000,
 ) -> List[Sample]:
-    """Uses multiprocessing to generate Samples for n_games number of games."""
+    """
+    Uses multiprocessing to generate n_games worth of training data.
+    """
+
     logger = logging.getLogger(__name__)
 
     n_coroutines_per_process = max(n_games // n_processes, 1)
     logger.info(
-        f"Starting game generation:\n"
-        f"- n_games: {n_games}\n"
-        f"- n_processes: {n_processes}\n"
-        f"- n_coroutines_per_process: {n_coroutines_per_process}\n"
-        f"- max_nn_batch_size: {max_nn_batch_size}\n"
+        dedent(
+            f"""
+            Beginning multi-process self-play generation:
+            - n_games: {n_games}
+            - n_processes: {n_processes}
+            - n_coroutines_per_process: {n_coroutines_per_process}
+            - mcts_iterations: {mcts_iterations}
+            - exploration_constant: {exploration_constant}
+            - nn_flush_freq_s: {nn_flush_freq_s}
+            - nn_max_batch_size: {nn_max_batch_size}
+            """
+        ).strip()
     )
 
-    game_id_queue = mp.Queue()  # Input game_id queue
-    for game_id in range(n_games):
-        game_id_queue.put(game_id)
-    pos_in_queue = mp.Queue()  # Queue for batch nn inference
-    pos_out_queues = [mp.Queue() for i in range(n_processes)]  # NN output queues
-    sample_out_queue = mp.Queue()  # Queue for output samples
-    tqdm_mcts_iters_queue = mp.Queue()  # TQDM stats queue for MCTS iterations
+    pipes: List[mp.Pipe] = []
+    workers: List[mp.Process] = []
+    n_alive_workers = n_processes
+    generated_samples: List[Sample] = []
+    cur_game_id: int = 0
 
-    processes = [
-        mp.Process(
-            target=sample_generator_process,
+    nn_pos_queue: List[Tuple[Pos, mp.Pipe, ReqID]] = []
+    nn_bg_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nn_bg_thread")
+    nn_last_flush_s = time.time()
+
+    for worker_id in range(n_processes):
+        parent_conn, child_conn = mp.Pipe()
+        pipes.append(parent_conn)
+        worker = mp.Process(
+            target=worker_process,
             args=(
-                process_id,
-                game_id_queue,
-                pos_in_queue,
-                pos_out_queues[process_id],
-                sample_out_queue,
-                tqdm_mcts_iters_queue,
+                worker_id,
+                child_conn,
+                n_coroutines_per_process,
                 mcts_iterations,
                 exploration_constant,
-                n_coroutines_per_process,
             ),
         )
-        for process_id in range(n_processes)
-    ]
-    for p in processes:
-        p.start()
+        workers.append(worker)
+        worker.start()
 
-    inference_thread = threading.Thread(
-        target=batch_nn_inference_loop,
-        args=(nn, pos_in_queue, pos_out_queues, max_nn_batch_size),
-    )
-    inference_thread.start()
+    continue_server_loops = True
 
-    stats_thread = threading.Thread(
-        target=tqdm_stats_loop,
-        args=(tqdm_mcts_iters_queue, n_games * 40 * mcts_iterations),
-    )
-    stats_thread.start()
+    async def poll_pipes():
+        while continue_server_loops:
+            for pipe in pipes:
+                if pipe.poll():
+                    msg = pipe.recv()
+                    # Note we technically don't explicitly block on this task, but it's fine
+                    # because we're manually waiting for worker termination via WorkerExitSignalReq
+                    asyncio.create_task(handle_req(msg, pipe))
+            await asyncio.sleep(0)
 
-    for process in processes:
-        process.join()
-        process.close()
-    print("All processes finished")
+    async def handle_req(req: Req, pipe: mp.Pipe) -> None:
+        nonlocal n_alive_workers, continue_server_loops, n_games, cur_game_id
+        if isinstance(req, WorkerExitSignalReq):
+            n_alive_workers -= 1
+            if n_alive_workers == 0:
+                continue_server_loops = False
 
-    # Poison pill for the inference thread and stats threads
-    pos_in_queue.put(None)
-    inference_thread.join()
-    print("Inference thread finished")
-    tqdm_mcts_iters_queue.put(None)
-    stats_thread.join()
-    print("Stats thread finished")
+        elif isinstance(req, GetGameIDReq):
+            if cur_game_id >= n_games:
+                pipe.send(GetGameIDRes(req_id=req.req_id, game_id=None))
+            else:
+                pipe.send(GetGameIDRes(req_id=req.req_id, game_id=cur_game_id))
+                cur_game_id += 1
 
-    samples = []
-    while True:
-        try:
-            sample = sample_out_queue.get(block=False)
-            samples.append(sample)
-        except queue.Empty:
-            break
+        elif isinstance(req, NNReq):
+            nn_pos_queue.append((req.pos, pipe, req.req_id))
 
-    # Sort by game_id and then ply
-    samples.sort(key=lambda t: (t[0], get_ply(t[1])))
-    return samples
+        elif isinstance(req, SubmitGameReq):
+            generated_samples.extend(req.samples)
 
+    async def nn_flush_loop():
+        nonlocal nn_last_flush_s
+        while continue_server_loops:
+            elapsed = time.time() - nn_last_flush_s
+            if elapsed >= nn_flush_freq_s or len(nn_pos_queue) >= nn_max_batch_size:
+                await nn_flush()
+            await asyncio.sleep(0)
 
-def batch_nn_inference_loop(
-    nn: ConnectFourNet,
-    pos_in_queue: mp.Queue,
-    pos_out_queues: List[mp.Queue],
-    max_batch_size: int = 2000,
-    flush_every_s: int = 0.1,
-):
-    """
-    Loop intended to run on a background thread. Batches nn inference.
-    Loop stops when it receives None in the pos_in_queue.
-    """
-    last_flushed_time_s = time.time()
-    accumulated_batch = []
-
-    def flush_batch():
-        nonlocal last_flushed_time_s
-
-        if len(accumulated_batch) == 0:
-            last_flushed_time_s = time.time()
-            return
-
+    async def nn_flush():
+        nonlocal nn_last_flush_s, nn_pos_queue
         # Group identical positions together to avoid duplicate work
         pos_dict = defaultdict(list)
-        for process_id, game_id, ply, pos in accumulated_batch:
-            pos_dict[pos_to_bytes(pos)].append((process_id, game_id, ply))
-        accumulated_batch.clear()
+        for pos, pipe, req_id in nn_pos_queue:
+            pos_dict[pos_to_bytes(pos)].append((pipe, req_id))
+        nn_pos_queue.clear()
 
         positions_bytes = list(pos_dict.keys())
         positions = [pos_from_bytes(s) for s in positions_bytes]
         pos_tensor = torch.from_numpy(np.array(positions)).float().to("cuda")
-        with torch.no_grad():
-            policies, values = nn(pos_tensor)
+        policies, values = await asyncio.get_running_loop().run_in_executor(
+            nn_bg_thread, run_model_no_grad, model, pos_tensor
+        )
         policies = policies.cpu().numpy()
         values = values.cpu().numpy()
         assert len(positions) == len(policies) == len(values)
 
         for i in range(len(positions)):
-            for process_id, game_id, ply in pos_dict[positions_bytes[i]]:
-                pos_out_queues[process_id].put((game_id, ply, policies[i], values[i]))
+            for pipe, req_id in pos_dict[positions_bytes[i]]:
+                pipe.send(NNRes(req_id=req_id, policy=policies[i], value=values[i]))
             del pos_dict[positions_bytes[i]]
 
-        last_flushed_time_s = time.time()
+        nn_last_flush_s = time.time()
 
-    while True:
-        try:
-            item = pos_in_queue.get(block=False)
-            if item is None:  # None is a poison pill for this loop
-                print("Batch inference loop terminating")
-                return
-            accumulated_batch.append(item)
-        except queue.Empty:
-            elapsed_s = time.time() - last_flushed_time_s
-            if elapsed_s > flush_every_s:
-                flush_batch()
-                continue
+    nn_flush_loop_task = asyncio.create_task(nn_flush_loop())
+    await poll_pipes()
+    await nn_flush_loop_task
+
+    for worker in workers:
+        worker.join()
+
+    # Sort by game_id and then ply
+    generated_samples.sort(key=lambda t: (t[0], get_ply(t[1])))
+    return generated_samples
+
+
+def worker_process(
+    worker_id: int,
+    pipe: mp.Pipe,
+    n_coroutines_per_process: int,
+    mcts_iterations: int,
+    exploration_constant: float,
+) -> None:
+    pending_reqs: Dict[ReqID, asyncio.Future] = {}
+    continue_polling_pipes = True
+
+    async def get_game_id() -> Optional[GameID]:
+        nonlocal pending_reqs
+        future = asyncio.get_running_loop().create_future()
+        req_id = create_req_id()
+        pending_reqs[req_id] = future
+        pipe.send(GetGameIDReq(req_id=req_id))
+        res: GetGameIDRes = await future
+        return res.game_id
+
+    async def eval_pos(pos: Pos) -> Tuple[Policy, Value]:
+        nonlocal pending_reqs
+        future = asyncio.get_running_loop().create_future()
+        req_id = create_req_id()
+        pending_reqs[req_id] = future
+        pipe.send(NNReq(req_id=req_id, pos=pos))
+        res: NNRes = await future
+        return res.policy, res.value
+
+    async def submit_game(samples: List[Sample]) -> None:
+        pipe.send(SubmitGameReq(req_id=create_req_id(), samples=samples))
+
+    async def poll_pipe():
+        nonlocal continue_polling_pipes
+        while continue_polling_pipes:
+            if pipe.poll():
+                msg = pipe.recv()
+                try:
+                    future = pending_reqs[msg.req_id]
+                except KeyError:
+                    print("wtf")
+                del pending_reqs[msg.req_id]
+                future.set_result((msg))
             else:
-                # If the queue is empy, sleep for a bit to allow items to accumulate
-                time.sleep(flush_every_s - elapsed_s)
-                continue
+                await asyncio.sleep(0)
 
-        if len(accumulated_batch) >= max_batch_size:
-            flush_batch()
-
-
-def tqdm_stats_loop(tqdm_mcts_iters_queue: mp.Queue, total: int | None) -> None:
-    with tqdm(desc="MCTS Iterations", unit="it", total=total) as pbar:
-        while True:
-            stat = tqdm_mcts_iters_queue.get()
-            if stat is None:
-                return
-            pbar.update(stat)
-
-
-def sample_generator_process(
-    process_id: int,
-    game_id_queue: mp.Queue,
-    pos_in_queue: mp.Queue,
-    pos_out_queue: mp.Queue,
-    sample_out_queue: mp.Queue,
-    tqdm_mcts_iters_queue: mp.Queue,
-    mcts_iterations: int,
-    exploration_constant: float,
-    n_coroutines_per_process: int,
-) -> None:
-    asyncio.run(
-        sample_generator_coroutine(
-            process_id,
-            game_id_queue,
-            pos_in_queue,
-            pos_out_queue,
-            sample_out_queue,
-            tqdm_mcts_iters_queue,
-            mcts_iterations,
-            exploration_constant,
-            n_coroutines_per_process,
-        )
-    )
-    print(f"P{process_id} Sample generator coroutine finished. Exiting process now.")
-
-    for q in [
-        game_id_queue,
-        pos_in_queue,
-        pos_out_queue,
-        sample_out_queue,
-        tqdm_mcts_iters_queue,
-    ]:
-        q.close()
-        q.join_thread()
-
-    sys.exit()
-    # We need to explicitly exit the child process as reading from mp.Queue creates background
-    # # threads that don't automatically clean up.
-    # mp.current_process().kill()
-    # # os._exit()
-
-
-async def sample_generator_coroutine(
-    process_id: int,
-    game_id_queue: mp.Queue,
-    pos_in_queue: mp.Queue,
-    pos_out_queue: mp.Queue,
-    sample_out_queue: mp.Queue,
-    tqdm_mcts_iters_queue: mp.Queue,
-    mcts_iterations: int,
-    exploration_constant: float,
-    n_coroutines_per_process: int,
-) -> None:
-    """Background process that takes game_ids and outputs samples."""
-
-    pos_result_futures: Dict[(GameID, Ply), asyncio.Future] = {}
-
-    async def pos_out_queue_manager():
-        """
-        Reads results from pos_out_queue and dispatches them to the appropriate futures.
-        """
-
-        while True:
-            try:
-                game_id, ply, policy, value = pos_out_queue.get(block=False)
-            except queue.Empty:
-                await asyncio.sleep(0.02)
-                continue
-
-            future = pos_result_futures[(game_id, ply)]
-            future.set_result((policy, value))
-            del pos_result_futures[(game_id, ply)]
-
-    async def enqueue_pos(game_id: GameID, pos: Pos) -> Tuple[Policy, Value]:
-        """
-        Queues a position for batch evaluation whose result will be provided by
-        pos_out_queue_manager above.
-        """
-        ply = get_ply(pos)
-        result_future = asyncio.get_running_loop().create_future()
-        pos_result_futures[(game_id, ply)] = result_future
-        pos_in_queue.put((process_id, game_id, ply, pos))
-        return await result_future
-
-    pos_manager_task = asyncio.create_task(pos_out_queue_manager())
-
-    async def game_gen_coro(coro_id: int):
-        """Loop that generates games and puts them into sample_out_queue."""
-        while True:
-            try:
-                game_id = game_id_queue.get(block=False)
-            except queue.Empty:
-                print(f"Coroutine {coro_id} for process {process_id} terminating")
-                return
-
-            samples = await gen_game(
-                eval=enqueue_pos,
-                game_id=game_id,
-                mcts_iterations=mcts_iterations,
-                exploration_constant=exploration_constant,
-                tqdm_mcts_iters_queue=tqdm_mcts_iters_queue,
+    async def create_worker_coros():
+        nonlocal continue_polling_pipes
+        asyncio.create_task(poll_pipe())
+        await asyncio.gather(
+            *(
+                worker_coro(
+                    worker_id=worker_id,
+                    coro_id=i,
+                    get_game_id=get_game_id,
+                    eval_pos=eval_pos,
+                    submit_game=submit_game,
+                    mcts_iterations=mcts_iterations,
+                    exploration_constant=exploration_constant,
+                )
+                for i in range(n_coroutines_per_process)
             )
-            for sample in samples:
-                sample_out_queue.put(sample)
+        )
+        continue_polling_pipes = False
 
-    await asyncio.gather(*[game_gen_coro(i) for i in range(n_coroutines_per_process)])
-    print(f"P{process_id} Game gen coros finished")
+    asyncio.run(create_worker_coros())
+    pipe.send(WorkerExitSignalReq(req_id=create_req_id(), worker_id=worker_id))
 
-    pos_manager_task.cancel()
-    print(f"P{process_id} Pos manager task finished")
+
+async def worker_coro(
+    worker_id: int,
+    coro_id: int,
+    get_game_id: Callable[[], Awaitable[Optional[GameID]]],
+    eval_pos: Callable[[Pos], Awaitable[Tuple[Policy, Value]]],
+    submit_game: Callable[[List[Sample]], Awaitable[None]],
+    mcts_iterations: int,
+    exploration_constant: float,
+) -> None:
+    while True:
+        game_id = await get_game_id()
+        if game_id is None:
+            return
+        game = await gen_game(game_id, eval_pos, mcts_iterations, exploration_constant)
+        await submit_game(game)
 
 
 async def gen_game(
-    eval: Callable[[GameID, Pos], Awaitable[Tuple[Policy, Value]]],
     game_id: GameID,
+    eval_pos: Callable[[Pos], Awaitable[Tuple[Policy, Value]]],
     mcts_iterations: int,
     exploration_constant: float,
-    tqdm_mcts_iters_queue: Optional[mp.Queue] = None,
-) -> List[Sample]:
-    """
-    Generates a single game of self-play, appending the results to out_samples.  Asyncio coroutine.
-    """
-
-    async def stateless_eval(pos: Pos) -> Tuple[Policy, Value]:
-        return await eval(game_id, pos)
-
-    results: List[Tuple[GameID, Pos, Policy]] = []
-
-    # Generate moves until terminal state
+) -> List[Tuple[GameID, Pos, Policy, Value]]:
     pos = STARTING_POS
+    results: List[Tuple[GameID, Pos, Policy]] = []
     while (res := is_game_over(pos)) is None:
         policy = await mcts(
             pos,
-            eval_pos=stateless_eval,
+            eval_pos=eval_pos,
             n_iterations=mcts_iterations,
             exploration_constant=exploration_constant,
-            tqdm_mcts_iters_queue=tqdm_mcts_iters_queue,
+            tqdm_mcts_iters_queue=None,
         )
         results.append((game_id, pos, policy))
         move = np.random.choice(range(len(policy)), p=policy)
@@ -362,3 +360,13 @@ async def gen_game(
         # Alternate the sign of the final value as the board perspective changes between each move
         final_value *= -1
     return ret
+
+
+def create_req_id() -> ReqID:
+    # TODO: Use a better req_id generator than rand int
+    return ReqID(np.random.randint(0, sys.maxsize))
+
+
+def run_model_no_grad(model, x):
+    with torch.no_grad():
+        return model(x)

@@ -2,21 +2,18 @@ from c4 import N_COLS, is_game_over
 
 import torch
 import pytest
-from pytorch_lightning.loggers.logger import DummyLogger
 
-from self_play import gen_samples
+from self_play import generate_samples
 
 
 @pytest.mark.asyncio
 async def test_gen_sample():
-    model = MockModel()
-    poss = await gen_samples(
-        eval1=model,
-        eval2=model,
+    poss = await generate_samples(
+        model=MockModel(),
         n_games=1,
         mcts_iterations=50,
         exploration_constant=1.4,
-        tb_logger=DummyLogger(),
+        n_processes=1,
     )
 
     _, pos, _, value = poss[-1]  # The last position in the game

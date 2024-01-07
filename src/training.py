@@ -13,7 +13,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from nn import ConnectFourNet
-from self_play_concurrent import Sample, generate_samples
+from self_play import Sample, generate_samples
 
 
 async def train(
