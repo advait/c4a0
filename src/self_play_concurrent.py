@@ -81,7 +81,7 @@ class WorkerExitSignalReq(Req):
 
 
 async def generate_samples(
-    nn: ConnectFourNet,
+    model: ConnectFourNet,
     n_games: int,
     mcts_iterations: int,
     exploration_constant: float,
@@ -92,7 +92,9 @@ async def generate_samples(
     pipes: List[mp.Pipe] = []
     workers: List[mp.Process] = []
     n_alive_workers = n_processes
-    nn_thread = ThreadPoolExecutor(max_workers=1)
+    model_bg_thread = ThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="nn_bg_thread"
+    )
     samples: List[Sample] = []
     cur_game_id: int = 0
 
@@ -140,14 +142,12 @@ async def generate_samples(
 
         elif isinstance(req, NNReq):
             # TODO: Handle batching positions
-            pos_tensor = torch.from_numpy(req.pos).unsqueeze(0)
-            policy = torch.ones(1, N_COLS) / N_COLS
-            value = torch.zeros(1)
-            # policy, value = await asyncio.get_running_loop().run_in_executor(
-            #     nn_thread, nn, pos_tensor
-            # )
-            policy = policy.squeeze(0).numpy()
-            value = value.squeeze(0).item()
+            pos_tensor = torch.from_numpy(req.pos).unsqueeze(0).float().cuda()
+            policy, value = await asyncio.get_running_loop().run_in_executor(
+                model_bg_thread, run_model_no_grad, model, pos_tensor
+            )
+            policy = policy.squeeze(0).cpu().numpy()
+            value = value.squeeze(0).cpu().item()
             pipe.send(NNRes(req_id=req.req_id, policy=policy, value=value))
 
         elif isinstance(req, SubmitGameReq):
@@ -294,3 +294,8 @@ async def set_future(future: asyncio.Future, result: object) -> None:
 def create_req_id() -> ReqID:
     # Use a better req_id generator than rand int
     return ReqID(np.random.randint(0, 1e12))
+
+
+def run_model_no_grad(model, x):
+    with torch.no_grad():
+        return model(x)

@@ -43,7 +43,7 @@ async def train(
     if not samples:
         logger.info("No cached samples found. Generating samples from self-play.")
         samples = await generate_samples(
-            nn=model,
+            model=model,
             n_games=n_games,
             mcts_iterations=mcts_iterations,
             exploration_constant=exploration_constant,

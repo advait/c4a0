@@ -1,8 +1,5 @@
-import asyncio
-import concurrent.futures
 from typing import List, Tuple, TypeVarTuple
 
-import torch
 
 Ts = TypeVarTuple("Ts")
 Ls = TypeVarTuple("Ls")
@@ -19,38 +16,3 @@ def unzip(tuples: List[Tuple[*Ts]]) -> Tuple[*Ls]:
             ret[i].append(item)
 
     return ret
-
-
-bg_thread_executor = concurrent.futures.ThreadPoolExecutor(
-    thread_name_prefix="nn_bg_thread",
-    max_workers=1,
-)
-
-
-async def model_forward_bg_thread(model, x):
-    """
-    Runs a forward pass on the model (in a no_grad context) on a background thread with an async
-    interface.
-    """
-
-    def run_model_no_grad(x_):
-        with torch.no_grad():
-            return model(x_)
-
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(bg_thread_executor, run_model_no_grad, x)
-
-
-def async_to_sync(func):
-    """
-    Wraps an asyncio function to produce a synchronous/blocking version.
-
-    Intended to run in its own process that doesn't have an event loop yet.
-    """
-
-    def wrapper(*args):
-        ret = asyncio.run(func(*args))
-        print("async_to_sync wrapper returning")
-        return ret
-
-    return wrapper
