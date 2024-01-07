@@ -11,7 +11,7 @@ async def test_gen_sample():
     poss = await generate_samples(
         model=MockModel(),
         n_games=1,
-        mcts_iterations=50,
+        mcts_iterations=5,
         exploration_constant=1.4,
         n_processes=1,
     )

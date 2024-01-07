@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import logging
 import multiprocessing as mp
+from multiprocessing.connection import Connection
 import sys
 from textwrap import dedent
 import time
@@ -120,7 +121,9 @@ async def generate_samples(
 
     logger = logging.getLogger(__name__)
 
+    n_processes = min(n_processes, n_games)
     n_coroutines_per_process = max(n_games // n_processes, 1)
+
     logger.info(
         dedent(
             f"""
@@ -136,7 +139,7 @@ async def generate_samples(
         ).strip()
     )
 
-    pipes: List[mp.Pipe] = []
+    pipes: List[Optional[Connection]] = []
     workers: List[mp.Process] = []
     n_alive_workers = n_processes
     generated_samples: List[Sample] = []
@@ -163,16 +166,32 @@ async def generate_samples(
         worker.start()
 
     continue_server_loops = True
+    # Key flag that, when set to False, tells the poll_worker_pipes_loop and nn_flush_loop to exit
 
-    async def poll_pipes():
+    async def poll_worker_pipes_loop():
         while continue_server_loops:
-            for pipe in pipes:
+            if all(pipe is None for pipe in pipes):
+                return
+
+            for process_id, pipe in enumerate(pipes):
+                msg_handled = False
+                if pipe is None:
+                    continue
                 if pipe.poll():
-                    msg = pipe.recv()
+                    try:
+                        msg = pipe.recv()
+                    except EOFError:
+                        # Pipe closed via terminated process
+                        pipes[process_id] = None
                     # Note we technically don't explicitly block on this task, but it's fine
                     # because we're manually waiting for worker termination via WorkerExitSignalReq
                     asyncio.create_task(handle_req(msg, pipe))
-            await asyncio.sleep(0)
+                    msg_handled
+
+                if msg_handled:
+                    await asyncio.sleep(0)
+                else:
+                    await asyncio.sleep(0.01)
 
     async def handle_req(req: Req, pipe: mp.Pipe) -> None:
         nonlocal n_alive_workers, continue_server_loops, n_games, cur_game_id
@@ -204,6 +223,13 @@ async def generate_samples(
 
     async def nn_flush():
         nonlocal nn_last_flush_s, nn_pos_queue
+
+        if len(nn_pos_queue) == 0:
+            # If there are no positions to evaluate, exit early and reset the timer
+            nn_last_flush_s = time.time()
+            await asyncio.sleep(0.1)
+            return
+
         # Group identical positions together to avoid duplicate work
         pos_dict = defaultdict(list)
         for pos, pipe, req_id in nn_pos_queue:
@@ -228,7 +254,7 @@ async def generate_samples(
         nn_last_flush_s = time.time()
 
     nn_flush_loop_task = asyncio.create_task(nn_flush_loop())
-    await poll_pipes()
+    await poll_worker_pipes_loop()
     await nn_flush_loop_task
 
     for worker in workers:
@@ -246,6 +272,7 @@ def worker_process(
     mcts_iterations: int,
     exploration_constant: float,
 ) -> None:
+    logger = logging.getLogger(__name__)
     pending_reqs: Dict[ReqID, asyncio.Future] = {}
     continue_polling_pipes = True
 
@@ -275,14 +302,13 @@ def worker_process(
         while continue_polling_pipes:
             if pipe.poll():
                 msg = pipe.recv()
-                try:
-                    future = pending_reqs[msg.req_id]
-                except KeyError:
-                    print("wtf")
+                future = pending_reqs[msg.req_id]
                 del pending_reqs[msg.req_id]
                 future.set_result((msg))
+            elif len(pending_reqs) > 0:
+                await asyncio.sleep(0.01)
             else:
-                await asyncio.sleep(0)
+                await asyncio.sleep(0.1)
 
     async def create_worker_coros():
         nonlocal continue_polling_pipes
@@ -305,6 +331,7 @@ def worker_process(
 
     asyncio.run(create_worker_coros())
     pipe.send(WorkerExitSignalReq(req_id=create_req_id(), worker_id=worker_id))
+    logger.info(f"{worker_id} Worker process exiting")
 
 
 async def worker_coro(
@@ -316,9 +343,11 @@ async def worker_coro(
     mcts_iterations: int,
     exploration_constant: float,
 ) -> None:
+    logger = logging.getLogger(__name__)
     while True:
         game_id = await get_game_id()
         if game_id is None:
+            logger.info(f"{worker_id}.{coro_id} Worker coro exiting")
             return
         game = await gen_game(game_id, eval_pos, mcts_iterations, exploration_constant)
         await submit_game(game)
@@ -330,6 +359,7 @@ async def gen_game(
     mcts_iterations: int,
     exploration_constant: float,
 ) -> List[Tuple[GameID, Pos, Policy, Value]]:
+    logger = logging.getLogger(__name__)
     pos = STARTING_POS
     results: List[Tuple[GameID, Pos, Policy]] = []
     while (res := is_game_over(pos)) is None:
@@ -342,11 +372,13 @@ async def gen_game(
         )
         results.append((game_id, pos, policy))
         move = np.random.choice(range(len(policy)), p=policy)
+        logger.info(f"{game_id}.{get_ply(pos)} move: {move}, policy: {policy}")
         pos = make_move(pos, move)
 
     # Because there isn't a valid policy a terminal state, we simply use a uniform policy
     final_policy = np.ones(N_COLS) / N_COLS
     results.append((game_id, pos, final_policy))
+    logger.info(f"{game_id}.{get_ply(pos)} finished result: {res.value}")
 
     final_value = res.value
     if len(results) % 2 == 0:

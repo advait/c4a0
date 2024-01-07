@@ -17,8 +17,8 @@ from self_play import Sample, generate_samples
 
 
 async def train(
-    n_games: int = 10,
-    mcts_iterations: int = 20,
+    n_games: int = 1000,
+    mcts_iterations: int = 150,
     exploration_constant: float = 1.4,
     batch_size: int = 100,
 ):
@@ -47,7 +47,6 @@ async def train(
             n_games=n_games,
             mcts_iterations=mcts_iterations,
             exploration_constant=exploration_constant,
-            n_processes=5,
             nn_max_batch_size=20000,
         )
         print(f"{len(samples)} Samples generated")
