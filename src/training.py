@@ -47,9 +47,8 @@ async def train(
             n_games=n_games,
             mcts_iterations=mcts_iterations,
             exploration_constant=exploration_constant,
-            n_processes=2,
-            n_coroutines_per_process=1,
-            max_nn_batch_size=20000,
+            n_processes=5,
+            nn_max_batch_size=20000,
         )
         print(f"{len(samples)} Samples generated")
         exit(0)

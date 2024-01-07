@@ -6,7 +6,6 @@ import asyncio
 from collections import defaultdict
 import logging
 import multiprocessing as mp
-import os
 import queue
 import sys
 import threading
