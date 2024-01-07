@@ -3,7 +3,6 @@ Logic for Monte Carlo Tree Search
 """
 
 import logging
-import multiprocessing as mp
 from typing import Awaitable, Callable, List, Optional, Tuple
 
 from c4 import N_COLS, Pos, get_legal_moves, is_game_over, make_move

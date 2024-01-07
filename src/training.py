@@ -17,16 +17,17 @@ from self_play import Sample, generate_samples
 
 
 async def train(
-    n_games: int = 2000,
-    mcts_iterations: int = 150,
+    n_games: int = 10,
+    mcts_iterations: int = 20,
     exploration_constant: float = 1.4,
     batch_size: int = 100,
+    device: torch.device = "cuda" if torch.cuda.is_available() else "cpu",
 ):
     logger = logging.getLogger(__name__)
 
     gen, model = load_latest_model()
     logger.info(f"Loaded model from gen {gen}")
-    model.to("cuda")
+    model.to(device)
     gen += 1  # Training next gen
 
     # tb_logger = TensorBoardLogger("lightning_logs", name=f"gen_{gen}")

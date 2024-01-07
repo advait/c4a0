@@ -120,6 +120,7 @@ async def generate_samples(
     n_processes: int = mp.cpu_count() - 1,
     nn_flush_freq_s: float = 0.01,
     nn_max_batch_size: int = 20000,
+    device: torch.device = "cuda" if torch.cuda.is_available() else "cpu",
 ) -> List[Sample]:
     """
     Uses multiprocessing to generate n_games worth of training data.
@@ -248,7 +249,7 @@ async def generate_samples(
 
         positions_bytes = list(pos_dict.keys())
         positions = [pos_from_bytes(s) for s in positions_bytes]
-        pos_tensor = torch.from_numpy(np.array(positions)).float().to("cuda")
+        pos_tensor = torch.from_numpy(np.array(positions)).float().to(device)
         policies, values = await asyncio.get_running_loop().run_in_executor(
             nn_bg_thread, run_model_no_grad, model, pos_tensor
         )
@@ -383,6 +384,8 @@ async def gen_game(
     submit_mcts_iter: Optional[Callable[[], Awaitable[None]]],
 ) -> List[Tuple[GameID, Pos, Policy, Value]]:
     logger = logging.getLogger(__name__)
+    rng = np.random.default_rng(seed=game_id)
+
     pos = STARTING_POS
     results: List[Tuple[GameID, Pos, Policy]] = []
     while (res := is_game_over(pos)) is None:
@@ -394,8 +397,8 @@ async def gen_game(
             submit_mcts_iter=submit_mcts_iter,
         )
         results.append((game_id, pos, policy))
-        move = np.random.choice(range(len(policy)), p=policy)
-        # logger.info(f"{game_id}.{get_ply(pos)} move: {move}, policy: {policy}")
+        move = rng.choice(range(len(policy)), p=policy)
+        logger.info(f"{game_id}.{get_ply(pos)} move: {move}, policy: {policy}")
         pos = make_move(pos, move)
 
     # Because there isn't a valid policy a terminal state, we simply use a uniform policy
