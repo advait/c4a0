@@ -4,7 +4,7 @@ Generation-based network training, alternating between self-play and training.
 import logging
 import os
 import pickle
-from typing import List, NewType, Optional
+from typing import List, NewType, Optional, Tuple
 import numpy as np
 
 import pytorch_lightning as pl
@@ -13,11 +13,14 @@ import torch
 from torch.utils.data import DataLoader
 
 from nn import ConnectFourNet
-from self_play import Sample, gen_samples_mp
+from self_play_concurrent import Sample, generate_samples
 
 
 async def train(
-    n_games=10, mcts_iterations=5, exploration_constant=1.4, batch_size=100
+    n_games: int = 10,
+    mcts_iterations: int = 20,
+    exploration_constant: float = 1.4,
+    batch_size: int = 100,
 ):
     logger = logging.getLogger(__name__)
 
@@ -39,14 +42,17 @@ async def train(
     samples = load_cached_samples(gen)
     if not samples:
         logger.info("No cached samples found. Generating samples from self-play.")
-        samples = gen_samples_mp(
+        samples = await generate_samples(
             nn=model,
             n_games=n_games,
-            n_processes=2,
-            n_coroutines_per_process=1,
             mcts_iterations=mcts_iterations,
             exploration_constant=exploration_constant,
+            n_processes=2,
+            n_coroutines_per_process=1,
+            max_nn_batch_size=20000,
         )
+        print(f"{len(samples)} Samples generated")
+        exit(0)
         store_samples(samples, gen)
         logger.info(f"Done generating {len(samples)} samples. Caching for re-use.")
     else:
@@ -76,7 +82,7 @@ async def train(
 ModelGen = NewType("ModelGen", int)
 
 
-def load_latest_model() -> (ModelGen, ConnectFourNet):
+def load_latest_model() -> Tuple[ModelGen, ConnectFourNet]:
     """Loads the latest generation of model from the checkpoints directory."""
     logger = logging.getLogger(__name__)
     gens = sorted(os.listdir("checkpoints"))
@@ -84,7 +90,7 @@ def load_latest_model() -> (ModelGen, ConnectFourNet):
         logger.info("No checkpoints found. Starting from scratch.")
         return 0, ConnectFourNet()
 
-    latest_gen = int(gens[-1])
+    latest_gen: ModelGen = int(gens[-1])
     gen_dir = os.path.join("checkpoints", str(latest_gen))
     latest_checkpoint = max(
         os.listdir(gen_dir),

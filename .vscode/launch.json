@@ -1,7 +1,7 @@
 {
   "configurations": [
     {
-      "name": "Python: Current File",
+      "name": "Python: src/main.py",
       "type": "python",
       "request": "launch",
       "program": "src/main.py",

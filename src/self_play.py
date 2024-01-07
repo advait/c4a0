@@ -6,7 +6,9 @@ import asyncio
 from collections import defaultdict
 import logging
 import multiprocessing as mp
+import os
 import queue
+import sys
 import threading
 import time
 from typing import Awaitable, Callable, Dict, List, NewType, Optional, Tuple
@@ -71,10 +73,9 @@ def gen_samples_mp(
     sample_out_queue = mp.Queue()  # Queue for output samples
     tqdm_mcts_iters_queue = mp.Queue()  # TQDM stats queue for MCTS iterations
 
-    fn = async_to_sync(mp_sample_generator)
     processes = [
         mp.Process(
-            target=fn,
+            target=sample_generator_process,
             args=(
                 process_id,
                 game_id_queue,
@@ -203,7 +204,50 @@ def tqdm_stats_loop(tqdm_mcts_iters_queue: mp.Queue, total: int | None) -> None:
             pbar.update(stat)
 
 
-async def mp_sample_generator(
+def sample_generator_process(
+    process_id: int,
+    game_id_queue: mp.Queue,
+    pos_in_queue: mp.Queue,
+    pos_out_queue: mp.Queue,
+    sample_out_queue: mp.Queue,
+    tqdm_mcts_iters_queue: mp.Queue,
+    mcts_iterations: int,
+    exploration_constant: float,
+    n_coroutines_per_process: int,
+) -> None:
+    asyncio.run(
+        sample_generator_coroutine(
+            process_id,
+            game_id_queue,
+            pos_in_queue,
+            pos_out_queue,
+            sample_out_queue,
+            tqdm_mcts_iters_queue,
+            mcts_iterations,
+            exploration_constant,
+            n_coroutines_per_process,
+        )
+    )
+    print(f"P{process_id} Sample generator coroutine finished. Exiting process now.")
+
+    for q in [
+        game_id_queue,
+        pos_in_queue,
+        pos_out_queue,
+        sample_out_queue,
+        tqdm_mcts_iters_queue,
+    ]:
+        q.close()
+        q.join_thread()
+
+    sys.exit()
+    # We need to explicitly exit the child process as reading from mp.Queue creates background
+    # # threads that don't automatically clean up.
+    # mp.current_process().kill()
+    # # os._exit()
+
+
+async def sample_generator_coroutine(
     process_id: int,
     game_id_queue: mp.Queue,
     pos_in_queue: mp.Queue,
@@ -269,7 +313,6 @@ async def mp_sample_generator(
     await asyncio.gather(*[game_gen_coro(i) for i in range(n_coroutines_per_process)])
     print(f"P{process_id} Game gen coros finished")
 
-    stop_pos_manager = True
     pos_manager_task.cancel()
     print(f"P{process_id} Pos manager task finished")
 
