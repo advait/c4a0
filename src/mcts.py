@@ -137,7 +137,7 @@ async def mcts(
     n_iterations: int,
     exploration_constant: float,
     eval_pos: EvaluatePos,
-    tqdm_mcts_iters_queue: Optional[mp.Queue] = None,
+    submit_mcts_iter: Optional[Callable[[int], Awaitable[None]]],
 ) -> Policy:
     """
     Runs the MCTS algorithm to determine the best move from the given position.
@@ -147,8 +147,8 @@ async def mcts(
     for _ in range(n_iterations):
         leaf = root.select_leaf(exploration_constant)
         await leaf.expand_children(eval_pos)
-        if tqdm_mcts_iters_queue is not None:
-            tqdm_mcts_iters_queue.put(1)
+        if submit_mcts_iter is not None:
+            await submit_mcts_iter()
 
     child_visits = np.array(
         [child.visit_count if child is not None else 0 for child in root.children]

@@ -17,7 +17,7 @@ from self_play import Sample, generate_samples
 
 
 async def train(
-    n_games: int = 1000,
+    n_games: int = 2000,
     mcts_iterations: int = 150,
     exploration_constant: float = 1.4,
     batch_size: int = 100,

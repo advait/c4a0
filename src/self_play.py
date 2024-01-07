@@ -23,6 +23,7 @@ from typing import Awaitable, Callable, Dict, List, NewType, Optional, Tuple
 
 import numpy as np
 import torch
+from tqdm import tqdm
 
 from c4 import (
     N_COLS,
@@ -93,6 +94,11 @@ class NNRes(Res):
 
 
 @dataclass
+class SubmitMCTSIter(Req):
+    """Indicates to the parent that an MCTS iteration was complete (for tqdm stats)."""
+
+
+@dataclass
 class SubmitGameReq(Req):
     """Submits a completed game to the parent process. No response is needed."""
 
@@ -149,6 +155,10 @@ async def generate_samples(
     nn_bg_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nn_bg_thread")
     nn_last_flush_s = time.time()
 
+    pbar = tqdm(
+        total=n_games * 30 * mcts_iterations, desc="MCTS iterations", unit="iter"
+    )
+
     for worker_id in range(n_processes):
         parent_conn, child_conn = mp.Pipe()
         pipes.append(parent_conn)
@@ -180,20 +190,17 @@ async def generate_samples(
                 if pipe.poll():
                     try:
                         msg = pipe.recv()
+                        handle_req(msg, pipe)
+                        msg_handled = True
                     except EOFError:
                         # Pipe closed via terminated process
                         pipes[process_id] = None
-                    # Note we technically don't explicitly block on this task, but it's fine
-                    # because we're manually waiting for worker termination via WorkerExitSignalReq
-                    asyncio.create_task(handle_req(msg, pipe))
-                    msg_handled
-
                 if msg_handled:
                     await asyncio.sleep(0)
                 else:
                     await asyncio.sleep(0.01)
 
-    async def handle_req(req: Req, pipe: mp.Pipe) -> None:
+    def handle_req(req: Req, pipe: mp.Pipe) -> None:
         nonlocal n_alive_workers, continue_server_loops, n_games, cur_game_id
         if isinstance(req, WorkerExitSignalReq):
             n_alive_workers -= 1
@@ -212,6 +219,9 @@ async def generate_samples(
 
         elif isinstance(req, SubmitGameReq):
             generated_samples.extend(req.samples)
+
+        elif isinstance(req, SubmitMCTSIter):
+            pbar.update(1)
 
     async def nn_flush_loop():
         nonlocal nn_last_flush_s
@@ -256,6 +266,7 @@ async def generate_samples(
     nn_flush_loop_task = asyncio.create_task(nn_flush_loop())
     await poll_worker_pipes_loop()
     await nn_flush_loop_task
+    pbar.close()
 
     for worker in workers:
         worker.join()
@@ -267,7 +278,7 @@ async def generate_samples(
 
 def worker_process(
     worker_id: int,
-    pipe: mp.Pipe,
+    pipe: Connection,
     n_coroutines_per_process: int,
     mcts_iterations: int,
     exploration_constant: float,
@@ -297,6 +308,9 @@ def worker_process(
     async def submit_game(samples: List[Sample]) -> None:
         pipe.send(SubmitGameReq(req_id=create_req_id(), samples=samples))
 
+    async def submit_mcts_iter() -> None:
+        pipe.send(SubmitMCTSIter(req_id=create_req_id()))
+
     async def poll_pipe():
         nonlocal continue_polling_pipes
         while continue_polling_pipes:
@@ -321,6 +335,7 @@ def worker_process(
                     get_game_id=get_game_id,
                     eval_pos=eval_pos,
                     submit_game=submit_game,
+                    submit_mcts_iter=submit_mcts_iter,
                     mcts_iterations=mcts_iterations,
                     exploration_constant=exploration_constant,
                 )
@@ -340,6 +355,7 @@ async def worker_coro(
     get_game_id: Callable[[], Awaitable[Optional[GameID]]],
     eval_pos: Callable[[Pos], Awaitable[Tuple[Policy, Value]]],
     submit_game: Callable[[List[Sample]], Awaitable[None]],
+    submit_mcts_iter: Callable[[], Awaitable[None]],
     mcts_iterations: int,
     exploration_constant: float,
 ) -> None:
@@ -349,7 +365,13 @@ async def worker_coro(
         if game_id is None:
             logger.info(f"{worker_id}.{coro_id} Worker coro exiting")
             return
-        game = await gen_game(game_id, eval_pos, mcts_iterations, exploration_constant)
+        game = await gen_game(
+            game_id=game_id,
+            eval_pos=eval_pos,
+            mcts_iterations=mcts_iterations,
+            exploration_constant=exploration_constant,
+            submit_mcts_iter=submit_mcts_iter,
+        )
         await submit_game(game)
 
 
@@ -358,6 +380,7 @@ async def gen_game(
     eval_pos: Callable[[Pos], Awaitable[Tuple[Policy, Value]]],
     mcts_iterations: int,
     exploration_constant: float,
+    submit_mcts_iter: Optional[Callable[[], Awaitable[None]]],
 ) -> List[Tuple[GameID, Pos, Policy, Value]]:
     logger = logging.getLogger(__name__)
     pos = STARTING_POS
@@ -368,17 +391,17 @@ async def gen_game(
             eval_pos=eval_pos,
             n_iterations=mcts_iterations,
             exploration_constant=exploration_constant,
-            tqdm_mcts_iters_queue=None,
+            submit_mcts_iter=submit_mcts_iter,
         )
         results.append((game_id, pos, policy))
         move = np.random.choice(range(len(policy)), p=policy)
-        logger.info(f"{game_id}.{get_ply(pos)} move: {move}, policy: {policy}")
+        # logger.info(f"{game_id}.{get_ply(pos)} move: {move}, policy: {policy}")
         pos = make_move(pos, move)
 
     # Because there isn't a valid policy a terminal state, we simply use a uniform policy
     final_policy = np.ones(N_COLS) / N_COLS
     results.append((game_id, pos, final_policy))
-    logger.info(f"{game_id}.{get_ply(pos)} finished result: {res.value}")
+    # logger.info(f"{game_id}.{get_ply(pos)} finished result: {res.value}")
 
     final_value = res.value
     if len(results) % 2 == 0:
