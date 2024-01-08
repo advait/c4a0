@@ -75,7 +75,7 @@ class GetGameIDRes(Res):
     the child process that it should exit.
     """
 
-    game_id: Optional[int]
+    game_id: Optional[GameID]
 
 
 @dataclass
@@ -120,7 +120,7 @@ async def generate_samples(
     n_processes: int = mp.cpu_count() - 1,
     nn_flush_freq_s: float = 0.01,
     nn_max_batch_size: int = 20000,
-    device: torch.device = "cuda" if torch.cuda.is_available() else "cpu",
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
 ) -> List[Sample]:
     """
     Uses multiprocessing to generate n_games worth of training data.
@@ -150,9 +150,9 @@ async def generate_samples(
     workers: List[mp.Process] = []
     n_alive_workers = n_processes
     generated_samples: List[Sample] = []
-    cur_game_id: int = 0
+    cur_game_id: GameID = GameID(0)
 
-    nn_pos_queue: List[Tuple[Pos, mp.Pipe, ReqID]] = []
+    nn_pos_queue: List[Tuple[Pos, Connection, ReqID]] = []
     nn_bg_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nn_bg_thread")
     nn_last_flush_s = time.time()
 
@@ -201,7 +201,7 @@ async def generate_samples(
                 else:
                     await asyncio.sleep(0.01)
 
-    def handle_req(req: Req, pipe: mp.Pipe) -> None:
+    def handle_req(req: Req, pipe: Connection) -> None:
         nonlocal n_alive_workers, continue_server_loops, n_games, cur_game_id
         if isinstance(req, WorkerExitSignalReq):
             n_alive_workers -= 1
@@ -213,7 +213,7 @@ async def generate_samples(
                 pipe.send(GetGameIDRes(req_id=req.req_id, game_id=None))
             else:
                 pipe.send(GetGameIDRes(req_id=req.req_id, game_id=cur_game_id))
-                cur_game_id += 1
+                cur_game_id = GameID(cur_game_id + 1)
 
         elif isinstance(req, NNReq):
             nn_pos_queue.append((req.pos, pipe, req.req_id))
@@ -278,7 +278,7 @@ async def generate_samples(
 
 
 def worker_process(
-    worker_id: int,
+    worker_id: ProcessID,
     pipe: Connection,
     n_coroutines_per_process: int,
     mcts_iterations: int,
@@ -382,7 +382,7 @@ async def gen_game(
     mcts_iterations: int,
     exploration_constant: float,
     submit_mcts_iter: Optional[Callable[[], Awaitable[None]]],
-) -> List[Tuple[GameID, Pos, Policy, Value]]:
+) -> List[Sample]:
     logger = logging.getLogger(__name__)
     rng = np.random.default_rng(seed=game_id)
 
@@ -402,7 +402,7 @@ async def gen_game(
         pos = make_move(pos, move)
 
     # Because there isn't a valid policy a terminal state, we simply use a uniform policy
-    final_policy = np.ones(N_COLS) / N_COLS
+    final_policy = Policy(np.ones(N_COLS) / N_COLS)
     results.append((game_id, pos, final_policy))
     # logger.info(f"{game_id}.{get_ply(pos)} finished result: {res.value}")
 

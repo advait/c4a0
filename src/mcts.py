@@ -5,7 +5,7 @@ Logic for Monte Carlo Tree Search
 import logging
 from typing import Awaitable, Callable, List, Optional, Tuple
 
-from c4 import N_COLS, Pos, get_legal_moves, is_game_over, make_move
+from c4 import N_COLS, ColIndex, Pos, get_legal_moves, is_game_over, make_move
 
 import numpy as np
 
@@ -26,7 +26,7 @@ class Node:
     visit_count: int
     exploitation_value_sum: float
     initial_policy_value: float
-    children: Optional[List["Node"]]
+    children: Optional[List[Optional["Node"]]]
 
     def __init__(
         self,
@@ -80,9 +80,9 @@ class Node:
                 return float("-inf")
             return n.uct_value(exploration_constant)
 
-        node = self
+        node: Node = self
         while node.children is not None:
-            node = max(node.children, key=sort_key)
+            node = max(node.children, key=sort_key)  # type: ignore
 
         return node
 
@@ -113,7 +113,7 @@ class Node:
 
         self.children = [
             Node(
-                pos=make_move(self.pos, move),
+                pos=make_move(self.pos, ColIndex(move)),
                 parent=self,
                 initial_policy_value=policy[move],
             )
@@ -139,7 +139,7 @@ async def mcts(
     n_iterations: int,
     exploration_constant: float,
     eval_pos: EvaluatePos,
-    submit_mcts_iter: Optional[Callable[[int], Awaitable[None]]] = None,
+    submit_mcts_iter: Optional[Callable[[], Awaitable[None]]] = None,
 ) -> Policy:
     """
     Runs the MCTS algorithm to determine the best move from the given position.
@@ -153,6 +153,9 @@ async def mcts(
             await submit_mcts_iter()
 
     child_visits = np.array(
-        [child.visit_count if child is not None else 0 for child in root.children]
+        [
+            child.visit_count if child is not None else 0
+            for child in (root.children or [])
+        ]
     )
     return child_visits / np.sum(child_visits)

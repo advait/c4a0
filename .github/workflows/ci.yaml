@@ -1,6 +1,5 @@
-name: Python lint and test
+name: c4a0 CI
 
-# Controls when the action will run.
 on:
   # Triggers the workflow on push or pull request events for all branches
   push:
@@ -10,7 +9,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  lint:
+  ci:
     runs-on: ubuntu-latest
 
     steps:
@@ -24,14 +23,18 @@ jobs:
           python -m pip install --upgrade pip poetry
           poetry install --with=dev
 
-      - name: Lint with ruff
+      - name: ruff check (lint)
         run: |
           poetry run ruff check
 
-      - name: Format with ruff
+      - name: ruff format
         run: |
           poetry run ruff format --check
 
-      - name: Run tests with pytest
+      - name: pyright (typechecking)
+        run: |
+          poetry run pyright
+
+      - name: pytest
         run: |
           poetry run pytest

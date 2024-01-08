@@ -11,8 +11,9 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 import torch
 from torch.utils.data import DataLoader
+from c4 import Pos
 
-from nn import ConnectFourNet
+from nn import ConnectFourNet, Policy
 from self_play import Sample, generate_samples
 
 
@@ -21,7 +22,7 @@ async def train(
     mcts_iterations: int = 20,
     exploration_constant: float = 1.4,
     batch_size: int = 100,
-    device: torch.device = "cuda" if torch.cuda.is_available() else "cpu",
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
 ):
     logger = logging.getLogger(__name__)
 
@@ -119,31 +120,40 @@ def load_cached_samples(gen: ModelGen) -> Optional[List[Sample]]:
         return pickle.load(f)
 
 
+SampleTensor = NewType(
+    "SampleTensor", Tuple[int, torch.Tensor, torch.Tensor, torch.Tensor]
+)
+
+
 class PosDataModule(pl.LightningDataModule):
     def __init__(self, samples: List[Sample], batch_size: int):
         super().__init__()
         self.batch_size = batch_size
         samples = samples + [self.flip_sample(s) for s in samples]
-        samples = [
-            (
-                game_id,
-                torch.from_numpy(pos).float(),
-                torch.from_numpy(policy).float(),
-                torch.tensor(value, dtype=torch.float),
+        sample_tensors: List[SampleTensor] = [
+            SampleTensor(
+                (
+                    game_id,
+                    torch.from_numpy(pos).float(),
+                    torch.from_numpy(policy).float(),
+                    torch.tensor(value, dtype=torch.float),
+                )
             )
             for game_id, pos, policy, value in samples
         ]
-        self.training_data, self.validation_data = self.split_samples(samples)
+        self.training_data, self.validation_data = self.split_samples(sample_tensors)
 
     def flip_sample(self, sample: Sample) -> Sample:
         """Flips the sample and policy horizontally to account for connect four symmetry."""
         game_id, pos, policy, value = sample
         # copy is needed as flip returns a view with negative stride that is incompatible w torch
-        pos = np.fliplr(pos).copy()
-        policy = np.flip(policy).copy()
-        return game_id, pos, policy, value
+        pos = Pos(np.fliplr(pos).copy())
+        policy = Policy(np.flip(policy).copy())
+        return Sample((game_id, pos, policy, value))
 
-    def split_samples(self, samples, split_ratio=0.8):
+    def split_samples(
+        self, samples: List[SampleTensor], split_ratio=0.8
+    ) -> Tuple[List[SampleTensor], List[SampleTensor]]:
         """Splits samples into training and validation sets."""
         game_ids = set(sample[0] for sample in samples)
         split_game_id = int(len(game_ids) * split_ratio) + min(game_ids)
@@ -157,7 +167,14 @@ class PosDataModule(pl.LightningDataModule):
         return training_data, validation_data
 
     def train_dataloader(self):
-        return DataLoader(self.training_data, batch_size=self.batch_size, shuffle=True)
+        return DataLoader(
+            self.training_data,  # type: ignore
+            batch_size=self.batch_size,
+            shuffle=True,
+        )
 
     def val_dataloader(self):
-        return DataLoader(self.validation_data, batch_size=self.batch_size)
+        return DataLoader(
+            self.validation_data,  # type: ignore
+            batch_size=self.batch_size,
+        )

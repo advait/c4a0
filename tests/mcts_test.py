@@ -107,11 +107,11 @@ async def test_losing_position():
     assert policy == pytest.approx(UNIFORM_POLICY, abs=0.01)
 
 
-UNIFORM_POLICY: Policy = np.ones(N_COLS) / N_COLS
+UNIFORM_POLICY = Policy(np.ones(N_COLS) / N_COLS)
 
 
 async def uniform_eval_pos(pos: Pos) -> Tuple[Policy, Value]:
     """Simple position evaluator that always returns a value of zero and a uniform policy."""
     policy = UNIFORM_POLICY
-    value = 0.0
+    value = Value(0.0)
     return policy, value

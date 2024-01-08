@@ -9,7 +9,7 @@ from self_play import generate_samples
 @pytest.mark.asyncio
 async def test_gen_sample():
     poss = await generate_samples(
-        model=MockModel(),
+        model=MockModel(),  # type: ignore
         n_games=1,
         mcts_iterations=5,
         exploration_constant=1.4,
