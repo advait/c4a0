@@ -21,7 +21,12 @@ tqdm = "^4.66.1"
 ruff = "^0.1.9"
 pytest = "^7.4.3"
 pytest-asyncio = "^0.23.3"
+pyright = "^1.1.345"
 
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.pyright]
+typeCheckingMode = "basic"
+extraPaths = ["src"]
