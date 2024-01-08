@@ -28,7 +28,7 @@ async def train(
     gen, model = load_latest_model()
     logger.info(f"Loaded model from gen {gen}")
     model.to(device)
-    gen += 1  # Training next gen
+    gen = ModelGen(gen + 1)  # Training next gen
 
     # tb_logger = TensorBoardLogger("lightning_logs", name=f"gen_{gen}")
     logger.info(
@@ -51,7 +51,6 @@ async def train(
             nn_max_batch_size=20000,
         )
         print(f"{len(samples)} Samples generated")
-        exit(0)
         store_samples(samples, gen)
         logger.info(f"Done generating {len(samples)} samples. Caching for re-use.")
     else:
@@ -87,9 +86,9 @@ def load_latest_model() -> Tuple[ModelGen, ConnectFourNet]:
     gens = sorted(os.listdir("checkpoints"))
     if len(gens) == 0:
         logger.info("No checkpoints found. Starting from scratch.")
-        return 0, ConnectFourNet()
+        return ModelGen(0), ConnectFourNet()
 
-    latest_gen: ModelGen = int(gens[-1])
+    latest_gen = ModelGen(int(gens[-1]))
     gen_dir = os.path.join("checkpoints", str(latest_gen))
     latest_checkpoint = max(
         os.listdir(gen_dir),
