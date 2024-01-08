@@ -1,0 +1,12 @@
+{
+  "configurations": [
+    {
+      "name": "Python: src/main.py",
+      "type": "python",
+      "request": "launch",
+      "program": "src/main.py",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

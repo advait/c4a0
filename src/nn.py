@@ -2,7 +2,7 @@
 The Neural Network is used to evaluate the position of the game.
 """
 
-from typing import Callable, NewType, Tuple
+from typing import NewType
 
 import numpy as np
 import torch
@@ -12,7 +12,7 @@ import torchmetrics
 import pytorch_lightning as pl
 from einops import rearrange
 
-from c4 import N_COLS, N_ROWS, Pos
+from c4 import N_COLS, N_ROWS
 
 
 Policy = NewType("Policy", np.ndarray)
@@ -26,9 +26,6 @@ Represents the value of a position, a continuous number in [-1, 1].
 -1 is a win for the -1 player.
 0 is a draw.
 """
-
-EvaluatePos = Callable[[Pos], Tuple[Policy, Value]]
-"""Function that evaluates a position and returns its value and a policy."""
 
 
 class ConnectFourNet(pl.LightningModule):
@@ -76,19 +73,9 @@ class ConnectFourNet(pl.LightningModule):
         optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
         return optimizer
 
-    def single(self, pos: Pos) -> Tuple[Policy, Value]:
-        """Helper function to evaluate a single position (unbatched) in a no_grad context."""
-        pos = torch.from_numpy(pos).float()
-        x = rearrange(pos, "h w -> 1 h w")
-        with torch.no_grad():
-            policy, value = self.forward(x)
-        policy = rearrange(policy, "1 c -> c")
-        value = rearrange(value, "1 v -> v")
-        return policy, value
-
     def training_step(self, batch, batch_idx):
         # Forward pass
-        inputs, policy_labels, value_labels = batch
+        game_ids, inputs, policy_labels, value_labels = batch
         policy_pred, value_pred = self.forward(inputs)
         value_pred = rearrange(value_pred, "b 1 -> b")
 
@@ -99,11 +86,11 @@ class ConnectFourNet(pl.LightningModule):
         value_loss = F.mse_loss(value_pred, value_labels)
 
         loss = policy_loss + value_loss
-        self.log("train_loss", loss)
+        self.log("train_loss", loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        inputs, policy_labels, value_labels = batch
+        game_ids, inputs, policy_labels, value_labels = batch
         policy_pred, value_pred = self.forward(inputs)
         value_pred = rearrange(value_pred, "b 1 -> b")
 
@@ -114,6 +101,6 @@ class ConnectFourNet(pl.LightningModule):
         value_loss = F.mse_loss(value_pred, value_labels)
 
         loss = policy_loss + value_loss
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, prog_bar=True)
         self.log("val_policy_kl_div", policy_loss)
         self.log("val_value_mse", value_loss)

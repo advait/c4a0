@@ -47,7 +47,7 @@ def test_player_win_horizontal():
     pos = STARTING_POS
     for i in range(3):
         pos = make_move(pos, i)  # Player
-        pos = make_move(pos, i + 4)  # Opponent
+        pos = make_move(pos, i)  # Opponent
 
     pos = make_move(pos, 3)  # Winning move for Player
     # Because the board is inverted, the last move results in the opponent winning
