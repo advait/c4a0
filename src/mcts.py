@@ -42,8 +42,11 @@ class Node:
         self.children = None
 
     def exploitation_value(self) -> float:
-        """The exploitation component of the UTC value, i.e. the average win rate."""
-        return self.exploitation_value_sum / (self.visit_count + 1)
+        """
+        The exploitation component of the UTC value, i.e. the average win rate.
+        Because we are viewing the value from the perspective of the parent node, we negate it.
+        """
+        return -1 * self.exploitation_value_sum / (self.visit_count + 1)
 
     def exploration_value(self) -> float:
         """
@@ -90,8 +93,7 @@ class Node:
         assert self.children is None, "expand_children() called on a node with children"
 
         # If the game is over, simply backpropagate the objective game outcome
-        terminal_value = is_game_over(self.pos)
-        if terminal_value is not None:
+        if (terminal_value := is_game_over(self.pos)) is not None:
             self._backpropagate(terminal_value.value)
             return
 
@@ -124,6 +126,7 @@ class Node:
     def _backpropagate(self, value: float) -> None:
         """Backpropagate value up the tree, alternating value signs for each step."""
         pos = self
+
         while pos is not None:
             pos.visit_count += 1
             pos.exploitation_value_sum += value
@@ -136,7 +139,7 @@ async def mcts(
     n_iterations: int,
     exploration_constant: float,
     eval_pos: EvaluatePos,
-    submit_mcts_iter: Optional[Callable[[int], Awaitable[None]]],
+    submit_mcts_iter: Optional[Callable[[int], Awaitable[None]]] = None,
 ) -> Policy:
     """
     Runs the MCTS algorithm to determine the best move from the given position.
