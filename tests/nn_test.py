@@ -11,7 +11,7 @@ def test_random_nn_works():
     with torch.no_grad():
         policy, value = model(pos)
 
-    policy = policy.squeeze(0).detach().numpy()
+    policy = policy.squeeze(0).numpy()
     value = value.squeeze(0).item()
 
     assert len(policy) == N_COLS
@@ -19,7 +19,9 @@ def test_random_nn_works():
     assert -1.0 <= value <= 1.0
 
 
+@pytest.mark.filterwarnings("ignore:You are trying to `self.log()`*")
 def test_loss_of_zero():
+    """Using the model output as training labels should result in a loss of zero."""
     model = ConnectFourNet()
     pos = torch.from_numpy(STARTING_POS).float().unsqueeze(0)
     with torch.no_grad():
@@ -39,3 +41,22 @@ def test_loss_of_zero():
     loss = model.training_step(training_batch, 0)
     loss = loss.detach().item()
     assert loss == pytest.approx(0.0)
+
+
+@pytest.mark.filterwarnings("ignore:You are trying to `self.log()`*")
+def test_loss_of_nonzero():
+    """Using random label data should result in a > 0 loss."""
+    model = ConnectFourNet()
+    pos = torch.from_numpy(STARTING_POS).float().unsqueeze(0)
+    policy = torch.rand((1, N_COLS))
+    value = torch.rand((1,))
+
+    training_batch = (
+        [0],
+        pos,
+        policy,
+        value,
+    )
+    loss = model.training_step(training_batch, 0)
+    loss = loss.detach().item()
+    assert loss > 0.0
