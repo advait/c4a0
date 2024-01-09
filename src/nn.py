@@ -40,26 +40,22 @@ class ConnectFourNet(pl.LightningModule):
         self.fc_policy = nn.Linear(conv_output_size, N_COLS)  # Policy head
         self.fc_value = nn.Linear(conv_output_size, 1)  # Value head
 
-        self.relu = nn.ReLU()
-        self.softmax = nn.Softmax(dim=1)
-        self.tanh = nn.Tanh()
-
         # Metrics
-        self.policy_kl_div = torchmetrics.KLDivergence()
+        self.policy_kl_div = torchmetrics.KLDivergence(log_prob=True)
         self.value_mse = torchmetrics.MeanSquaredError()
 
     def forward(self, x):
         x = rearrange(x, "b h w -> b 1 h w")
-        x = self.relu(self.conv1(x))
-        x = self.relu(self.conv2(x))
-        x = self.relu(self.conv3(x))
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv3(x))
 
         x = rearrange(x, "b c h w -> b (c h w)")
 
-        policy = self.softmax(self.fc_policy(x))
-        value = self.tanh(self.fc_value(x))
+        policy_logprobs = F.log_softmax(self.fc_policy(x), dim=1)
+        value = F.tanh(self.fc_value(x))
 
-        return policy, value
+        return policy_logprobs, value
 
     def _calculate_conv_output_size(self):
         """Helper function to calculate the output size of the last convolutional layer."""
@@ -75,32 +71,32 @@ class ConnectFourNet(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         # Forward pass
-        game_ids, inputs, policy_labels, value_labels = batch
-        policy_pred, value_pred = self.forward(inputs)
+        game_ids, inputs, policy_logprob_targets, value_targets = batch
+        policy_logprob, value_pred = self.forward(inputs)
         value_pred = rearrange(value_pred, "b 1 -> b")
+        policy_logprob_targets = torch.log(policy_logprob_targets)
 
         # Losses
-        policy_labels_log = F.log_softmax(policy_labels, dim=1)
-        policy_pred_log = F.log_softmax(policy_pred, dim=1)
-        policy_loss = self.policy_kl_div(policy_pred_log, policy_labels_log)
-        value_loss = F.mse_loss(value_pred, value_labels)
-
+        policy_loss = self.policy_kl_div(policy_logprob_targets, policy_logprob)
+        value_loss = self.value_mse(value_pred, value_targets)
         loss = policy_loss + value_loss
+
         self.log("train_loss", loss, prog_bar=True)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        game_ids, inputs, policy_labels, value_labels = batch
-        policy_pred, value_pred = self.forward(inputs)
+        # Forward pass
+        game_ids, inputs, policy_logprob_targets, value_targets = batch
+        policy_logprob, value_pred = self.forward(inputs)
         value_pred = rearrange(value_pred, "b 1 -> b")
+        policy_logprob_targets = torch.log(policy_logprob_targets)
 
         # Losses
-        policy_labels_log = F.log_softmax(policy_labels, dim=1)
-        policy_pred_log = F.log_softmax(policy_pred, dim=1)
-        policy_loss = self.policy_kl_div(policy_pred_log, policy_labels_log)
-        value_loss = F.mse_loss(value_pred, value_labels)
-
+        policy_loss = self.policy_kl_div(policy_logprob_targets, policy_logprob)
+        value_loss = self.value_mse(value_pred, value_targets)
         loss = policy_loss + value_loss
+
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_policy_kl_div", policy_loss)
         self.log("val_value_mse", value_loss)
+        return loss

@@ -30,3 +30,12 @@ build-backend = "poetry.core.masonry.api"
 [tool.pyright]
 typeCheckingMode = "basic"
 extraPaths = ["src"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+  # Disable warnings we get form pytorch lightning that clutter pytest output
+  "ignore:pkg_resources is deprecated.*:DeprecationWarning",
+  "ignore:Deprecated call to `pkg_resources.declare_namespace`.*:DeprecationWarning",
+  "ignore:Deprecated call to `pkg_resources.declare_namespace.*:DeprecationWarning",
+  "ignore:You are trying to `self.log()` but the `self.trainer` reference is not registered on the model yet.*",
+]

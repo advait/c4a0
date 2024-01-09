@@ -14,6 +14,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import logging
+import math
 import multiprocessing as mp
 from multiprocessing.connection import Connection
 import sys
@@ -129,7 +130,7 @@ async def generate_samples(
     logger = logging.getLogger(__name__)
 
     n_processes = min(n_processes, n_games)
-    n_coroutines_per_process = max(n_games // n_processes, 1)
+    n_coroutines_per_process = max(math.ceil(n_games / n_processes), 1)
 
     logger.info(
         dedent(
@@ -156,9 +157,9 @@ async def generate_samples(
     nn_bg_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nn_bg_thread")
     nn_last_flush_s = time.time()
 
-    pbar = tqdm(
-        total=n_games * 30 * mcts_iterations, desc="MCTS iterations", unit="iter"
-    )
+    approx_mcts_iters = n_games * 30 * mcts_iterations  # approx ~30 ply per game
+    mcts_pbar = tqdm(total=approx_mcts_iters, desc="mcts iterations", unit="it")
+    games_pbar = tqdm(total=n_games, desc="games generated", unit="gm")
 
     for worker_id in range(n_processes):
         parent_conn, child_conn = mp.Pipe()
@@ -220,9 +221,10 @@ async def generate_samples(
 
         elif isinstance(req, SubmitGameReq):
             generated_samples.extend(req.samples)
+            games_pbar.update(1)
 
         elif isinstance(req, SubmitMCTSIter):
-            pbar.update(1)
+            mcts_pbar.update(1)
 
     async def nn_flush_loop():
         nonlocal nn_last_flush_s
@@ -250,10 +252,11 @@ async def generate_samples(
         positions_bytes = list(pos_dict.keys())
         positions = [pos_from_bytes(s) for s in positions_bytes]
         pos_tensor = torch.from_numpy(np.array(positions)).float().to(device)
-        policies, values = await asyncio.get_running_loop().run_in_executor(
+        policies_logprobs, values = await asyncio.get_running_loop().run_in_executor(
             nn_bg_thread, run_model_no_grad, model, pos_tensor
         )
-        policies = policies.cpu().numpy()
+        policies_logprobs = policies_logprobs.cpu().numpy()
+        policies = np.exp(policies_logprobs)
         values = values.cpu().numpy()
         assert len(positions) == len(policies) == len(values)
 
@@ -267,7 +270,8 @@ async def generate_samples(
     nn_flush_loop_task = asyncio.create_task(nn_flush_loop())
     await poll_worker_pipes_loop()
     await nn_flush_loop_task
-    pbar.close()
+    mcts_pbar.close()
+    games_pbar.close()
 
     for worker in workers:
         worker.join()
@@ -284,7 +288,7 @@ def worker_process(
     mcts_iterations: int,
     exploration_constant: float,
 ) -> None:
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
     pending_reqs: Dict[ReqID, asyncio.Future] = {}
     continue_polling_pipes = True
 
@@ -347,7 +351,7 @@ def worker_process(
 
     asyncio.run(create_worker_coros())
     pipe.send(WorkerExitSignalReq(req_id=create_req_id(), worker_id=worker_id))
-    logger.info(f"{worker_id} Worker process exiting")
+    # logger.info(f"{worker_id} Worker process exiting")
 
 
 async def worker_coro(
@@ -360,11 +364,11 @@ async def worker_coro(
     mcts_iterations: int,
     exploration_constant: float,
 ) -> None:
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
     while True:
         game_id = await get_game_id()
         if game_id is None:
-            logger.info(f"{worker_id}.{coro_id} Worker coro exiting")
+            # logger.info(f"{worker_id}.{coro_id} Worker coro exiting")
             return
         game = await gen_game(
             game_id=game_id,
@@ -383,7 +387,7 @@ async def gen_game(
     exploration_constant: float,
     submit_mcts_iter: Optional[Callable[[], Awaitable[None]]],
 ) -> List[Sample]:
-    logger = logging.getLogger(__name__)
+    # logger = logging.getLogger(__name__)
     rng = np.random.default_rng(seed=game_id)
 
     pos = STARTING_POS
@@ -398,7 +402,7 @@ async def gen_game(
         )
         results.append((game_id, pos, policy))
         move = rng.choice(range(len(policy)), p=policy)
-        logger.info(f"{game_id}.{get_ply(pos)} move: {move}, policy: {policy}")
+        # logger.info(f"{game_id}.{get_ply(pos)} move: {move}, policy: {policy}")
         pos = make_move(pos, move)
 
     # Because there isn't a valid policy a terminal state, we simply use a uniform policy
