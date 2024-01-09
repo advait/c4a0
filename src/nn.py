@@ -99,3 +99,4 @@ class ConnectFourNet(pl.LightningModule):
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_policy_kl_div", policy_loss)
         self.log("val_value_mse", value_loss)
+        return loss

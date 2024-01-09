@@ -11,7 +11,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 import torch
 from torch.utils.data import DataLoader
-from c4 import Pos
+from c4 import N_COLS, N_ROWS, Pos
 
 from nn import ConnectFourNet, Policy
 from self_play import Sample, generate_samples
@@ -44,6 +44,7 @@ async def train(
     samples = load_cached_samples(gen)
     if not samples:
         logger.info("No cached samples found. Generating samples from self-play.")
+        exit(0)
         samples = await generate_samples(
             model=model,
             n_games=n_games,
@@ -71,11 +72,13 @@ async def train(
     )
     data_module = PosDataModule(samples, batch_size)
     logger.info(f"Beginning training gen {gen}")
-    trainer.fit(
-        model,
-        data_module,
-    )
+    with torch.autograd.set_detect_anomaly(True):
+        trainer.fit(
+            model,
+            data_module,
+        )
     logger.info(f"Finished training gen {gen}")
+    exit(0)
 
 
 ModelGen = NewType("ModelGen", int)
@@ -130,18 +133,8 @@ class PosDataModule(pl.LightningDataModule):
         super().__init__()
         self.batch_size = batch_size
         samples = samples + [self.flip_sample(s) for s in samples]
-        sample_tensors: List[SampleTensor] = [
-            SampleTensor(
-                (
-                    game_id,
-                    torch.from_numpy(pos).float(),
-                    torch.from_numpy(policy).float(),
-                    torch.tensor(value, dtype=torch.float),
-                )
-            )
-            for game_id, pos, policy, value in samples
-        ]
-        self.training_data, self.validation_data = self.split_samples(sample_tensors)
+        tensors = list(self.sample_to_tensor(s) for s in samples)
+        self.training_data, self.validation_data = self.split_samples(tensors)
 
     def flip_sample(self, sample: Sample) -> Sample:
         """Flips the sample and policy horizontally to account for connect four symmetry."""
@@ -150,6 +143,16 @@ class PosDataModule(pl.LightningDataModule):
         pos = Pos(np.fliplr(pos).copy())
         policy = Policy(np.flip(policy).copy())
         return Sample((game_id, pos, policy, value))
+
+    def sample_to_tensor(self, sample: Sample) -> SampleTensor:
+        game_id, pos, policy, value = sample
+        pos_t = torch.from_numpy(pos).float()
+        policy_t = torch.from_numpy(policy).float()
+        value_t = torch.tensor(value, dtype=torch.float)
+        assert pos_t.shape == (N_ROWS, N_COLS)
+        assert policy_t.shape == (N_COLS,)
+        assert value_t.shape == (), f"Shape {value_t.shape}"
+        return SampleTensor((game_id, pos_t, policy_t, value_t))
 
     def split_samples(
         self, samples: List[SampleTensor], split_ratio=0.8
