@@ -18,8 +18,8 @@ from self_play import Sample, generate_samples
 
 
 async def train(
-    n_games: int = 10,
-    mcts_iterations: int = 20,
+    n_games: int = 1000,
+    mcts_iterations: int = 150,
     exploration_constant: float = 1.4,
     batch_size: int = 100,
     device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),

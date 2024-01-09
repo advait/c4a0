@@ -113,7 +113,7 @@ class Node:
 
         self.children = [
             Node(
-                pos=make_move(self.pos, ColIndex(move)),
+                pos=make_move(self.pos, move),
                 parent=self,
                 initial_policy_value=policy[move],
             )

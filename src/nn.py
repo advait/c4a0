@@ -7,7 +7,6 @@ from typing import NewType
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torchmetrics
 import pytorch_lightning as pl
 from einops import rearrange
@@ -45,7 +44,7 @@ class ConnectFourNet(pl.LightningModule):
         self.tanh = nn.Tanh()
 
         # Metrics
-        self.policy_kl_div = torchmetrics.KLDivergence()
+        self.policy_kl_div = torchmetrics.KLDivergence(log_prob=False)
         self.value_mse = torchmetrics.MeanSquaredError()
 
     def forward(self, x):
@@ -80,12 +79,10 @@ class ConnectFourNet(pl.LightningModule):
         value_pred = rearrange(value_pred, "b 1 -> b")
 
         # Losses
-        policy_labels_log = F.log_softmax(policy_labels, dim=1)
-        policy_pred_log = F.log_softmax(policy_pred, dim=1)
-        policy_loss = self.policy_kl_div(policy_pred_log, policy_labels_log)
-        value_loss = F.mse_loss(value_pred, value_labels)
-
+        policy_loss = self.policy_kl_div(policy_pred, policy_labels)
+        value_loss = self.value_mse(value_pred, value_labels)
         loss = policy_loss + value_loss
+
         self.log("train_loss", loss, prog_bar=True)
         return loss
 
@@ -95,12 +92,10 @@ class ConnectFourNet(pl.LightningModule):
         value_pred = rearrange(value_pred, "b 1 -> b")
 
         # Losses
-        policy_labels_log = F.log_softmax(policy_labels, dim=1)
-        policy_pred_log = F.log_softmax(policy_pred, dim=1)
-        policy_loss = self.policy_kl_div(policy_pred_log, policy_labels_log)
-        value_loss = F.mse_loss(value_pred, value_labels)
-
+        policy_loss = self.policy_kl_div(policy_pred, policy_labels)
+        value_loss = self.value_mse(value_pred, value_labels)
         loss = policy_loss + value_loss
+
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_policy_kl_div", policy_loss)
         self.log("val_value_mse", value_loss)
