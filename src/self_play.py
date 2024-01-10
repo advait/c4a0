@@ -143,6 +143,7 @@ async def generate_samples(
             - exploration_constant: {exploration_constant}
             - nn_flush_freq_s: {nn_flush_freq_s}
             - nn_max_batch_size: {nn_max_batch_size}
+            - device: {device}
             """
         ).strip()
     )
@@ -157,7 +158,7 @@ async def generate_samples(
     nn_bg_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nn_bg_thread")
     nn_last_flush_s = time.time()
 
-    approx_mcts_iters = n_games * 30 * mcts_iterations  # approx ~30 ply per game
+    approx_mcts_iters = n_games * 21 * mcts_iterations  # approx ~21 ply per game
     mcts_pbar = tqdm(total=approx_mcts_iters, desc="mcts iterations", unit="it")
     games_pbar = tqdm(total=n_games, desc="games generated", unit="gm")
 

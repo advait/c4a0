@@ -33,15 +33,7 @@ async def train(
     model.to(device)
     gen = ModelGen(gen + 1)  # Training next gen
 
-    # tb_logger = TensorBoardLogger("lightning_logs", name=f"gen_{gen}")
-    logger.info(
-        f"Generating self_play games to train next gen\n"
-        f"- gen: {gen}\n"
-        f"- n_games: {n_games}\n"
-        f"- mcts_iterations: {mcts_iterations}\n"
-        f"- exploration_constant: {exploration_constant}\n"
-        f"- batch_size: {batch_size}\n"
-    )
+    logger.info(f"Generating self_play games to train next gen {gen}")
 
     samples = load_cached_samples(gen)
     if not samples:

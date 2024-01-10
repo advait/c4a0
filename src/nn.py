@@ -72,6 +72,12 @@ class ConnectFourNet(pl.LightningModule):
         return optimizer
 
     def training_step(self, batch, batch_idx):
+        return self.step(batch, log_prefix="train")
+
+    def validation_step(self, batch, batch_idx):
+        return self.step(batch, log_prefix="val")
+
+    def step(self, batch, log_prefix):
         # Forward pass
         game_ids, inputs, policy_targets, value_targets = batch
         policy_logprob, value_pred = self.forward(inputs)
@@ -83,22 +89,7 @@ class ConnectFourNet(pl.LightningModule):
         value_loss = self.value_mse(value_pred, value_targets)
         loss = 6 * policy_loss + value_loss
 
-        self.log("train_loss", loss, prog_bar=True)
-        return loss
-
-    def validation_step(self, batch, batch_idx):
-        # Forward pass
-        game_ids, inputs, policy_logprob_targets, value_targets = batch
-        policy_logprob, value_pred = self.forward(inputs)
-        value_pred = rearrange(value_pred, "b 1 -> b")
-        policy_logprob_targets = torch.log(policy_logprob_targets + EPS)
-
-        # Losses
-        policy_loss = self.policy_kl_div(policy_logprob_targets, policy_logprob)
-        value_loss = self.value_mse(value_pred, value_targets)
-        loss = 6 * policy_loss + value_loss
-
-        self.log("val_loss", loss, prog_bar=True)
-        self.log("val_policy_kl_div", policy_loss)
-        self.log("val_value_mse", value_loss)
+        self.log(f"{log_prefix}_loss", loss, prog_bar=True)
+        self.log(f"{log_prefix}_policy_kl_div", policy_loss)
+        self.log(f"{log_prefix}_value_mse", value_loss)
         return loss
