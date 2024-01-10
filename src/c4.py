@@ -145,8 +145,16 @@ cell_colors = {
 cell_colors_flipped = {v: k for k, v in cell_colors.items()}
 
 
-def pos_to_str(pos: Pos) -> str:
-    """Returns a string representation of the position."""
+def pos_to_str(pos: Pos, from_p0_perspective: bool = False) -> str:
+    """
+    Returns a string representation of the position.
+
+    If from_p0_perspective is True, the position colors are such that the first player is red.
+    If from_p0_perspective is False, the position colors are such that the current player is red.
+    """
+    if from_p0_perspective and get_ply(pos) % 2 == 1:
+        pos = Pos(-pos)
+
     return "\n".join(["".join([cell_colors[cell] for cell in row]) for row in pos])
 
 

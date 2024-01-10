@@ -5,8 +5,11 @@ import asyncio
 import logging
 import multiprocessing as mp
 from sys import platform
+from typing import List
 
 import torch
+from model_storage import load_all_models
+from tournament import ModelPlayer, Player, RandomPlayer, UniformPlayer, play_tournament
 
 from training import train
 
@@ -48,7 +51,11 @@ async def main():
     logging.basicConfig(
         level=args.log_level, format="%(asctime)s - %(levelname)s - %(message)s"
     )
+    await do_training(args)
+    # await do_tournament(args)
 
+
+async def do_training(args):
     while True:
         await train(
             n_games=args.n_games,
@@ -58,6 +65,23 @@ async def main():
             batch_size=args.batch_size,
             device=args.device,
         )
+
+
+async def do_tournament(args):
+    logger = logging.getLogger(__name__)
+    models = load_all_models()
+    players: List[Player] = [
+        ModelPlayer(f"gen{gen}", model, args.device) for gen, model in models
+    ]
+    players += [RandomPlayer(), UniformPlayer()]
+    results = await play_tournament(
+        players,
+        games_per_match=args.n_games,
+        exploration_constant=args.exploration_constant,
+        mcts_iterations=args.mcts_iterations,
+    )
+    logger.info("Tournament results:")
+    logger.info("\n".join(f"{p.name}: {score}" for p, score in results))
 
 
 def get_torch_device() -> torch.device:
