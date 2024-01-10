@@ -5,7 +5,7 @@ Logic for Monte Carlo Tree Search
 import logging
 from typing import Awaitable, Callable, List, Optional, Tuple
 
-from c4 import N_COLS, ColIndex, Pos, get_legal_moves, is_game_over, make_move
+from c4 import N_COLS, Pos, get_legal_moves, is_game_over, make_move
 
 import numpy as np
 
@@ -113,7 +113,7 @@ class Node:
 
         self.children = [
             Node(
-                pos=make_move(self.pos, ColIndex(move)),
+                pos=make_move(self.pos, move),
                 parent=self,
                 initial_policy_value=policy[move],
             )
