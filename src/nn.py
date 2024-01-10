@@ -27,6 +27,8 @@ Represents the value of a position, a continuous number in [-1, 1].
 0 is a draw.
 """
 
+EPS = 1e-8  # Epsilon small constant to avoid log(0)
+
 
 class ConnectFourNet(pl.LightningModule):
     def __init__(self):
@@ -71,15 +73,15 @@ class ConnectFourNet(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         # Forward pass
-        game_ids, inputs, policy_logprob_targets, value_targets = batch
+        game_ids, inputs, policy_targets, value_targets = batch
         policy_logprob, value_pred = self.forward(inputs)
         value_pred = rearrange(value_pred, "b 1 -> b")
-        policy_logprob_targets = torch.log(policy_logprob_targets)
+        policy_logprob_targets = torch.log(policy_targets + EPS)
 
         # Losses
         policy_loss = self.policy_kl_div(policy_logprob_targets, policy_logprob)
         value_loss = self.value_mse(value_pred, value_targets)
-        loss = policy_loss + value_loss
+        loss = 6 * policy_loss + value_loss
 
         self.log("train_loss", loss, prog_bar=True)
         return loss
@@ -89,12 +91,12 @@ class ConnectFourNet(pl.LightningModule):
         game_ids, inputs, policy_logprob_targets, value_targets = batch
         policy_logprob, value_pred = self.forward(inputs)
         value_pred = rearrange(value_pred, "b 1 -> b")
-        policy_logprob_targets = torch.log(policy_logprob_targets)
+        policy_logprob_targets = torch.log(policy_logprob_targets + EPS)
 
         # Losses
         policy_loss = self.policy_kl_div(policy_logprob_targets, policy_logprob)
         value_loss = self.value_mse(value_pred, value_targets)
-        loss = policy_loss + value_loss
+        loss = 6 * policy_loss + value_loss
 
         self.log("val_loss", loss, prog_bar=True)
         self.log("val_policy_kl_div", policy_loss)

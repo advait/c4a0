@@ -116,12 +116,12 @@ class WorkerExitSignalReq(Req):
 async def generate_samples(
     model: ConnectFourNet,
     n_games: int,
+    n_processes: int,
     mcts_iterations: int,
     exploration_constant: float,
-    n_processes: int = mp.cpu_count() - 1,
     nn_flush_freq_s: float = 0.01,
     nn_max_batch_size: int = 20000,
-    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    device: torch.device = torch.device("cpu"),
 ) -> List[Sample]:
     """
     Uses multiprocessing to generate n_games worth of training data.
@@ -177,8 +177,8 @@ async def generate_samples(
         workers.append(worker)
         worker.start()
 
-    continue_server_loops = True
     # Key flag that, when set to False, tells the poll_worker_pipes_loop and nn_flush_loop to exit
+    continue_server_loops = True
 
     async def poll_worker_pipes_loop():
         while continue_server_loops:

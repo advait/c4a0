@@ -41,7 +41,7 @@ def test_loss_of_zero():
     )
     loss = model.training_step(training_batch, 0)
     loss = loss.detach().item()
-    assert loss == pytest.approx(0.0)
+    assert loss == pytest.approx(0.0, abs=1e-6)
 
 
 @pytest.mark.filterwarnings("ignore:You are trying to `self.log()`*")

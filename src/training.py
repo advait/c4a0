@@ -2,6 +2,7 @@
 Generation-based network training, alternating between self-play and training.
 """
 import logging
+import multiprocessing as mp
 import os
 import pickle
 from typing import List, NewType, Optional, Tuple
@@ -18,11 +19,12 @@ from self_play import Sample, generate_samples
 
 
 async def train(
-    n_games: int = 1000,
-    mcts_iterations: int = 150,
-    exploration_constant: float = 1.4,
-    batch_size: int = 100,
-    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    n_games: int,
+    n_processes: int,
+    mcts_iterations: int,
+    exploration_constant,
+    batch_size: int,
+    device: torch.device,
 ):
     logger = logging.getLogger(__name__)
 
@@ -44,13 +46,14 @@ async def train(
     samples = load_cached_samples(gen)
     if not samples:
         logger.info("No cached samples found. Generating samples from self-play.")
-        exit(0)
         samples = await generate_samples(
             model=model,
             n_games=n_games,
             mcts_iterations=mcts_iterations,
             exploration_constant=exploration_constant,
             nn_max_batch_size=20000,
+            device=device,
+            n_processes=n_processes,
         )
         print(f"{len(samples)} Samples generated")
         store_samples(samples, gen)
@@ -77,7 +80,6 @@ async def train(
         data_module,
     )
     logger.info(f"Finished training gen {gen}")
-    exit(0)
 
 
 ModelGen = NewType("ModelGen", int)
