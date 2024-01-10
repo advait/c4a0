@@ -2,7 +2,6 @@
 Generation-based network training, alternating between self-play and training.
 """
 import logging
-import multiprocessing as mp
 import os
 import pickle
 from typing import List, NewType, Optional, Tuple

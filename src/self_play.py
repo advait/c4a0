@@ -289,7 +289,7 @@ def worker_process(
     mcts_iterations: int,
     exploration_constant: float,
 ) -> None:
-    # logger = logging.getLogger(__name__)
+    logger = logging.getLogger(__name__)
     pending_reqs: Dict[ReqID, asyncio.Future] = {}
     continue_polling_pipes = True
 
@@ -352,7 +352,7 @@ def worker_process(
 
     asyncio.run(create_worker_coros())
     pipe.send(WorkerExitSignalReq(req_id=create_req_id(), worker_id=worker_id))
-    # logger.info(f"{worker_id} Worker process exiting")
+    logger.debug(f"{worker_id} Worker process exiting")
 
 
 async def worker_coro(
@@ -365,11 +365,11 @@ async def worker_coro(
     mcts_iterations: int,
     exploration_constant: float,
 ) -> None:
-    # logger = logging.getLogger(__name__)
+    logger = logging.getLogger(__name__)
     while True:
         game_id = await get_game_id()
         if game_id is None:
-            # logger.info(f"{worker_id}.{coro_id} Worker coro exiting")
+            logger.debug(f"{worker_id}.{coro_id} Worker coro exiting")
             return
         game = await gen_game(
             game_id=game_id,
@@ -388,7 +388,7 @@ async def gen_game(
     exploration_constant: float,
     submit_mcts_iter: Optional[Callable[[], Awaitable[None]]],
 ) -> List[Sample]:
-    # logger = logging.getLogger(__name__)
+    logger = logging.getLogger(__name__)
     rng = np.random.default_rng(seed=game_id)
 
     pos = STARTING_POS
@@ -403,13 +403,13 @@ async def gen_game(
         )
         results.append((game_id, pos, policy))
         move = rng.choice(range(len(policy)), p=policy)
-        # logger.info(f"{game_id}.{get_ply(pos)} move: {move}, policy: {policy}")
+        logger.debug(f"{game_id}.{get_ply(pos)} move: {move}, policy: {policy}")
         pos = make_move(pos, move)
 
     # Because there isn't a valid policy a terminal state, we simply use a uniform policy
     final_policy = Policy(np.ones(N_COLS) / N_COLS)
     results.append((game_id, pos, final_policy))
-    # logger.info(f"{game_id}.{get_ply(pos)} finished result: {res.value}")
+    logger.debug(f"{game_id}.{get_ply(pos)} finished result: {res.value}")
 
     final_value = res.value
     if len(results) % 2 == 0:

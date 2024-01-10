@@ -12,11 +12,7 @@ from training import train
 
 
 async def main():
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-
-    device = get_torch_device()
+    default_device = get_torch_device()
 
     parser = ArgumentParser()
     parser.add_argument(
@@ -43,9 +39,15 @@ async def main():
     parser.add_argument(
         "--batch-size", type=int, default=100, help="batch size for training"
     )
-    parser.add_argument("--device", type=str, default=device, help="pytorch device")
-
+    parser.add_argument(
+        "--device", type=str, default=default_device, help="pytorch device"
+    )
+    parser.add_argument("--log-level", type=str, default="INFO", help="log level")
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level=args.log_level, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 
     while True:
         await train(
