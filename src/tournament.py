@@ -2,7 +2,6 @@
 Round-robin tournament to determine which model is the best.
 """
 
-
 import abc
 import asyncio
 from collections import defaultdict
@@ -80,7 +79,9 @@ async def play_tournament(
     logger = logging.getLogger(__name__)
     pairings = list(itertools.permutations(players, 2))
     results: Dict[Player, float] = defaultdict(lambda: 0.0)
-    game_pbar = tqdm(total=len(pairings) * games_per_match)
+    logger.info(f"Beginning tournament with {len(players)} players")
+    approx_mcts_iters = len(pairings) * games_per_match * 21 * mcts_iterations
+    mcts_pbar = tqdm(total=approx_mcts_iters, desc="mcts iterations", unit="it")
 
     async def play_game(p0: Player, p1: Player):
         samples = await gen_game(
@@ -89,13 +90,12 @@ async def play_tournament(
             eval_pos1=p1.eval_pos,
             exploration_constant=exploration_constant,
             mcts_iterations=mcts_iterations,
-            submit_mcts_iter=None,
+            submit_mcts_iter=lambda: mcts_pbar.update(1),
         )
         game_id, pos, policy, value = samples[0]
         results[p0] += (value + 1) / 2
         results[p1] += (-value + 1) / 2
 
-    logger.info(f"Beginning tournament with {len(players)} players")
     coros = [play_game(p0, p1) for p0, p1 in pairings for _ in range(games_per_match)]
     await asyncio.gather(*coros)
 

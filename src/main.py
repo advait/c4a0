@@ -51,7 +51,8 @@ async def main():
     logging.basicConfig(
         level=args.log_level, format="%(asctime)s - %(levelname)s - %(message)s"
     )
-    await do_tournament(args)
+    await do_training(args)
+    # await do_tournament(args)
 
 
 async def do_training(args):

@@ -275,7 +275,7 @@ def worker_process(
     async def submit_game(samples: List[Sample]) -> None:
         pipe.send(SubmitGameReq(req_id=create_req_id(), samples=samples))
 
-    async def submit_mcts_iter() -> None:
+    def submit_mcts_iter() -> None:
         pipe.send(SubmitMCTSIter(req_id=create_req_id()))
 
     async def poll_pipe():
@@ -322,7 +322,7 @@ async def worker_coro(
     get_game_id: Callable[[], Awaitable[Optional[GameID]]],
     eval_pos: Callable[[Pos], Awaitable[Tuple[Policy, Value]]],
     submit_game: Callable[[List[Sample]], Awaitable[None]],
-    submit_mcts_iter: Callable[[], Awaitable[None]],
+    submit_mcts_iter: Callable,
     mcts_iterations: int,
     exploration_constant: float,
 ) -> None:
@@ -349,7 +349,7 @@ async def gen_game(
     eval_pos1: Optional[EvalPos],
     mcts_iterations: int,
     exploration_constant: float,
-    submit_mcts_iter: Optional[Callable[[], Awaitable[None]]],
+    submit_mcts_iter: Optional[Callable],
 ) -> List[Sample]:
     """
     Generates a single game using MCTS.
