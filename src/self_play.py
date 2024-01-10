@@ -252,10 +252,11 @@ async def generate_samples(
         positions_bytes = list(pos_dict.keys())
         positions = [pos_from_bytes(s) for s in positions_bytes]
         pos_tensor = torch.from_numpy(np.array(positions)).float().to(device)
-        policies, values = await asyncio.get_running_loop().run_in_executor(
+        policies_logprobs, values = await asyncio.get_running_loop().run_in_executor(
             nn_bg_thread, run_model_no_grad, model, pos_tensor
         )
-        policies = policies.cpu().numpy()
+        policies_logprobs = policies_logprobs.cpu().numpy()
+        policies = np.exp(policies_logprobs)
         values = values.cpu().numpy()
         assert len(positions) == len(policies) == len(values)
 

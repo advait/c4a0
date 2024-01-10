@@ -9,13 +9,13 @@ def test_random_nn_works():
     model = ConnectFourNet()
     pos = torch.from_numpy(STARTING_POS).float().unsqueeze(0)
     with torch.no_grad():
-        policy, value = model(pos)
+        policy_logprobs, value = model(pos)
 
-    policy = policy.squeeze(0).numpy()
+    policy = torch.exp(policy_logprobs).squeeze(0).numpy()
     value = value.squeeze(0).item()
 
     assert len(policy) == N_COLS
-    assert policy.sum().item() == pytest.approx(1.0)
+    assert policy.sum().item() == pytest.approx(1.0, abs=1e-5)
     assert -1.0 <= value <= 1.0
 
 
@@ -25,7 +25,8 @@ def test_loss_of_zero():
     model = ConnectFourNet()
     pos = torch.from_numpy(STARTING_POS).float().unsqueeze(0)
     with torch.no_grad():
-        policy, value = model(pos)
+        policy_logprobs, value = model(pos)
+        policy = torch.exp(policy_logprobs)
         value = value.squeeze(0)
 
     assert pos.shape == (1, N_ROWS, N_COLS)

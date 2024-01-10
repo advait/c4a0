@@ -72,11 +72,10 @@ async def train(
     )
     data_module = PosDataModule(samples, batch_size)
     logger.info(f"Beginning training gen {gen}")
-    with torch.autograd.set_detect_anomaly(True):
-        trainer.fit(
-            model,
-            data_module,
-        )
+    trainer.fit(
+        model,
+        data_module,
+    )
     logger.info(f"Finished training gen {gen}")
     exit(0)
 
@@ -151,7 +150,7 @@ class PosDataModule(pl.LightningDataModule):
         value_t = torch.tensor(value, dtype=torch.float)
         assert pos_t.shape == (N_ROWS, N_COLS)
         assert policy_t.shape == (N_COLS,)
-        assert value_t.shape == (), f"Shape {value_t.shape}"
+        assert value_t.shape == ()
         return SampleTensor((game_id, pos_t, policy_t, value_t))
 
     def split_samples(
