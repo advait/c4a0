@@ -10,8 +10,6 @@ Concurrent self-play to generate training data.
 """
 
 import asyncio
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 import logging
 import math
@@ -19,7 +17,6 @@ import multiprocessing as mp
 from multiprocessing.connection import Connection
 import sys
 from textwrap import dedent
-import time
 from typing import Awaitable, Callable, Dict, List, NewType, Optional, Tuple
 
 import numpy as np
@@ -33,11 +30,9 @@ from c4 import (
     get_ply,
     is_game_over,
     make_move,
-    pos_from_bytes,
-    pos_to_bytes,
 )
 from mcts import mcts
-from nn import ConnectFourNet, Policy, Value
+from nn import ConnectFourNet, EvalPos, Policy, Value, create_batcher
 
 ReqID = NewType("ReqID", int)
 
@@ -154,9 +149,12 @@ async def generate_samples(
     generated_samples: List[Sample] = []
     cur_game_id: GameID = GameID(0)
 
-    nn_pos_queue: List[Tuple[Pos, Connection, ReqID]] = []
-    nn_bg_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nn_bg_thread")
-    nn_last_flush_s = time.time()
+    nn_end_signal, nn_enqueue_pos = create_batcher(
+        model,
+        device,
+        nn_flush_freq_s=nn_flush_freq_s,
+        nn_max_batch_size=nn_max_batch_size,
+    )
 
     approx_mcts_iters = n_games * 21 * mcts_iterations  # approx ~21 ply per game
     mcts_pbar = tqdm(total=approx_mcts_iters, desc="mcts iterations", unit="it")
@@ -218,7 +216,12 @@ async def generate_samples(
                 cur_game_id = GameID(cur_game_id + 1)
 
         elif isinstance(req, NNReq):
-            nn_pos_queue.append((req.pos, pipe, req.req_id))
+
+            async def run_inference():
+                policy, value = await nn_enqueue_pos(req.pos)
+                pipe.send(NNRes(req_id=req.req_id, policy=policy, value=value))
+
+            asyncio.create_task(run_inference())
 
         elif isinstance(req, SubmitGameReq):
             generated_samples.extend(req.samples)
@@ -227,50 +230,8 @@ async def generate_samples(
         elif isinstance(req, SubmitMCTSIter):
             mcts_pbar.update(1)
 
-    async def nn_flush_loop():
-        nonlocal nn_last_flush_s
-        while continue_server_loops:
-            elapsed = time.time() - nn_last_flush_s
-            if elapsed >= nn_flush_freq_s or len(nn_pos_queue) >= nn_max_batch_size:
-                await nn_flush()
-            await asyncio.sleep(0)
-
-    async def nn_flush():
-        nonlocal nn_last_flush_s, nn_pos_queue
-
-        if len(nn_pos_queue) == 0:
-            # If there are no positions to evaluate, exit early and reset the timer
-            nn_last_flush_s = time.time()
-            await asyncio.sleep(0.1)
-            return
-
-        # Group identical positions together to avoid duplicate work
-        pos_dict = defaultdict(list)
-        for pos, pipe, req_id in nn_pos_queue:
-            pos_dict[pos_to_bytes(pos)].append((pipe, req_id))
-        nn_pos_queue.clear()
-
-        positions_bytes = list(pos_dict.keys())
-        positions = [pos_from_bytes(s) for s in positions_bytes]
-        pos_tensor = torch.from_numpy(np.array(positions)).float().to(device)
-        policies_logprobs, values = await asyncio.get_running_loop().run_in_executor(
-            nn_bg_thread, run_model_no_grad, model, pos_tensor
-        )
-        policies_logprobs = policies_logprobs.cpu().numpy()
-        policies = np.exp(policies_logprobs)
-        values = values.cpu().numpy()
-        assert len(positions) == len(policies) == len(values)
-
-        for i in range(len(positions)):
-            for pipe, req_id in pos_dict[positions_bytes[i]]:
-                pipe.send(NNRes(req_id=req_id, policy=policies[i], value=values[i]))
-            del pos_dict[positions_bytes[i]]
-
-        nn_last_flush_s = time.time()
-
-    nn_flush_loop_task = asyncio.create_task(nn_flush_loop())
     await poll_worker_pipes_loop()
-    await nn_flush_loop_task
+    nn_end_signal.set_result(True)
     mcts_pbar.close()
     games_pbar.close()
 
@@ -373,7 +334,8 @@ async def worker_coro(
             return
         game = await gen_game(
             game_id=game_id,
-            eval_pos=eval_pos,
+            eval_pos0=eval_pos,
+            eval_pos1=None,
             mcts_iterations=mcts_iterations,
             exploration_constant=exploration_constant,
             submit_mcts_iter=submit_mcts_iter,
@@ -383,17 +345,26 @@ async def worker_coro(
 
 async def gen_game(
     game_id: GameID,
-    eval_pos: Callable[[Pos], Awaitable[Tuple[Policy, Value]]],
+    eval_pos0: EvalPos,
+    eval_pos1: Optional[EvalPos],
     mcts_iterations: int,
     exploration_constant: float,
     submit_mcts_iter: Optional[Callable[[], Awaitable[None]]],
 ) -> List[Sample]:
+    """
+    Generates a single game using MCTS.
+
+    Supports different players by setting different values for eval_pos0 and eval_pos1.
+    """
     logger = logging.getLogger(__name__)
     rng = np.random.default_rng(seed=game_id)
+    if eval_pos1 is None:
+        eval_pos1 = eval_pos0
 
     pos = STARTING_POS
     results: List[Tuple[GameID, Pos, Policy]] = []
     while (res := is_game_over(pos)) is None:
+        eval_pos = eval_pos0 if get_ply(pos) % 2 == 0 else eval_pos1
         policy = await mcts(
             pos,
             eval_pos=eval_pos,
@@ -428,8 +399,3 @@ async def gen_game(
 def create_req_id() -> ReqID:
     # TODO: Use a better req_id generator than rand int
     return ReqID(np.random.randint(0, sys.maxsize))
-
-
-def run_model_no_grad(model, x):
-    with torch.no_grad():
-        return model(x)

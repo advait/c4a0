@@ -3,8 +3,7 @@ Generation-based network training, alternating between self-play and training.
 """
 import logging
 import os
-import pickle
-from typing import List, NewType, Optional, Tuple
+from typing import List, NewType, Tuple
 import numpy as np
 
 import pytorch_lightning as pl
@@ -12,8 +11,14 @@ from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 import torch
 from torch.utils.data import DataLoader
 from c4 import N_COLS, N_ROWS, Pos
+from model_storage import (
+    ModelGen,
+    load_cached_samples,
+    load_latest_model,
+    store_samples,
+)
 
-from nn import ConnectFourNet, Policy
+from nn import Policy
 from self_play import Sample, generate_samples
 
 
@@ -71,48 +76,6 @@ async def train(
         data_module,
     )
     logger.info(f"Finished training gen {gen}")
-
-
-ModelGen = NewType("ModelGen", int)
-
-
-def load_latest_model() -> Tuple[ModelGen, ConnectFourNet]:
-    """Loads the latest generation of model from the checkpoints directory."""
-    logger = logging.getLogger(__name__)
-    gens = sorted(os.listdir("checkpoints"))
-    if len(gens) == 0:
-        logger.info("No checkpoints found. Starting from scratch.")
-        return ModelGen(0), ConnectFourNet()
-
-    latest_gen = ModelGen(int(gens[-1]))
-    gen_dir = os.path.join("checkpoints", str(latest_gen))
-    latest_checkpoint = max(
-        os.listdir(gen_dir),
-        key=lambda cpkt: os.path.getctime(os.path.join(gen_dir, cpkt)),
-    )
-    model = ConnectFourNet.load_from_checkpoint(
-        os.path.join(gen_dir, latest_checkpoint)
-    )
-    return latest_gen, model
-
-
-def store_samples(samples: List[Sample], gen: ModelGen):
-    """Cache samples for re-use."""
-    gen_path = os.path.join("samples", str(gen))
-    if not os.path.exists(gen_path):
-        os.mkdir(gen_path)
-    pkl_path = os.path.join(gen_path, "samples.pkl")
-    with open(pkl_path, "wb") as f:
-        pickle.dump(samples, f)
-
-
-def load_cached_samples(gen: ModelGen) -> Optional[List[Sample]]:
-    """Attempts to load previously generated samples to skip self play."""
-    pkl_path = os.path.join("samples", str(gen), "samples.pkl")
-    if not os.path.exists(pkl_path):
-        return None
-    with open(pkl_path, "rb") as f:
-        return pickle.load(f)
 
 
 SampleTensor = NewType(
