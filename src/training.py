@@ -240,10 +240,12 @@ class PosDataModule(pl.LightningDataModule):
             self.training_data,  # type: ignore
             batch_size=self.batch_size,
             shuffle=True,
+            num_workers=1,
         )
 
     def val_dataloader(self):
         return DataLoader(
             self.validation_data,  # type: ignore
             batch_size=self.batch_size,
+            num_workers=1,
         )
