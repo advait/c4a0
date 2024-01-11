@@ -50,6 +50,7 @@ class ModelPlayer(Player):
         super().__init__(f"gen{gen_id}")
         self.gen_id = gen_id
         self.model = model
+        self.model.to(device)
         self.device = device
 
     def close(self):
@@ -115,7 +116,9 @@ class TournamentResult:
         for game in self.games:
             scores[game.p0.name] += game.score
             scores[game.p1.name] += 1 - game.score
-        return [(self.players[name], score) for name, score in scores.items()]
+        ret = [(self.players[name], score) for name, score in scores.items()]
+        ret.sort(key=lambda x: x[1], reverse=True)
+        return ret
 
     def scores_table(self) -> str:
         return "\n".join(
@@ -126,7 +129,6 @@ class TournamentResult:
         """Returns the top models from the tournament in descending order of performance."""
         logger = logging.getLogger(__name__)
         scores = self.get_scores()
-        scores.sort(key=lambda x: x[1], reverse=True)
         for player, score in scores:
             if not isinstance(player, ModelPlayer):
                 logger.warning(f"Top player is not a model: {player.name}")

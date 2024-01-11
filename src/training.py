@@ -2,7 +2,10 @@
 Generation-based network training, alternating between self-play and training.
 """
 from dataclasses import dataclass
+from datetime import datetime
+from glob import glob
 import logging
+import os
 import pickle
 from typing import Dict, List, NewType, Optional, Tuple
 import numpy as np
@@ -38,11 +41,24 @@ class TrainingState:
 
     @staticmethod
     def load_training_state() -> "TrainingState":
-        with open("training_state.pkl", "rb") as f:
-            return pickle.load(f)
+        logger = logging.getLogger(__name__)
+        if not os.path.exists("training"):
+            os.mkdir("training")
+        files = sorted(glob("training/*.pkl"), reverse=True)
+        if len(files) > 0:
+            with open(files[0], "rb") as f:
+                return pickle.load(f)
+        logger.info("No historical training state found. Initializing a new one.")
+        new_state = TrainingState(models={}, training_gens=[])
+        return new_state
 
     def save_training_state(self):
-        with open("training_state.pkl", "wb") as f:
+        for model in self.models.values():
+            model.cpu()  # Relocate models to cpu before pickling
+        now_date = datetime.now().strftime("%Y-%m-%d-%H-%M")
+        with open(
+            os.path.join("training", f"training_state_{now_date}.pkl"), "wb"
+        ) as f:
             pickle.dump(self, f)
 
     def get_model(self, gen: GenID) -> ConnectFourNet:
@@ -54,7 +70,7 @@ class TrainingState:
             if training_gen.tournament is None:
                 continue
             return list(training_gen.tournament.get_top_models())
-        raise ValueError("No tournament found")
+        return []
 
     def get_top_model(self) -> Tuple[GenID, ConnectFourNet]:
         """Gets the winner of the most recent tournament."""
@@ -62,7 +78,7 @@ class TrainingState:
         try:
             gen = self.get_top_models()[0]
             return gen, self.get_model(gen)
-        except (ValueError, IndexError):
+        except IndexError:
             logger.info("No models found, creating a new one.")
             gen = GenID(0)
             model = ConnectFourNet()
@@ -73,9 +89,8 @@ class TrainingState:
         """Creates a new generation of training by cloning the best model."""
         if len(self.training_gens) > 0 and self.training_gens[-1].winning_gen is None:
             # If the latest generation hasn't completed training, return it
-            return self.training_gens[-1], self.get_model(
-                self.training_gens[-1].trained_gen
-            )
+            latest_gen = self.training_gens[-1]
+            return latest_gen, self.get_model(latest_gen.trained_gen)
 
         best_gen_id, best_model = self.get_top_model()
         next_gen = self.get_next_gen_id()
@@ -107,6 +122,7 @@ async def train(
 
     state = TrainingState.load_training_state()
     gen, model = state.create_new_gen()
+    model.to(device)
     logger.info(f"Training gen {gen.trained_gen} from gen {gen.start_gen}")
 
     # Self play
@@ -143,16 +159,16 @@ async def train(
     logger.info(f"Finished training gen {gen.trained_gen}")
 
     # Play tournament with best players
+    top_gens = [gen.trained_gen] + state.get_top_models()
     players: List[Player] = [
         ModelPlayer(gen_id=gen, model=state.get_model(gen), device=device)
-        for gen in state.get_top_models()
+        for gen in top_gens
     ]
-    if len(players) < 5:
-        players.append(RandomPlayer())
-    if len(players) < 5:
-        players.append(UniformPlayer())
+    players.append(RandomPlayer())
+    players.append(UniformPlayer())
+    players = players[:5]  # Only play top 5 models
     logger.info(
-        f"Playing tournament with {len(players)} players: {[p.name for p in players]}"
+        f"Playing tournament with {len(players)} players: {', '.join(p.name for p in players)}"
     )
     gen.tournament = await play_tournament(
         players=players,

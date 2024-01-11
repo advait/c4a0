@@ -120,10 +120,6 @@ def create_batcher(
     nn_bg_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nn_bg_thread")
     nn_last_flush_s = time.time()
 
-    def run_model_no_grad(model, pos_tensor):
-        with torch.no_grad():
-            return model(pos_tensor)
-
     async def enqueue_pos(pos: Pos) -> Tuple[Policy, Value]:
         nonlocal pos_queue
         future = asyncio.get_running_loop().create_future()
@@ -177,3 +173,8 @@ def create_batcher(
 
     asyncio.create_task(nn_flush_loop())
     return end_signal, enqueue_pos
+
+
+def run_model_no_grad(model, pos_tensor):
+    with torch.no_grad():
+        return model(pos_tensor)
