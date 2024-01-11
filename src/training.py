@@ -1,25 +1,98 @@
 """
 Generation-based network training, alternating between self-play and training.
 """
+from dataclasses import dataclass
 import logging
-import os
-from typing import List, NewType, Tuple
+import pickle
+from typing import Dict, List, NewType, Optional, Tuple
 import numpy as np
 
 import pytorch_lightning as pl
-from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
+from pytorch_lightning.callbacks import EarlyStopping
 import torch
 from torch.utils.data import DataLoader
 from c4 import N_COLS, N_ROWS, Pos
-from model_storage import (
-    ModelGen,
-    load_cached_samples,
-    load_latest_model,
-    store_samples,
+
+from nn import ConnectFourNet, Policy
+from self_play import GameID, Sample, generate_samples
+from tournament import (
+    GenID,
+    ModelPlayer,
+    Player,
+    RandomPlayer,
+    TournamentResult,
+    UniformPlayer,
+    play_tournament,
 )
 
-from nn import Policy
-from self_play import Sample, generate_samples
+
+@dataclass
+class TrainingState:
+    """Represents the full historical state of the training process."""
+
+    models: Dict[GenID, ConnectFourNet]
+    training_gens: List["TrainingGen"]
+
+    def get_next_gen_id(self) -> GenID:
+        return GenID(max(self.models.keys()) + 1)  # type: ignore
+
+    @staticmethod
+    def load_training_state() -> "TrainingState":
+        with open("training_state.pkl", "rb") as f:
+            return pickle.load(f)
+
+    def save_training_state(self):
+        with open("training_state.pkl", "wb") as f:
+            pickle.dump(self, f)
+
+    def get_model(self, gen: GenID) -> ConnectFourNet:
+        return self.models[gen]
+
+    def get_top_models(self) -> List[GenID]:
+        """Returns the top models from the most recent tournamnet."""
+        for training_gen in reversed(self.training_gens):
+            if training_gen.tournament is None:
+                continue
+            return list(training_gen.tournament.get_top_models())
+        raise ValueError("No tournament found")
+
+    def get_top_model(self) -> Tuple[GenID, ConnectFourNet]:
+        """Gets the winner of the most recent tournament."""
+        logger = logging.getLogger(__name__)
+        try:
+            gen = self.get_top_models()[0]
+            return gen, self.get_model(gen)
+        except (ValueError, IndexError):
+            logger.info("No models found, creating a new one.")
+            gen = GenID(0)
+            model = ConnectFourNet()
+            self.models[gen] = model
+            return gen, model
+
+    def create_new_gen(self) -> Tuple["TrainingGen", ConnectFourNet]:
+        """Creates a new generation of training by cloning the best model."""
+        if len(self.training_gens) > 0 and self.training_gens[-1].winning_gen is None:
+            # If the latest generation hasn't completed training, return it
+            return self.training_gens[-1], self.get_model(
+                self.training_gens[-1].trained_gen
+            )
+
+        best_gen_id, best_model = self.get_top_model()
+        next_gen = self.get_next_gen_id()
+        next_model = ConnectFourNet()
+        next_model.load_state_dict(best_model.state_dict())  # Clone model
+        self.models[next_gen] = next_model
+        training_gen = TrainingGen(start_gen=best_gen_id, trained_gen=next_gen)
+        return training_gen, next_model
+
+
+@dataclass
+class TrainingGen:
+    start_gen: GenID
+    trained_gen: GenID
+    training_samples: Optional[List[Sample]] = None
+    tournament: Optional[TournamentResult] = None
+    winning_gen: Optional[GenID] = None
 
 
 async def train(
@@ -32,17 +105,14 @@ async def train(
 ):
     logger = logging.getLogger(__name__)
 
-    gen, model = load_latest_model()
-    logger.info(f"Loaded model from gen {gen}")
-    model.to(device)
-    gen = ModelGen(gen + 1)  # Training next gen
+    state = TrainingState.load_training_state()
+    gen, model = state.create_new_gen()
+    logger.info(f"Training gen {gen.trained_gen} from gen {gen.start_gen}")
 
-    logger.info(f"Generating self_play games to train next gen {gen}")
-
-    samples = load_cached_samples(gen)
-    if not samples:
+    # Self play
+    if not gen.training_samples:
         logger.info("No cached samples found. Generating samples from self-play.")
-        samples = await generate_samples(
+        gen.training_samples = await generate_samples(
             model=model,
             n_games=n_games,
             mcts_iterations=mcts_iterations,
@@ -51,35 +121,60 @@ async def train(
             device=device,
             n_processes=n_processes,
         )
-        print(f"{len(samples)} Samples generated")
-        store_samples(samples, gen)
-        logger.info(f"Done generating {len(samples)} samples. Caching for re-use.")
+        logger.info(
+            f"Done generating {len(gen.training_samples)} samples. Caching for re-use."
+        )
+        state.save_training_state()
     else:
         logger.info("Loaded cached samples")
 
-    checkpoint_path = os.path.join("checkpoints", str(gen))
+    # Training
     trainer = pl.Trainer(
         max_epochs=100,
         accelerator="gpu",
         devices="auto",
         callbacks=[
             EarlyStopping(monitor="val_loss", patience=10, mode="min"),
-            ModelCheckpoint(
-                dirpath=checkpoint_path, save_top_k=1, monitor="val_loss", mode="min"
-            ),
         ],
     )
-    data_module = PosDataModule(samples, batch_size)
-    logger.info(f"Beginning training gen {gen}")
-    trainer.fit(
-        model,
-        data_module,
+    data_module = PosDataModule(gen.training_samples, batch_size)
+    logger.info(f"Beginning training gen {gen.trained_gen}")
+    trainer.fit(model, data_module)
+    logger.info(f"Finished training gen {gen.trained_gen}")
+
+    # Play tournament with best players
+    players: List[Player] = [
+        ModelPlayer(gen_id=gen, model=state.get_model(gen), device=device)
+        for gen in state.get_top_models()
+    ]
+    if len(players) < 5:
+        players.append(RandomPlayer())
+    if len(players) < 5:
+        players.append(UniformPlayer())
+    logger.info(
+        f"Playing tournament with {len(players)} players: {[p.name for p in players]}"
     )
-    logger.info(f"Finished training gen {gen}")
+    gen.tournament = await play_tournament(
+        players=players,
+        games_per_match=20,
+        mcts_iterations=mcts_iterations,
+        exploration_constant=exploration_constant,
+    )
+    logger.info(f"Tournament results:\n{gen.tournament.scores_table()}")
+    gen.winning_gen = gen.trained_gen
+    logger.info(f"Winning gen: {gen.winning_gen} (used for training next gen)")
+
+    state.save_training_state()
 
 
 SampleTensor = NewType(
-    "SampleTensor", Tuple[int, torch.Tensor, torch.Tensor, torch.Tensor]
+    "SampleTensor",
+    Tuple[
+        GameID,  # Game ID
+        torch.Tensor,  # Pos
+        torch.Tensor,  # Policy
+        torch.Tensor,  # Value
+    ],
 )
 
 
