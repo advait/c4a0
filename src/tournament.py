@@ -6,6 +6,7 @@ import abc
 import asyncio
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime
 import itertools
 import logging
 from typing import Dict, Iterator, List, NewType, Optional, Tuple
@@ -54,8 +55,11 @@ class ModelPlayer(Player):
         self.device = device
 
     def close(self):
+        """Shuts down the background thread in preparation for serialization."""
         if self._end_signal is not None:
             self._end_signal.set_result(True)
+            self._end_signal = None
+            self._enqueue_pos = None
 
     async def eval_pos(self, pos: Pos) -> Tuple[Policy, Value]:
         if self._enqueue_pos is None:
@@ -110,6 +114,7 @@ class TournamentResult:
     exploitation_constant: float
     mcts_iterations: int
     games: List[TournamentGame] = field(default_factory=list)
+    date: datetime = field(default_factory=datetime.now)
 
     def get_scores(self) -> List[Tuple[Player, float]]:
         scores: Dict[PlayerName, float] = defaultdict(lambda: 0.0)

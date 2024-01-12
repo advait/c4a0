@@ -98,6 +98,7 @@ class TrainingState:
         next_model.load_state_dict(best_model.state_dict())  # Clone model
         self.models[next_gen] = next_model
         training_gen = TrainingGen(start_gen=best_gen_id, trained_gen=next_gen)
+        self.training_gens.append(training_gen)
         return training_gen, next_model
 
 
@@ -108,6 +109,7 @@ class TrainingGen:
     training_samples: Optional[List[Sample]] = None
     tournament: Optional[TournamentResult] = None
     winning_gen: Optional[GenID] = None
+    date: datetime = datetime.now()
 
 
 async def train(
