@@ -31,7 +31,7 @@ from tournament import (
 
 @dataclass
 class TrainingState:
-    """Represents the full historical state of the training process."""
+    """The full historical state of the training process."""
 
     models: Dict[GenID, ConnectFourNet]
     training_gens: List["TrainingGen"]
@@ -104,6 +104,14 @@ class TrainingState:
 
 @dataclass
 class TrainingGen:
+    """
+    State of a single training generation.
+
+    We begin with the start_gen model and then use self play to generate training_samples.
+    Then we train a new model called trained_gen. Then we play a tournament with the last five
+    models. The winning model (winning_gen) is used as the start_gen for the next generation.
+    """
+
     start_gen: GenID
     trained_gen: GenID
     training_samples: Optional[List[Sample]] = None
@@ -112,14 +120,15 @@ class TrainingGen:
     date: datetime = datetime.now()
 
 
-async def train(
+async def train_gen(
     n_games: int,
     n_processes: int,
     mcts_iterations: int,
     exploration_constant,
     batch_size: int,
     device: torch.device,
-):
+) -> TrainingState:
+    """Trains a new model generation. See TrainingGen docstring."""
     logger = logging.getLogger(__name__)
 
     state = TrainingState.load_training_state()
@@ -183,6 +192,7 @@ async def train(
     logger.info(f"Winning gen: {gen.winning_gen} (used for training next gen)")
 
     state.save_training_state()
+    return state
 
 
 SampleTensor = NewType(
@@ -242,12 +252,10 @@ class PosDataModule(pl.LightningDataModule):
             self.training_data,  # type: ignore
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=1,
         )
 
     def val_dataloader(self):
         return DataLoader(
             self.validation_data,  # type: ignore
             batch_size=self.batch_size,
-            num_workers=1,
         )

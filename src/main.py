@@ -5,13 +5,17 @@ import asyncio
 import logging
 import multiprocessing as mp
 from sys import platform
+import warnings
 
 import torch
 
-from training import train
+from training import train_gen
 
 
 async def main():
+    # Disable unnecessary pytorch warnings
+    warnings.filterwarnings("ignore", ".*does not have many workers.*")
+
     default_device = get_torch_device()
 
     parser = ArgumentParser()
@@ -67,7 +71,7 @@ async def main():
 
 async def do_training(args):
     while True:
-        await train(
+        await train_gen(
             n_games=args.n_games,
             n_processes=args.n_processes,
             mcts_iterations=args.mcts_iterations,
