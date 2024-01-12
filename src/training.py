@@ -69,7 +69,7 @@ class TrainingState:
         for training_gen in reversed(self.training_gens):
             if training_gen.tournament is None:
                 continue
-            return list(training_gen.tournament.get_top_models())
+            return training_gen.tournament.get_top_models()
         return []
 
     def get_top_model(self) -> Tuple[GenID, ConnectFourNet]:

@@ -130,19 +130,13 @@ class TournamentResult:
             f"{player.name}: {score}" for player, score in self.get_scores()
         )
 
-    def get_top_models(self) -> Iterator[GenID]:
+    def get_top_models(self) -> List[GenID]:
         """Returns the top models from the tournament in descending order of performance."""
-        logger = logging.getLogger(__name__)
-        scores = self.get_scores()
-        for player, score in scores:
-            if not isinstance(player, ModelPlayer):
-                logger.warning(f"Top player is not a model: {player.name}")
-                continue
-            yield player.gen_id
-        raise ValueError("No models found in tournament results")
-
-    def get_top_model(self) -> GenID:
-        return next(self.get_top_models())
+        return [
+            player.gen_id
+            for player, _ in self.get_scores()
+            if isinstance(player, ModelPlayer)
+        ]
 
 
 async def play_tournament(
