@@ -1,104 +1,81 @@
 #!/usr/bin/env python
 
-from argparse import ArgumentParser
 import asyncio
 import logging
 import multiprocessing as mp
-from sys import platform
+from typing import Literal
 import warnings
 
+import clipstick
+from pydantic import BaseModel
 import torch
 
 from training import train_gen
+from utils import get_torch_device
+
+
+class Train(BaseModel):
+    """Trains a model via self-play."""
+
+    n_games: int = 2000
+    """number of games per generation"""
+
+    batch_size: int = 100
+    """batch size for training"""
+
+
+class Tournament(BaseModel):
+    """Runs a tournament between multiple models."""
+
+    n_top_models: int = 5
+    """Number of top models to use for the tournament (based on last gen's tournament results)."""
+
+
+class MainArgs(BaseModel):
+    """c4a0: self-improving connect four AI."""
+
+    sub_command: Train | Tournament
+
+    n_processes: int = mp.cpu_count() - 1
+    """number of processes to use for self-play"""
+
+    mcts_iterations: int = 150
+    """number of MCTS iterations per move"""
+
+    exploration_constant: float = 1.4
+    """MCTS exploration constant"""
+
+    device: Literal["cuda", "mps", "cpu"] = str(get_torch_device())  # type: ignore
+    """pytroch device"""
+
+    log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    """log level"""
 
 
 async def main():
     # Disable unnecessary pytorch warnings
     warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
-    default_device = get_torch_device()
-
-    parser = ArgumentParser()
-    parser.add_argument(
-        "--n-games",
-        type=int,
-        default=100,
-        help="number of games per generation",
-    )
-    parser.add_argument(
-        "--n-processes",
-        type=int,
-        default=mp.cpu_count() - 1,
-        help="number of processes to use for self-play",
-    )
-    parser.add_argument(
-        "--mcts-iterations",
-        type=int,
-        default=150,
-        help="number of MCTS iterations per move",
-    )
-    parser.add_argument(
-        "--exploration-constant",
-        type=float,
-        default=1.4,
-        help="MCTS exploration constant",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=100,
-        help="batch size for training",
-    )
-    parser.add_argument(
-        "--device",
-        type=str,
-        default=default_device,
-        help="pytorch device",
-    )
-    parser.add_argument(
-        "--log-level",
-        type=str,
-        default="INFO",
-        help="log level",
-    )
-    args = parser.parse_args()
-
+    args = clipstick.parse(MainArgs)
     logging.basicConfig(
         level=args.log_level, format="%(asctime)s - %(levelname)s - %(message)s"
     )
-    await do_training(args)
+    logger = logging.getLogger(__name__)
 
-
-async def do_training(args):
-    while True:
-        await train_gen(
-            n_games=args.n_games,
-            n_processes=args.n_processes,
-            mcts_iterations=args.mcts_iterations,
-            exploration_constant=args.exploration_constant,
-            batch_size=args.batch_size,
-            device=args.device,
-        )
-
-
-def get_torch_device() -> torch.device:
-    if torch.cuda.is_available():
-        return torch.device("cuda")
-
-    if platform == "darwin":
-        if torch.backends.mps.is_available():
-            return torch.device("mps")
-        elif not torch.backends.mps.is_built():
-            raise RuntimeError(
-                "MPS unavailable because the current torch install was not built with MPS enabled."
+    if isinstance(args.sub_command, Train):
+        while True:
+            await train_gen(
+                n_games=args.sub_command.n_games,
+                n_processes=args.n_processes,
+                mcts_iterations=args.mcts_iterations,
+                exploration_constant=args.exploration_constant,
+                batch_size=args.sub_command.batch_size,
+                device=torch.device(args.device),
             )
-        else:
-            raise RuntimeError(
-                "MPS unavailable because the current MacOS version is not 12.3+ and/or you do not "
-                "have an MPS-enabled device on this machine."
-            )
-
-    return torch.device("cpu")
+    elif isinstance(args.sub_command, Tournament):
+        raise NotImplementedError
+    else:
+        logger.error("Invalid sub-command: %s", args.sub_command)
 
 
 if __name__ == "__main__":

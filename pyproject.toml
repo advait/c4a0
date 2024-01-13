@@ -16,6 +16,8 @@ tensorboardx = "^2.6.2.2"
 tensorboard = "^2.15.1"
 tqdm = "^4.66.1"
 jupyterlab = "^4.0.10"
+pydantic = "^2.5.3"
+clipstick = "^0.5.1"
 
 
 [tool.poetry.group.dev.dependencies]

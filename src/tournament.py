@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import itertools
 import logging
-from typing import Dict, Iterator, List, NewType, Optional, Tuple
+from typing import Dict, List, NewType, Optional, Tuple
 import numpy as np
 
 import torch
