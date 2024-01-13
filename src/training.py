@@ -114,10 +114,13 @@ class TrainingGen:
 
     start_gen: GenID
     trained_gen: GenID
-    training_samples: Optional[List[Sample]] = None
+    date: datetime = datetime.now()
+
+    training_data: Optional[List[Sample]] = None
+    validation_data: Optional[List[Sample]] = None
+
     tournament: Optional[TournamentResult] = None
     winning_gen: Optional[GenID] = None
-    date: datetime = datetime.now()
 
 
 async def train_gen(
@@ -137,9 +140,9 @@ async def train_gen(
     logger.info(f"Training gen {gen.trained_gen} from gen {gen.start_gen}")
 
     # Self play
-    if not gen.training_samples:
+    if gen.training_data is None or gen.validation_data is None:
         logger.info("No cached samples found. Generating samples from self-play.")
-        gen.training_samples = await generate_samples(
+        samples = await generate_samples(
             model=model,
             n_games=n_games,
             mcts_iterations=mcts_iterations,
@@ -148,9 +151,8 @@ async def train_gen(
             device=device,
             n_processes=n_processes,
         )
-        logger.info(
-            f"Done generating {len(gen.training_samples)} samples. Caching for re-use."
-        )
+        gen.training_data, gen.validation_data = PosDataModule.split_samples(samples)
+        logger.info(f"Done generating {len(samples)} samples. Caching for re-use.")
         state.save_training_state()
     else:
         logger.info("Loaded cached samples")
@@ -164,7 +166,7 @@ async def train_gen(
             EarlyStopping(monitor="val_loss", patience=10, mode="min"),
         ],
     )
-    data_module = PosDataModule(gen.training_samples, batch_size)
+    data_module = PosDataModule(gen.training_data, gen.validation_data, batch_size)
     logger.info(f"Beginning training gen {gen.trained_gen}")
     trainer.fit(model, data_module)
     logger.info(f"Finished training gen {gen.trained_gen}")
@@ -207,14 +209,21 @@ SampleTensor = NewType(
 
 
 class PosDataModule(pl.LightningDataModule):
-    def __init__(self, samples: List[Sample], batch_size: int):
+    def __init__(
+        self,
+        training_data: List[Sample],
+        validation_data: List[Sample],
+        batch_size: int,
+    ):
         super().__init__()
         self.batch_size = batch_size
-        samples = samples + [self.flip_sample(s) for s in samples]
-        tensors = list(self.sample_to_tensor(s) for s in samples)
-        self.training_data, self.validation_data = self.split_samples(tensors)
+        training_data += [self.flip_sample(s) for s in training_data]
+        validation_data += [self.flip_sample(s) for s in validation_data]
+        self.training_data = [self.sample_to_tensor(s) for s in training_data]
+        self.validation_data = [self.sample_to_tensor(s) for s in validation_data]
 
-    def flip_sample(self, sample: Sample) -> Sample:
+    @staticmethod
+    def flip_sample(sample: Sample) -> Sample:
         """Flips the sample and policy horizontally to account for connect four symmetry."""
         game_id, pos, policy, value = sample
         # copy is needed as flip returns a view with negative stride that is incompatible w torch
@@ -222,7 +231,8 @@ class PosDataModule(pl.LightningDataModule):
         policy = Policy(np.flip(policy).copy())
         return Sample((game_id, pos, policy, value))
 
-    def sample_to_tensor(self, sample: Sample) -> SampleTensor:
+    @staticmethod
+    def sample_to_tensor(sample: Sample) -> SampleTensor:
         game_id, pos, policy, value = sample
         pos_t = torch.from_numpy(pos).float()
         policy_t = torch.from_numpy(policy).float()
@@ -232,9 +242,10 @@ class PosDataModule(pl.LightningDataModule):
         assert value_t.shape == ()
         return SampleTensor((game_id, pos_t, policy_t, value_t))
 
+    @staticmethod
     def split_samples(
-        self, samples: List[SampleTensor], split_ratio=0.8
-    ) -> Tuple[List[SampleTensor], List[SampleTensor]]:
+        samples: List[Sample], split_ratio=0.8
+    ) -> Tuple[List[Sample], List[Sample]]:
         """Splits samples into training and validation sets."""
         game_ids = set(sample[0] for sample in samples)
         split_game_id = int(len(game_ids) * split_ratio) + min(game_ids)
