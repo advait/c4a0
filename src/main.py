@@ -23,6 +23,9 @@ class Train(BaseModel):
     batch_size: int = 100
     """batch size for training"""
 
+    max_coros_per_process: int = 1000
+    """max concurrent self-play games per coroutine"""
+
 
 class Tournament(BaseModel):
     """Runs a tournament between multiple models."""
@@ -37,7 +40,7 @@ class MainArgs(BaseModel):
     sub_command: Train | Tournament
 
     n_processes: int = mp.cpu_count() - 1
-    """number of processes to use for self-play"""
+    """number of processes to use for self-play/tournament"""
 
     mcts_iterations: int = 150
     """number of MCTS iterations per move"""
@@ -67,6 +70,7 @@ async def main():
             await train_gen(
                 n_games=args.sub_command.n_games,
                 n_processes=args.n_processes,
+                max_coros_per_process=args.sub_command.max_coros_per_process,
                 mcts_iterations=args.mcts_iterations,
                 exploration_constant=args.exploration_constant,
                 batch_size=args.sub_command.batch_size,

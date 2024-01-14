@@ -114,6 +114,7 @@ async def generate_samples(
     n_processes: int,
     mcts_iterations: int,
     exploration_constant: float,
+    max_coros_per_process: int = 1000,
     nn_flush_freq_s: float = 0.01,
     nn_max_batch_size: int = 20000,
     device: torch.device = torch.device("cpu"),
@@ -125,7 +126,8 @@ async def generate_samples(
     logger = logging.getLogger(__name__)
 
     n_processes = min(n_processes, n_games)
-    n_coroutines_per_process = max(math.ceil(n_games / n_processes), 1)
+    n_coroutines_per_process = math.ceil(n_games / n_processes)
+    n_coroutines_per_process = max(n_coroutines_per_process, max_coros_per_process)
 
     logger.info(
         dedent(

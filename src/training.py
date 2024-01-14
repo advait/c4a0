@@ -126,6 +126,7 @@ class TrainingGen:
 async def train_gen(
     n_games: int,
     n_processes: int,
+    max_coros_per_process: int,
     mcts_iterations: int,
     exploration_constant,
     batch_size: int,
@@ -147,6 +148,7 @@ async def train_gen(
             n_games=n_games,
             mcts_iterations=mcts_iterations,
             exploration_constant=exploration_constant,
+            max_coros_per_process=max_coros_per_process,
             nn_max_batch_size=20000,
             device=device,
             n_processes=n_processes,
@@ -160,7 +162,7 @@ async def train_gen(
     # Training
     trainer = pl.Trainer(
         max_epochs=100,
-        accelerator="gpu",
+        accelerator="auto",
         devices="auto",
         callbacks=[
             EarlyStopping(monitor="val_loss", patience=10, mode="min"),
