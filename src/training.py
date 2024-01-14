@@ -87,7 +87,7 @@ class TrainingState:
 
     def create_new_gen(self) -> Tuple["TrainingGen", ConnectFourNet]:
         """Creates a new generation of training by cloning the best model."""
-        if len(self.training_gens) > 0 and self.training_gens[-1].winning_gen is None:
+        if len(self.training_gens) > 0 and self.training_gens[-1].tournament is None:
             # If the latest generation hasn't completed training, return it
             latest_gen = self.training_gens[-1]
             return latest_gen, self.get_model(latest_gen.trained_gen)
@@ -109,7 +109,7 @@ class TrainingGen:
 
     We begin with the start_gen model and then use self play to generate training_samples.
     Then we train a new model called trained_gen. Then we play a tournament with the last five
-    models. The winning model (winning_gen) is used as the start_gen for the next generation.
+    models. The winning model is used as the start_gen for the next generation.
     """
 
     start_gen: GenID
@@ -120,7 +120,6 @@ class TrainingGen:
     validation_data: Optional[List[Sample]] = None
 
     tournament: Optional[TournamentResult] = None
-    winning_gen: Optional[GenID] = None
 
 
 async def train_gen(
@@ -192,8 +191,8 @@ async def train_gen(
         exploration_constant=exploration_constant,
     )
     logger.info(f"Tournament results:\n{gen.tournament.scores_table()}")
-    gen.winning_gen = gen.trained_gen
-    logger.info(f"Winning gen: {gen.winning_gen} (used for training next gen)")
+    winning_gen = gen.tournament.get_top_models()[0]
+    logger.info(f"Winning gen: {winning_gen} (used for training next gen)")
 
     state.save_training_state()
     return state
