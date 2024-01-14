@@ -156,6 +156,7 @@ async def mcts(
         [
             child.visit_count if child is not None else 0
             for child in (root.children or [])
-        ]
+        ],
+        dtype=np.float32,
     )
-    return child_visits / np.sum(child_visits)
+    return Policy(child_visits / np.sum(child_visits))

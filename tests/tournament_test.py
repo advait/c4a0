@@ -7,9 +7,11 @@ from tournament import play_tournament, ModelPlayer, RandomPlayer, UniformPlayer
 
 @pytest.mark.asyncio
 async def test_tournament():
+    model = ConnectFourNet()
+    model.eval()  # Disable batch normalization
     model_player = ModelPlayer(
         gen_id=GenID(0),
-        model=ConnectFourNet(),
+        model=model,
         device=torch.device("cpu"),
     )
     players = [model_player, RandomPlayer(), UniformPlayer()]

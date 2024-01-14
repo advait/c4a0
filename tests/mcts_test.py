@@ -1,7 +1,7 @@
 from textwrap import dedent
 from typing import Tuple
 import numpy as np
-from numpy.testing import assert_array_equal
+from numpy.testing import assert_array_almost_equal
 
 import pytest
 
@@ -19,7 +19,7 @@ async def test_mcts_depth_one():
         eval_pos=uniform_eval_pos,
     )
     desired_policy = np.ones(N_COLS) / N_COLS
-    assert_array_equal(policy, desired_policy)
+    assert_array_almost_equal(policy, desired_policy)
 
 
 @pytest.mark.asyncio
@@ -31,7 +31,7 @@ async def test_mcts_depth_two():
         eval_pos=uniform_eval_pos,
     )
     desired_policy = np.ones(N_COLS) / N_COLS
-    assert_array_equal(policy, desired_policy)
+    assert_array_almost_equal(policy, desired_policy)
 
 
 @pytest.mark.asyncio

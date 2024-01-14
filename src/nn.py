@@ -37,14 +37,30 @@ EPS = 1e-8  # Epsilon small constant to avoid log(0)
 class ConnectFourNet(pl.LightningModule):
     def __init__(self):
         super(ConnectFourNet, self).__init__()
+
+        # Shared conv blocks
         self.conv1 = nn.Conv2d(1, 16, kernel_size=4)
+        self.bn1 = nn.BatchNorm2d(16)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(32)
         self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        self.bn3 = nn.BatchNorm2d(64)
 
-        conv_output_size = self._calculate_conv_output_size()
+        fc_size = self._calculate_conv_output_size()
 
-        self.fc_policy = nn.Linear(conv_output_size, N_COLS)  # Policy head
-        self.fc_value = nn.Linear(conv_output_size, 1)  # Value head
+        # Policy head
+        self.fc_policy1 = nn.Linear(fc_size, fc_size)
+        self.bn_policy1 = nn.BatchNorm1d(fc_size)
+        self.fc_policy2 = nn.Linear(fc_size, fc_size)
+        self.bn_policy2 = nn.BatchNorm1d(fc_size)
+        self.fc_policy3 = nn.Linear(fc_size, N_COLS)
+
+        # Value head
+        self.fc_value1 = nn.Linear(fc_size, fc_size)
+        self.bn_value1 = nn.BatchNorm1d(fc_size)
+        self.fc_value2 = nn.Linear(fc_size, fc_size)
+        self.bn_value2 = nn.BatchNorm1d(fc_size)
+        self.fc_value3 = nn.Linear(fc_size, 1)
 
         # Metrics
         self.policy_kl_div = torchmetrics.KLDivergence(log_prob=True)
@@ -52,14 +68,21 @@ class ConnectFourNet(pl.LightningModule):
 
     def forward(self, x):
         x = rearrange(x, "b h w -> b 1 h w")
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv3(x))
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.relu(self.bn2(self.conv2(x)))
+        x = F.relu(self.bn3(self.conv3(x)))
 
         x = rearrange(x, "b c h w -> b (c h w)")
 
-        policy_logprobs = F.log_softmax(self.fc_policy(x), dim=1)
-        value = F.tanh(self.fc_value(x))
+        x_p = F.relu(self.bn_policy1(self.fc_policy1(x)))
+        x_p = F.relu(self.bn_policy2(self.fc_policy2(x_p)))
+        x_p = self.fc_policy3(x_p)
+        policy_logprobs = F.log_softmax(x_p, dim=1)
+
+        x_v = F.relu(self.bn_value1(self.fc_value1(x)))
+        x_v = F.relu(self.bn_value2(self.fc_value2(x_v)))
+        x_v = self.fc_value3(x_v)
+        value = F.tanh(x_v)
 
         return policy_logprobs, value
 

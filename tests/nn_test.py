@@ -8,6 +8,7 @@ from nn import ConnectFourNet
 def test_random_nn_works():
     model = ConnectFourNet()
     pos = torch.from_numpy(STARTING_POS).float().unsqueeze(0)
+    model.eval()
     with torch.no_grad():
         policy_logprobs, value = model(pos)
 
@@ -24,6 +25,7 @@ def test_loss_of_zero():
     """Using the model output as training labels should result in a loss of zero."""
     model = ConnectFourNet()
     pos = torch.from_numpy(STARTING_POS).float().unsqueeze(0)
+    model.eval()
     with torch.no_grad():
         policy_logprobs, value = model(pos)
         policy = torch.exp(policy_logprobs)
@@ -58,6 +60,7 @@ def test_loss_of_nonzero():
         policy,
         value,
     )
+    model.eval()
     loss = model.training_step(training_batch, 0)
     loss = loss.detach().item()
     assert loss > 0.0

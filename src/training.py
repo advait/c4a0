@@ -142,6 +142,7 @@ async def train_gen(
     # Self play
     if gen.training_data is None or gen.validation_data is None:
         logger.info("No cached samples found. Generating samples from self-play.")
+        model.eval()  # Switch batch normalization to eval mode for self-play
         samples = await generate_samples(
             model=model,
             n_games=n_games,
@@ -169,6 +170,7 @@ async def train_gen(
     )
     data_module = PosDataModule(gen.training_data, gen.validation_data, batch_size)
     logger.info(f"Beginning training gen {gen.trained_gen}")
+    model.train()  # Switch batch normalization to train mode for training bn params
     trainer.fit(model, data_module)
     logger.info(f"Finished training gen {gen.trained_gen}")
 
@@ -184,6 +186,7 @@ async def train_gen(
     logger.info(
         f"Playing tournament with {len(players)} players: {', '.join(p.name for p in players)}"
     )
+    model.eval()  # Switch batch normalization to eval mode for tournament
     gen.tournament = await play_tournament(
         players=players,
         games_per_match=20,

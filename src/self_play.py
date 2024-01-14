@@ -127,7 +127,7 @@ async def generate_samples(
 
     n_processes = min(n_processes, n_games)
     n_coroutines_per_process = math.ceil(n_games / n_processes)
-    n_coroutines_per_process = max(n_coroutines_per_process, max_coros_per_process)
+    n_coroutines_per_process = min(n_coroutines_per_process, max_coros_per_process)
 
     logger.info(
         dedent(
