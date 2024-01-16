@@ -12,6 +12,7 @@ import logging
 from typing import Dict, List, NewType, Optional, Tuple
 import numpy as np
 
+from tabulate import tabulate
 import torch
 from tqdm import tqdm
 from c4 import N_COLS, Pos
@@ -126,8 +127,10 @@ class TournamentResult:
         return ret
 
     def scores_table(self) -> str:
-        return "\n".join(
-            f"{player.name}: {score}" for player, score in self.get_scores()
+        return tabulate(
+            [(player.name, score) for player, score in self.get_scores()],
+            headers=["Player", "Score"],
+            tablefmt="github",
         )
 
     def get_top_models(self) -> List[GenID]:
