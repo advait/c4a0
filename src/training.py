@@ -170,18 +170,21 @@ async def train_gen(
             n_processes=n_processes,
         )
         gen.training_data, gen.validation_data = PosDataModule.split_samples(samples)
+        logger.info(f"Done generating {len(samples)} samples.")
 
         # Include samples from prior generations (for the same source model) if they exist
         prior_training_data, prior_validation_data = state.get_source_training_data(
             gen.source_gen
         )
+        logger.info(
+            f"Discovered {len(prior_training_data)} additional samples from prior gens"
+        )
         gen.training_data = prior_training_data + gen.training_data
         gen.validation_data = prior_validation_data + gen.validation_data
-
-        logger.info(f"Done generating {len(samples)} samples. Caching for re-use.")
+        logger.info(f"Caching {len(gen.training_data)} total samples for reuse")
         state.save_training_state()
     else:
-        logger.info("Loaded cached samples")
+        logger.info(f"Loaded {len(gen.training_data)} cached samples")
 
     # Training
     trainer = pl.Trainer(
