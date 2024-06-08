@@ -1,0 +1,6 @@
+[package]
+name = "c4a0_rust"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
