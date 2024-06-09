@@ -136,11 +136,12 @@ impl Pos {
             | Self::_idx_mask_unsafe(row - 3, col + 3)
     }
 
-    /// Represents the set of all possible wins. Each item is a bitmask representing the required
-    /// locations of consecutive pieces.
-    /// Note rust doesn't support for loops in const functions so we have to resort to while:
-    /// See: https://github.com/rust-lang/rust/issues/87575
+    /// Represents the set of all possible wins.
+    /// Each item is a bitmask representing the required locations of consecutive pieces.
     const WIN_MASKS: [u64; 69] = {
+        // Note rust doesn't support for loops in const functions so we have to resort to while:
+        // See: https://github.com/rust-lang/rust/issues/87575
+
         let mut masks = [0u64; 69];
         let mut index = 0;
 
@@ -195,14 +196,15 @@ impl Pos {
         masks
     };
 
-    /// Determines if the game is over, and if so, who won. If the game is not over, returns None.
+    /// Determines if the game is over, and if so, who won.
+    /// If the game is not over, returns None.
     fn is_terminal(&self) -> Option<TerminalState> {
         if self._is_terminal_for_player() {
-            return Some(TerminalState::PlayerWin);
+            Some(TerminalState::PlayerWin)
         } else if self.clone()._invert()._is_terminal_for_player() {
-            return Some(TerminalState::OpponentWin);
+            Some(TerminalState::OpponentWin)
         } else if self.ply() == Self::N_COLS * Self::N_ROWS {
-            return Some(TerminalState::Draw);
+            Some(TerminalState::Draw)
         } else {
             None
         }
@@ -217,6 +219,25 @@ impl Pos {
             }
         }
         false
+    }
+}
+
+impl ToString for Pos {
+    fn to_string(&self) -> String {
+        let mut ret: Vec<String> = Vec::with_capacity(Self::N_ROWS);
+        for row in (0..Self::N_ROWS).rev() {
+            let mut s = String::new();
+            for col in 0..Self::N_COLS {
+                let p = match self.get(row, col) {
+                    Some(CellValue::Player) => "🔴",
+                    Some(CellValue::Opponent) => "🔵",
+                    None => "⚫",
+                };
+                s.push_str(p);
+            }
+            ret.push(s);
+        }
+        ret.join("\n")
     }
 }
 
@@ -284,5 +305,30 @@ mod tests {
 
         // Verify if the terminal state is a draw
         assert_eq!(pos.is_terminal(), Some(TerminalState::Draw));
+    }
+
+    #[test]
+    fn test_to_str() {
+        let pos = Pos::new().test_moves(&[
+            0, 1, 2, 3, 4, 5, // First row
+            0, 1, 2, 3, 4, 5, // Second row
+            0, 1, 2, 3, 4, 5, // Third row
+            5, 4, 3, 2, 1, 0, // Fourth row
+            5, 4, 3, 2, 1, 0, // Fifth row
+            5, 4, 3, 2, 1, 0, // Sixth row
+            6, 6, 6, 6, 6, 6, // Last column full
+        ]);
+
+        let expected = [
+            "🔵🔴🔵🔴🔵🔴🔵",
+            "🔵🔴🔵🔴🔵🔴🔴",
+            "🔵🔴🔵🔴🔵🔴🔵",
+            "🔴🔵🔴🔵🔴🔵🔴",
+            "🔴🔵🔴🔵🔴🔵🔵",
+            "🔴🔵🔴🔵🔴🔵🔴",
+        ]
+        .join("\n");
+
+        assert_eq!(pos.to_string(), expected);
     }
 }
