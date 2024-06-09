@@ -220,6 +220,19 @@ impl Pos {
         }
         false
     }
+
+    /// Determines which moves (columns) are legal to play.
+    /// The LSB represents col 0.
+    fn legal_moves(&self) -> u8 {
+        let mut moves: u8 = 0b0;
+        let top_row = Self::N_ROWS - 1;
+        for col in 0..Self::N_COLS {
+            if let None = self.get(top_row, col) {
+                moves |= 0b1 << col;
+            }
+        }
+        moves
+    }
 }
 
 impl ToString for Pos {
@@ -270,6 +283,7 @@ mod tests {
             }
 
             // Playing here should overflow column
+            assert_eq!(pos.legal_moves() & (0b1 << col), 0);
             assert_eq!(pos.make_move(col), None);
         }
     }
@@ -308,7 +322,7 @@ mod tests {
     }
 
     #[test]
-    fn test_to_str() {
+    fn to_str() {
         let pos = Pos::new().test_moves(&[
             0, 1, 2, 3, 4, 5, // First row
             0, 1, 2, 3, 4, 5, // Second row
@@ -330,5 +344,38 @@ mod tests {
         .join("\n");
 
         assert_eq!(pos.to_string(), expected);
+    }
+
+    #[test]
+    fn legal_moves() {
+        let mut pos = Pos::new();
+        assert_eq!(pos.legal_moves(), 0b1111111);
+
+        pos = pos.test_moves(&[
+            0, 1, 2, 3, 4, 5, // First row
+            0, 1, 2, 3, 4, 5, // Second row
+            0, 1, 2, 3, 4, 5, // Third row
+            5, 4, 3, 2, 1, 0, // Fourth row
+            5, 4, 3, 2, 1, 0, // Fifth row
+        ]);
+
+        // Fill up top row
+        assert_eq!(pos.legal_moves(), 0b1111111);
+        pos = pos.test_move(5);
+        assert_eq!(pos.legal_moves(), 0b1011111);
+        pos = pos.test_move(4);
+        assert_eq!(pos.legal_moves(), 0b1001111);
+        pos = pos.test_move(3);
+        assert_eq!(pos.legal_moves(), 0b1000111);
+        pos = pos.test_move(2);
+        assert_eq!(pos.legal_moves(), 0b1000011);
+        pos = pos.test_move(1);
+        assert_eq!(pos.legal_moves(), 0b1000001);
+        pos = pos.test_move(0);
+        assert_eq!(pos.legal_moves(), 0b1000000);
+
+        // Fill up last column
+        pos = pos.test_moves(&[6, 6, 6, 6, 6, 6]);
+        assert_eq!(pos.legal_moves(), 0b0);
     }
 }
