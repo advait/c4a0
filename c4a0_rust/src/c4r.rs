@@ -2,14 +2,14 @@
 
 /// Represents the value of a cell in a connect four position.
 #[derive(Debug, PartialEq, Eq)]
-enum CellValue {
+pub enum CellValue {
     Opponent = 0,
     Player = 1,
 }
 
 /// Represents the possible terminal states of a connect four game.
 #[derive(Debug, PartialEq, Eq)]
-enum TerminalState {
+pub enum TerminalState {
     PlayerWin,
     OpponentWin,
     Draw,
@@ -20,14 +20,17 @@ enum TerminalState {
 /// location) and a u64 value (bitmask representing the color of the given piece).
 /// Bit indexing is specified by `_idx_mask_unsafe`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-struct Pos {
+pub struct Pos {
     mask: u64,
     value: u64,
 }
 
+/// The column for a given move (0..Pos::N_COLS)
+pub type Move = usize;
+
 impl Pos {
-    const N_ROWS: usize = 6;
-    const N_COLS: usize = 7;
+    pub const N_ROWS: usize = 6;
+    pub const N_COLS: usize = 7;
 
     pub fn new() -> Pos {
         Pos { mask: 0, value: 0 }
@@ -37,7 +40,7 @@ impl Pos {
     /// Returns a new position where the cell values are flipped.
     /// Performs bounds and collision checing.
     /// DOES NOT perform win checking.
-    pub fn make_move(&self, col: usize) -> Option<Pos> {
+    pub fn make_move(&self, col: Move) -> Option<Pos> {
         if col > Self::N_COLS {
             return None;
         }
@@ -198,7 +201,7 @@ impl Pos {
 
     /// Determines if the game is over, and if so, who won.
     /// If the game is not over, returns None.
-    fn is_terminal(&self) -> Option<TerminalState> {
+    pub fn is_terminal_state(&self) -> Option<TerminalState> {
         if self._is_terminal_for_player() {
             Some(TerminalState::PlayerWin)
         } else if self.clone()._invert()._is_terminal_for_player() {
@@ -293,13 +296,13 @@ mod tests {
         let pos = Pos::new().test_moves(&[0, 0, 1, 1, 2, 2, 3]);
 
         // Because the board is inverted, the last move results in the opponent winning
-        assert_eq!(pos.is_terminal(), Some(TerminalState::OpponentWin));
+        assert_eq!(pos.is_terminal_state(), Some(TerminalState::OpponentWin));
     }
 
     #[test]
     fn col_win() {
         let pos = Pos::new().test_moves(&[6, 0, 6, 0, 6, 0, 6]);
-        assert_eq!(pos.is_terminal(), Some(TerminalState::OpponentWin));
+        assert_eq!(pos.is_terminal_state(), Some(TerminalState::OpponentWin));
     }
 
     #[test]
@@ -318,7 +321,7 @@ mod tests {
         ]);
 
         // Verify if the terminal state is a draw
-        assert_eq!(pos.is_terminal(), Some(TerminalState::Draw));
+        assert_eq!(pos.is_terminal_state(), Some(TerminalState::Draw));
     }
 
     #[test]
