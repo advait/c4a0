@@ -257,6 +257,23 @@ impl ToString for Pos {
     }
 }
 
+impl From<&str> for Pos {
+    fn from(s: &str) -> Self {
+        let mut pos = Pos::new();
+        for (row, line) in s.lines().rev().enumerate() {
+            for (col, c) in line.chars().enumerate() {
+                let cell_value = match c {
+                    '🔴' => CellValue::Player,
+                    '🔵' => CellValue::Opponent,
+                    _ => continue,
+                };
+                pos = pos._set_piece_unsafe(row, col, cell_value);
+            }
+        }
+        pos
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,6 +364,7 @@ mod tests {
         .join("\n");
 
         assert_eq!(pos.to_string(), expected);
+        assert_eq!(Pos::from(expected.as_str()), pos);
     }
 
     #[test]
