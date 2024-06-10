@@ -1,7 +1,12 @@
+use std::collections::{HashMap, HashSet};
+
 use crate::c4r::{Move, Pos, TerminalState};
 
 /// Probabilities for how lucrative each column is.
 type Policy = [f64; Pos::N_COLS];
+
+/// The lucrativeness value of a given position.
+type PosValue = f64;
 
 /// A batch of MCTS games that are generated together.
 /// We a pytorch NN forward pass to expand a given node (to determine the initial policy values
@@ -9,13 +14,12 @@ type Policy = [f64; Pos::N_COLS];
 /// partially compute many MCTS traversals simultaneously, pausing each until we reach the node
 /// expansion phase. Then we are able to batch several NN calls simultaneously.
 /// After the batched forward pass completes, we resume the next iteration of MCTS, continuing this
-/// process until each perform total_iterations.
+/// process until each perform n_iterations.
 struct MctsBatch {
     games: Vec<MctsGame>,
-    total_iterations: usize,
-    iteration_count: usize,
+    n_iterations: usize,
     exploration_constant: f64,
-    eval_pos: fn(Vec<Pos>) -> EvalPosResult,
+    eval_pos: fn(&Vec<Pos>) -> Vec<EvalPosResult>,
 }
 
 impl MctsBatch {
@@ -23,24 +27,47 @@ impl MctsBatch {
         n_games: usize,
         n_iterations: usize,
         exploration_constant: f64,
-        eval_pos: fn(Vec<Pos>) -> EvalPosResult,
+        eval_pos: fn(&Vec<Pos>) -> Vec<EvalPosResult>,
     ) -> MctsBatch {
         MctsBatch {
             games: vec![MctsGame::new(); n_games],
-            total_iterations: n_iterations,
-            iteration_count: 0,
+            n_iterations,
             exploration_constant,
             eval_pos,
         }
     }
 
-    fn run() {}
+    /// Runs n_iterations MCTS iterations.
+    fn run(&mut self) {
+        for _ in 0..self.n_iterations {
+            self.run_single_iteration();
+        }
+    }
+
+    /// Runs a single iteraton of MCTS for all batch games, calling eval_pos once.
+    fn run_single_iteration(&mut self) {
+        let position_set: HashSet<_> = self
+            .games
+            .iter()
+            .map(|g| g.get_leaf_pos().clone())
+            .collect();
+        let positions: Vec<_> = position_set.into_iter().collect();
+
+        let all_evals = (self.eval_pos)(&positions);
+        let eval_map: HashMap<_, _> = positions.into_iter().zip(all_evals).collect();
+
+        for game in self.games.iter_mut() {
+            let pos = game.get_leaf_pos();
+            let nn_result = &eval_map[pos];
+            game.on_received_policy(nn_result.policy, nn_result.value, self.exploration_constant);
+        }
+    }
 }
 
+/// The returned output from the forward pass of the NN.
 struct EvalPosResult {
-    pos: Pos,
     policy: Policy,
-    value: f64,
+    value: PosValue,
 }
 
 /// A single MCTS game.
@@ -58,7 +85,11 @@ struct MctsGame {
 
 impl MctsGame {
     fn new() -> MctsGame {
-        let root_node = Node::new(Pos::new(), None, 0.0);
+        Self::new_from_pos(Pos::new())
+    }
+
+    fn new_from_pos(pos: Pos) -> MctsGame {
+        let root_node = Node::new(pos, None, 0.0);
         MctsGame {
             nodes: vec![root_node],
             root_id: 0,
@@ -82,10 +113,20 @@ impl MctsGame {
         id
     }
 
+    /// Gets the leaf node position that needs to be evaluated by the NN
+    fn get_leaf_pos(&self) -> &Pos {
+        &self.get(self.leaf_id).pos
+    }
+
     /// Called when we receive a new policy/value from the NN forward pass for this leaf node.
     /// Expands the current leaf with the given policy, backpropagates up the tree with the given
     /// value, and selects a new leaf for the next MCTS iteration.
-    fn on_received_policy(&mut self, policy: Policy, nn_value: f64, exploration_constant: f64) {
+    fn on_received_policy(
+        &mut self,
+        policy: Policy,
+        nn_value: PosValue,
+        exploration_constant: f64,
+    ) {
         self._expand_leaf(self.leaf_id, policy);
 
         let leaf = self.get(self.leaf_id);
@@ -129,7 +170,7 @@ impl MctsGame {
     /// Backpropagate value up the tree, alternating value signs for each step.
     /// If the leaf node is a non-terminal node, the value is taken from the NN forward pass.
     /// If the leaf node is a terminal node, the value is the objective value of the win/loss/draw.
-    fn _backpropagate(&mut self, leaf_id: NodeId, mut value: f64) {
+    fn _backpropagate(&mut self, leaf_id: NodeId, mut value: PosValue) {
         let mut pos = self.get_mut(leaf_id);
         loop {
             pos.visit_count += 1;
@@ -200,14 +241,14 @@ struct Node {
     parent: Option<NodeId>,
     visit_count: usize,
     exploitation_value_sum: f64,
-    initial_policy_value: f64,
+    initial_policy_value: PosValue,
     children: Option<[Option<NodeId>; Pos::N_COLS]>,
 }
 
 impl Node {
     const EPS: f64 = 1e-8;
 
-    fn new(pos: Pos, parent: Option<NodeId>, initial_policy_value: f64) -> Node {
+    fn new(pos: Pos, parent: Option<NodeId>, initial_policy_value: PosValue) -> Node {
         Node {
             pos,
             parent,
@@ -220,14 +261,14 @@ impl Node {
 
     /// The exploitation component of the UCT value, i.e. the average win rate.
     /// Because we are viewing the value from the perspective of the parent node, we negate it.
-    fn exploitation_value(&self) -> f64 {
+    fn exploitation_value(&self) -> PosValue {
         -1.0 * self.exploitation_value_sum / ((self.visit_count as f64) + 1.0)
     }
 
     /// The exploration component of the UCT value. Higher visit counts result in lower values.
     /// We also weight the exploration value by the initial policy value to allow the network
     /// to guide the search.
-    fn exploration_value(&self, game: &MctsGame) -> f64 {
+    fn exploration_value(&self, game: &MctsGame) -> PosValue {
         let parent_visit_count = match self.parent {
             Some(parent_id) => game.get(parent_id).visit_count,
             None => self.visit_count,
@@ -237,12 +278,47 @@ impl Node {
     }
 
     /// The UCT value of this node. Represents the lucrativeness of this node according to MCTS.
-    fn uct_value(&self, exploration_constant: f64, game: &MctsGame) -> f64 {
+    fn uct_value(&self, exploration_constant: f64, game: &MctsGame) -> PosValue {
         self.exploitation_value() + exploration_constant * self.exploration_value(game)
     }
 
     /// Whether the game is over (won, los, draw) from this position.
     fn is_terminal(&self) -> bool {
         self.pos.is_terminal_state() != None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CONST_COL_WEIGHT: f64 = 1.0 / (Pos::N_COLS as f64);
+
+    /// Creates a batch with a single game and a constant evaluation function.
+    fn batch_with_pos(pos: Pos, n_iterations: usize) -> MctsBatch {
+        MctsBatch {
+            games: vec![MctsGame::new_from_pos(pos); 1],
+            n_iterations,
+            exploration_constant: 1.4,
+            eval_pos: constant_eval_pos,
+        }
+    }
+
+    /// A constant evaluation function that returns a uniform policy and 0.0 value.
+    fn constant_eval_pos(pos: &Vec<Pos>) -> Vec<EvalPosResult> {
+        pos.into_iter()
+            .map(|_p| EvalPosResult {
+                policy: [CONST_COL_WEIGHT; Pos::N_COLS],
+                value: 0.0,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn mcts_prefers_center_column() {
+        let mut batch = batch_with_pos(Pos::new(), 1000);
+        batch.run();
+        let policy = batch.games[0].final_policy();
+        assert!(policy[3] > CONST_COL_WEIGHT);
     }
 }

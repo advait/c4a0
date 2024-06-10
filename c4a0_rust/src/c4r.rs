@@ -19,7 +19,7 @@ pub enum TerminalState {
 /// Internally consists of a u64 mask (bitmask representing whether a piece exists at a given
 /// location) and a u64 value (bitmask representing the color of the given piece).
 /// Bit indexing is specified by `_idx_mask_unsafe`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pos {
     mask: u64,
     value: u64,
