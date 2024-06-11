@@ -290,27 +290,31 @@ impl Node {
 
 #[cfg(test)]
 mod tests {
-    use approx::assert_relative_eq;
+    use approx::{assert_relative_eq, assert_relative_ne};
+    use more_asserts::assert_gt;
 
     use super::*;
 
     const CONST_COL_WEIGHT: f64 = 1.0 / (Pos::N_COLS as f64);
+    const CONST_POLICY: [f64; Pos::N_COLS] = [CONST_COL_WEIGHT; Pos::N_COLS];
 
-    /// Creates a batch with a single game and a constant evaluation function.
-    fn batch_with_pos(pos: Pos, n_iterations: usize) -> MctsBatch {
-        MctsBatch {
+    /// Runs a batch with a single game and a constant evaluation function.
+    fn run_batch_with_pos(pos: Pos, n_iterations: usize) -> Policy {
+        let mut batch = MctsBatch {
             games: vec![MctsGame::new_from_pos(pos); 1],
             n_iterations,
             exploration_constant: 1.4,
             eval_pos: constant_eval_pos,
-        }
+        };
+        batch.run();
+        batch.games[0].final_policy()
     }
 
     /// A constant evaluation function that returns a uniform policy and 0.0 value.
     fn constant_eval_pos(pos: &Vec<Pos>) -> Vec<EvalPosResult> {
         pos.into_iter()
             .map(|_p| EvalPosResult {
-                policy: [CONST_COL_WEIGHT; Pos::N_COLS],
+                policy: CONST_POLICY,
                 value: 0.0,
             })
             .collect()
@@ -318,10 +322,35 @@ mod tests {
 
     #[test]
     fn mcts_prefers_center_column() {
-        let mut batch = batch_with_pos(Pos::new(), 1000);
-        batch.run();
-        let policy = batch.games[0].final_policy();
-        assert!(policy[3] > CONST_COL_WEIGHT);
+        let policy = run_batch_with_pos(Pos::new(), 1000);
+        assert_gt!(policy[3], CONST_COL_WEIGHT);
+    }
+
+    #[test]
+    fn mcts_depth_one() {
+        let policy = run_batch_with_pos(Pos::new(), 1 + Pos::N_COLS + Pos::N_COLS);
+        policy.iter().for_each(|p| {
+            assert_eq!(*p, CONST_COL_WEIGHT);
+        });
+    }
+
+    #[test]
+    fn mcts_depth_two() {
+        let policy = run_batch_with_pos(
+            Pos::new(),
+            1 + Pos::N_COLS + (Pos::N_COLS * Pos::N_COLS) + (Pos::N_COLS * Pos::N_COLS),
+        );
+        policy.iter().for_each(|p| {
+            assert_eq!(*p, CONST_COL_WEIGHT);
+        });
+    }
+
+    #[test]
+    fn mcts_depth_uneven() {
+        let policy = run_batch_with_pos(Pos::new(), 47);
+        policy.iter().for_each(|p| {
+            assert_relative_ne!(*p, CONST_COL_WEIGHT, epsilon = 0.02);
+        });
     }
 
     /// From a winning position, mcts should end up with a policy that prefers the winning move.
@@ -339,9 +368,7 @@ mod tests {
             .join("\n")
             .as_str(),
         );
-        let mut batch = batch_with_pos(pos, 1_000);
-        batch.run();
-        let policy = batch.games[0].final_policy();
+        let policy = run_batch_with_pos(pos, 1_000);
         let winning_moves = policy[0] + policy[4];
         assert_relative_eq!(winning_moves, 1.0, epsilon = 0.01)
     }
@@ -362,9 +389,7 @@ mod tests {
             .join("\n")
             .as_str(),
         );
-        let mut batch = batch_with_pos(pos, 100_000);
-        batch.run();
-        let policy = batch.games[0].final_policy();
+        let policy = run_batch_with_pos(pos, 100_000);
         policy.iter().for_each(|p| {
             assert_relative_eq!(*p, CONST_COL_WEIGHT, epsilon = 0.02);
         });
