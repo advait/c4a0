@@ -2,9 +2,9 @@
   "configurations": [
     {
       "name": "Python: src/main.py",
-      "type": "python",
+      "type": "debugpy",
       "request": "launch",
-      "program": "src/main.py",
+      "program": "rye run python src/main.py",
       "console": "integratedTerminal",
       "justMyCode": true
     }
