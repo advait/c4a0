@@ -290,6 +290,8 @@ impl Node {
 
 #[cfg(test)]
 mod tests {
+    use approx::assert_relative_eq;
+
     use super::*;
 
     const CONST_COL_WEIGHT: f64 = 1.0 / (Pos::N_COLS as f64);
@@ -320,5 +322,51 @@ mod tests {
         batch.run();
         let policy = batch.games[0].final_policy();
         assert!(policy[3] > CONST_COL_WEIGHT);
+    }
+
+    /// From a winning position, mcts should end up with a policy that prefers the winning move.
+    #[test]
+    fn winning_position() {
+        let pos = Pos::from(
+            [
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫🔵🔵🔵⚫⚫⚫",
+                "⚫🔴🔴🔴⚫⚫⚫",
+            ]
+            .join("\n")
+            .as_str(),
+        );
+        let mut batch = batch_with_pos(pos, 1_000);
+        batch.run();
+        let policy = batch.games[0].final_policy();
+        let winning_moves = policy[0] + policy[4];
+        assert_relative_eq!(winning_moves, 1.0, epsilon = 0.01)
+    }
+
+    /// From a definitively losing position, mcts should end up with a uniform policy because it's
+    /// desperately trying to find a non-losing move.
+    #[test]
+    fn losing_position() {
+        let pos = Pos::from(
+            [
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫🔴🔴⚫⚫⚫⚫",
+                "⚫🔵🔵🔵⚫⚫⚫",
+            ]
+            .join("\n")
+            .as_str(),
+        );
+        let mut batch = batch_with_pos(pos, 100_000);
+        batch.run();
+        let policy = batch.games[0].final_policy();
+        policy.iter().for_each(|p| {
+            assert_relative_eq!(*p, CONST_COL_WEIGHT, epsilon = 0.02);
+        });
     }
 }
