@@ -1,8 +1,14 @@
 import pytest
 import torch
 
-from nn import ConnectFourNet
-from tournament import play_tournament, ModelPlayer, RandomPlayer, UniformPlayer, GenID
+from c4a0.nn import ConnectFourNet
+from c4a0.tournament import (
+    play_tournament,
+    ModelPlayer,
+    RandomPlayer,
+    UniformPlayer,
+    GenID,
+)
 
 
 @pytest.mark.asyncio

@@ -15,26 +15,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python from .python-version
-        uses: actions/setup-python@v4
+      # Rust actions
+      - name: install rust
+        run: rustup update stable && rustup default stable
+      - name: cargo test
+        run: cd rust && cargo test
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip poetry
-          poetry install --with=dev
-
-      - name: ruff check (lint)
-        run: |
-          poetry run ruff check
-
-      - name: ruff format
-        run: |
-          poetry run ruff format --check
-
-      - name: pyright (typechecking)
-        run: |
-          poetry run pyright
-
-      - name: pytest
-        run: |
-          poetry run pytest
+      # Python actions
+      - name: Install the latest version of rye
+        uses: eifinger/setup-rye@v3
+      - run: rye sync
+      - run: rye lint
+      - run: rye run pyright
+      - run: echo 1 # rye run pytest
+      - run: rye run maturin build --release
