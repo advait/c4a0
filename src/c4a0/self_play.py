@@ -23,7 +23,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from c4 import (
+from c4a0.c4 import (
     N_COLS,
     STARTING_POS,
     Pos,
@@ -31,8 +31,8 @@ from c4 import (
     is_game_over,
     make_move,
 )
-from mcts import mcts
-from nn import ConnectFourNet, EvalPos, Policy, Value, create_batcher
+from c4a0.mcts import mcts
+from c4a0.nn import ConnectFourNet, EvalPos, Policy, Value, create_batcher
 
 ReqID = NewType("ReqID", int)
 

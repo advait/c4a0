@@ -8,4 +8,7 @@
         "./src"
     ],
     "python.analysis.typeCheckingMode": "basic",
+    "rust-analyzer.linkedProjects": [
+        "rust/Cargo.toml"
+    ]
 }

@@ -1,9 +1,8 @@
 name: c4a0 CI
 
 on:
-  # Triggers the workflow on push or pull request events for all branches
+  # Triggers the workflow on push events for all branches
   push:
-  pull_request:
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -19,7 +18,8 @@ jobs:
       - name: install rust
         run: rustup update stable && rustup default stable
       - name: cargo test
-        run: cd rust && cargo test
+        working-directory: rust
+        run: cargo test
 
       # Python actions
       - name: Install the latest version of rye
@@ -27,5 +27,5 @@ jobs:
       - run: rye sync
       - run: rye lint
       - run: rye run pyright
-      - run: echo 1 # rye run pytest
+      - run: rye run pytest
       - run: rye run maturin build --release

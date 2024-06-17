@@ -1,6 +1,7 @@
 """
 Generation-based network training, alternating between self-play and training.
 """
+
 from dataclasses import dataclass
 from datetime import datetime
 from glob import glob
@@ -14,11 +15,11 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping
 import torch
 from torch.utils.data import DataLoader
-from c4 import N_COLS, N_ROWS, Pos
 
-from nn import ConnectFourNet, Policy
-from self_play import GameID, Sample, generate_samples
-from tournament import (
+from c4a0.c4 import N_COLS, N_ROWS, Pos
+from c4a0.nn import ConnectFourNet, Policy
+from c4a0.self_play import GameID, Sample, generate_samples
+from c4a0.tournament import (
     GenID,
     ModelPlayer,
     Player,

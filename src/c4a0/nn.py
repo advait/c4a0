@@ -16,7 +16,7 @@ import torchmetrics
 import pytorch_lightning as pl
 from einops import rearrange
 
-from c4 import N_COLS, N_ROWS, Pos, pos_from_bytes, pos_to_bytes
+from c4a0.c4 import N_COLS, N_ROWS, Pos, pos_from_bytes, pos_to_bytes
 
 
 Policy = NewType("Policy", np.ndarray)
