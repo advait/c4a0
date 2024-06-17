@@ -38,9 +38,11 @@ dev-dependencies = [
 
 [tool.pyright]
 typeCheckingMode = "basic"
-extraPaths = ["src"]
+extraPaths = ["src", "tests"]
 
 [tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
 filterwarnings = [
   # Disable warnings we get form pytorch lightning that clutter pytest output
   "ignore:pkg_resources is deprecated.*:DeprecationWarning",

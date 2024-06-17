@@ -15,10 +15,10 @@ import numpy as np
 from tabulate import tabulate
 import torch
 from tqdm import tqdm
-from c4 import N_COLS, Pos
 
-from nn import ConnectFourNet, EvalPos, Policy, Value, create_batcher
-from self_play import GameID, Sample, gen_game
+from c4a0.c4 import N_COLS, Pos
+from c4a0.nn import ConnectFourNet, EvalPos, Policy, Value, create_batcher
+from c4a0.self_play import GameID, Sample, gen_game
 
 PlayerName = NewType("PlayerName", str)
 
