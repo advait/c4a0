@@ -1,9 +1,8 @@
-from c4 import N_COLS, is_game_over
-
 import torch
 import pytest
 
-from self_play import generate_samples
+from c4a0.c4 import N_COLS, is_game_over
+from c4a0.self_play import generate_samples
 
 
 @pytest.mark.asyncio

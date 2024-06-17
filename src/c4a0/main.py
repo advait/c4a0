@@ -9,10 +9,10 @@ import warnings
 import clipstick
 from pydantic import BaseModel
 import torch
-from tournament import GenID, ModelPlayer, Player, play_tournament
 
-from training import TrainingState, train_gen
-from utils import get_torch_device
+from c4a0.tournament import GenID, ModelPlayer, Player, play_tournament
+from c4a0.training import TrainingState, train_gen
+from c4a0.utils import get_torch_device
 
 
 class Train(BaseModel):

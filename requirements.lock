@@ -167,6 +167,8 @@ matplotlib==3.9.0
 matplotlib-inline==0.1.7
     # via ipykernel
     # via ipython
+maturin==1.6.0
+    # via c4a0
 mdurl==0.1.2
     # via markdown-it-py
 mistune==3.0.2

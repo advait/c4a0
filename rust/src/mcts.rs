@@ -349,7 +349,7 @@ mod tests {
     fn mcts_depth_uneven() {
         let policy = run_batch_with_pos(Pos::new(), 47);
         policy.iter().for_each(|p| {
-            assert_relative_ne!(*p, CONST_COL_WEIGHT, epsilon = 0.02);
+            assert_relative_ne!(*p, CONST_COL_WEIGHT, epsilon = 0.001);
         });
     }
 

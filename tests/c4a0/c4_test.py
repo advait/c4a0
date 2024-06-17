@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from c4 import (
+from c4a0.c4 import (
     get_ply,
     make_move,
     is_game_over,

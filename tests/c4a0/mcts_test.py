@@ -5,9 +5,9 @@ from numpy.testing import assert_array_almost_equal
 
 import pytest
 
-from c4 import N_COLS, STARTING_POS, Pos, pos_from_str
-from mcts import mcts
-from nn import Policy, Value
+from c4a0.c4 import N_COLS, STARTING_POS, Pos, pos_from_str
+from c4a0.mcts import mcts
+from c4a0.nn import Policy, Value
 
 
 @pytest.mark.asyncio

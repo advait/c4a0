@@ -3,6 +3,11 @@ name = "c4a0_rust"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "c4a0_rust"
+crate-type = ["cdylib"]
+
 [dependencies]
+pyo3 = { version = "0.21.2", features = ["extension-module"] }
 approx = "0.5.1"
 more-asserts = "0.3.1"
