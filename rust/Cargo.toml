@@ -11,3 +11,6 @@ crate-type = ["cdylib"]
 pyo3 = { version = "0.21.2", features = ["extension-module"] }
 approx = "0.5.1"
 more-asserts = "0.3.1"
+crossbeam-queue = "0.3.11"
+crossbeam = "0.8.4"
+num_cpus = "1.16.0"

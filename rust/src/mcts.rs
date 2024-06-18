@@ -3,10 +3,13 @@ use std::collections::{HashMap, HashSet};
 use crate::c4r::{Move, Pos, TerminalState};
 
 /// Probabilities for how lucrative each column is.
-type Policy = [f64; Pos::N_COLS];
+pub type Policy = [f64; Pos::N_COLS];
 
 /// The lucrativeness value of a given position.
-type PosValue = f64;
+pub type PosValue = f64;
+
+/// Evaluate a batch of positions with an NN forward pass.
+pub type EvalPosFn = fn(&Vec<Pos>) -> Vec<EvalPosResult>;
 
 /// A batch of MCTS games that are generated together.
 /// We a pytorch NN forward pass to expand a given node (to determine the initial policy values
@@ -19,7 +22,7 @@ struct MctsBatch {
     games: Vec<MctsGame>,
     n_iterations: usize,
     exploration_constant: f64,
-    eval_pos: fn(&Vec<Pos>) -> Vec<EvalPosResult>,
+    eval_pos: EvalPosFn,
 }
 
 impl MctsBatch {
@@ -27,7 +30,7 @@ impl MctsBatch {
         n_games: usize,
         n_iterations: usize,
         exploration_constant: f64,
-        eval_pos: fn(&Vec<Pos>) -> Vec<EvalPosResult>,
+        eval_pos: EvalPosFn,
     ) -> MctsBatch {
         MctsBatch {
             games: vec![MctsGame::new(); n_games],
@@ -65,9 +68,10 @@ impl MctsBatch {
 }
 
 /// The returned output from the forward pass of the NN.
-struct EvalPosResult {
-    policy: Policy,
-    value: PosValue,
+#[derive(Debug, Clone)]
+pub struct EvalPosResult {
+    pub policy: Policy,
+    pub value: PosValue,
 }
 
 /// A single MCTS game.
@@ -76,7 +80,7 @@ struct EvalPosResult {
 /// The root_id indicates the root and the leaf_id indicates the leaf node that has yet to be
 /// expanded.
 #[derive(Debug, Clone)]
-struct MctsGame {
+pub struct MctsGame {
     nodes: Vec<Node>,
     root_id: NodeId,
     leaf_id: NodeId,
@@ -84,11 +88,11 @@ struct MctsGame {
 }
 
 impl MctsGame {
-    fn new() -> MctsGame {
+    pub fn new() -> MctsGame {
         Self::new_from_pos(Pos::new())
     }
 
-    fn new_from_pos(pos: Pos) -> MctsGame {
+    pub fn new_from_pos(pos: Pos) -> MctsGame {
         let root_node = Node::new(pos, None, 0.0);
         MctsGame {
             nodes: vec![root_node],
@@ -114,14 +118,14 @@ impl MctsGame {
     }
 
     /// Gets the leaf node position that needs to be evaluated by the NN
-    fn get_leaf_pos(&self) -> &Pos {
+    pub fn get_leaf_pos(&self) -> &Pos {
         &self.get(self.leaf_id).pos
     }
 
     /// Called when we receive a new policy/value from the NN forward pass for this leaf node.
     /// Expands the current leaf with the given policy, backpropagates up the tree with the given
     /// value, and selects a new leaf for the next MCTS iteration.
-    fn on_received_policy(
+    pub fn on_received_policy(
         &mut self,
         policy: Policy,
         nn_value: PosValue,
@@ -213,7 +217,7 @@ impl MctsGame {
 
     /// After performing many MCTS iterations, the resulting policy is determined by the visit count
     /// of each child (more visits implies more lucrative).
-    fn final_policy(&self) -> Policy {
+    pub fn final_policy(&self) -> Policy {
         let root = self.get(self.root_id);
 
         let child_counts = if let Some(children) = root.children {
@@ -228,6 +232,11 @@ impl MctsGame {
         // Prevent div by zero
         let total = usize::max(child_counts.iter().sum(), 1) as f64;
         child_counts.map(|c| c as f64 / total)
+    }
+
+    /// The number of visits to the root node.
+    pub fn root_visit_count(&self) -> usize {
+        self.get(self.root_id).visit_count
     }
 }
 
