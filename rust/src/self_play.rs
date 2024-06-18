@@ -61,15 +61,15 @@ pub fn generate_samples(
 
     // MCTS thread
     for _ in 0..(num_cpus::get() - 1) {
-        let nn_queue = Arc::clone(&nn_queue);
-        let mcts_queue = Arc::clone(&mcts_queue);
-        let done_queue = Arc::clone(&done_queue);
+        let nn_queue_producer = Arc::clone(&nn_queue);
+        let mcts_queue_consumer = Arc::clone(&mcts_queue);
+        let done_queue_producer = Arc::clone(&done_queue);
         let wg = wg.clone();
         thread::spawn(move || {
             while mcts_thread(
-                &nn_queue,
-                &mcts_queue,
-                &done_queue,
+                &nn_queue_producer,
+                &mcts_queue_consumer,
+                &done_queue_producer,
                 n_mcts_iterations,
                 exploration_constant,
                 n_games,
@@ -131,25 +131,20 @@ fn mcts_thread(
     exploration_constant: f64,
     n_games: usize,
 ) -> bool {
-    match mcts_queue_consumer.pop() {
-        None => {
-            if done_queue_producer.len() == n_games {
-                false
-            } else {
-                // If there are no MCTS games to process, yield to other threads
-                thread::yield_now();
-                true
-            }
+    if let Some((mut game, nn_result)) = mcts_queue_consumer.pop() {
+        game.on_received_policy(nn_result.policy, nn_result.value, exploration_constant);
+        if game.root_visit_count() >= n_mcts_iterations {
+            // We are done with one round of MCTS. Make a move and continue.
+            done_queue_producer.push(game).unwrap();
+        } else {
+            nn_queue_producer.push(game).unwrap();
         }
-        Some((mut game, nn_result)) => {
-            game.on_received_policy(nn_result.policy, nn_result.value, exploration_constant);
-            if game.root_visit_count() >= n_mcts_iterations {
-                // We are done with one round of MCTS. Make a move and continue.
-                done_queue_producer.push(game).unwrap();
-            } else {
-                nn_queue_producer.push(game).unwrap();
-            }
-            true
-        }
+        true
+    } else if done_queue_producer.len() == n_games {
+        false
+    } else {
+        // If there are no MCTS games to process, yield to other threads
+        thread::yield_now();
+        true
     }
 }

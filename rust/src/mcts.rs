@@ -215,6 +215,16 @@ impl MctsGame {
         self.leaf_id = cur_id;
     }
 
+    /// Makes a move, updating the root node to be the child node corresponding to the move.
+    /// Note that this method does not perform garbage collection for un-played sub-trees.
+    pub fn make_move(&mut self, m: Move) {
+        let root = self.get(self.root_id);
+        let children = root.children.expect("root node has no children");
+        let child_id = children[m as usize].expect("attempted to make an invalid move");
+        self.root_id = child_id;
+        self.moves.push(m);
+    }
+
     /// After performing many MCTS iterations, the resulting policy is determined by the visit count
     /// of each child (more visits implies more lucrative).
     pub fn final_policy(&self) -> Policy {
@@ -238,6 +248,31 @@ impl MctsGame {
     pub fn root_visit_count(&self) -> usize {
         self.get(self.root_id).visit_count
     }
+
+    /// Converts a finished game into a Vec of training samples for future NN training.
+    pub fn to_training_samples(&self) -> Vec<(Pos, PosValue, Policy)> {
+        let final_value = self
+            .get_leaf_pos()
+            .is_terminal_state()
+            .map(|ts| match ts {
+                TerminalState::PlayerWin => 1.0,
+                TerminalState::OpponentWin => -1.0,
+                TerminalState::Draw => 0.0,
+            })
+            .expect("attempted to convert a non-terminal game to a training sample");
+
+        let mut cur = self.get(self.leaf_id);
+        let mut cur_value = final_value;
+        let mut ret = vec![(cur.pos.clone(), cur_value, cur.policy(&self))];
+        while let Some(parent_id) = cur.parent {
+            cur_value = -cur_value;
+            cur = self.get(parent_id);
+            ret.push((cur.pos.clone(), cur_value, cur.policy(&self)));
+        }
+
+        ret.reverse();
+        ret
+    }
 }
 
 /// We use integer Node IDs to represent pointers to nodes instead of weak referenes for
@@ -256,6 +291,7 @@ struct Node {
 
 impl Node {
     const EPS: f64 = 1e-8;
+    const UNIFORM_POLICY: Policy = [1.0 / Pos::N_COLS as f64; Pos::N_COLS];
 
     fn new(pos: Pos, parent: Option<NodeId>, initial_policy_value: PosValue) -> Node {
         Node {
@@ -294,6 +330,22 @@ impl Node {
     /// Whether the game is over (won, los, draw) from this position.
     fn is_terminal(&self) -> bool {
         self.pos.is_terminal_state() != None
+    }
+
+    /// Uses the child counts to determine the policy from this position.
+    fn policy(&self, game: &MctsGame) -> Policy {
+        if self.visit_count == 0 {
+            Self::UNIFORM_POLICY
+        } else if let Some(children) = self.children {
+            let child_counts = children.map(|maybe_child| {
+                maybe_child
+                    .map(|child_id| game.get(child_id).visit_count as f64)
+                    .unwrap_or(0 as f64)
+            });
+            child_counts.map(|c| c / self.visit_count as f64)
+        } else {
+            Self::UNIFORM_POLICY
+        }
     }
 }
 
