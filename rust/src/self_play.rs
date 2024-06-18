@@ -4,13 +4,13 @@ use std::{
     thread,
 };
 
-use crate::mcts::{EvalPosResult, MctsGame};
+use crate::mcts::MctsGame;
 use crossbeam::sync::WaitGroup;
 use crossbeam_queue::ArrayQueue;
 
 use crate::{
     c4r::Pos,
-    mcts::{EvalPosFn, Policy, PosValue},
+    mcts::{Policy, PosValue},
 };
 
 /// A training sample generated via self-play.
@@ -21,6 +21,23 @@ pub struct Sample {
     value: PosValue,
 }
 
+/// Evaluate a batch of positions with an NN forward pass.
+pub type EvalPosFn = fn(&Vec<Pos>) -> Vec<EvalPosResult>;
+
+/// The returned output from the forward pass of the NN.
+#[derive(Debug, Clone)]
+pub struct EvalPosResult {
+    pub policy: Policy,
+    pub value: PosValue,
+}
+
+/// A batch of MCTS games that are generated together.
+/// We a pytorch NN forward pass to expand a given node (to determine the initial policy values
+/// based on the NN's output policy). Because we want to batch these NN calls for performance, we
+/// partially compute many MCTS traversals simultaneously, pausing each until we reach the node
+/// expansion phase. Then we are able to batch several NN calls simultaneously.
+/// After the batched forward pass completes, we resume the next iteration of MCTS, continuing this
+/// process until each perform n_iterations.
 pub fn generate_samples(
     eval_pos: EvalPosFn,
     n_games: usize,

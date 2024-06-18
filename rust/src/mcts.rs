@@ -1,5 +1,3 @@
-use std::collections::{HashMap, HashSet};
-
 use crate::c4r::{Move, Pos, TerminalState};
 
 /// Probabilities for how lucrative each column is.
@@ -8,77 +6,13 @@ pub type Policy = [f64; Pos::N_COLS];
 /// The lucrativeness value of a given position.
 pub type PosValue = f64;
 
-/// Evaluate a batch of positions with an NN forward pass.
-pub type EvalPosFn = fn(&Vec<Pos>) -> Vec<EvalPosResult>;
-
-/// A batch of MCTS games that are generated together.
-/// We a pytorch NN forward pass to expand a given node (to determine the initial policy values
-/// based on the NN's output policy). Because we want to batch these NN calls for performance, we
-/// partially compute many MCTS traversals simultaneously, pausing each until we reach the node
-/// expansion phase. Then we are able to batch several NN calls simultaneously.
-/// After the batched forward pass completes, we resume the next iteration of MCTS, continuing this
-/// process until each perform n_iterations.
-struct MctsBatch {
-    games: Vec<MctsGame>,
-    n_iterations: usize,
-    exploration_constant: f64,
-    eval_pos: EvalPosFn,
-}
-
-impl MctsBatch {
-    fn new(
-        n_games: usize,
-        n_iterations: usize,
-        exploration_constant: f64,
-        eval_pos: EvalPosFn,
-    ) -> MctsBatch {
-        MctsBatch {
-            games: vec![MctsGame::new(); n_games],
-            n_iterations,
-            exploration_constant,
-            eval_pos,
-        }
-    }
-
-    /// Runs n_iterations MCTS iterations.
-    fn run(&mut self) {
-        for _ in 0..self.n_iterations {
-            self.run_single_iteration();
-        }
-    }
-
-    /// Runs a single iteraton of MCTS for all batch games, calling eval_pos once.
-    fn run_single_iteration(&mut self) {
-        let position_set: HashSet<_> = self
-            .games
-            .iter()
-            .map(|g| g.get_leaf_pos().clone())
-            .collect();
-        let positions: Vec<_> = position_set.into_iter().collect();
-
-        let all_evals = (self.eval_pos)(&positions);
-        let eval_map: HashMap<_, _> = positions.into_iter().zip(all_evals).collect();
-
-        for game in self.games.iter_mut() {
-            let pos = game.get_leaf_pos();
-            let nn_result = &eval_map[pos];
-            game.on_received_policy(nn_result.policy, nn_result.value, self.exploration_constant);
-        }
-    }
-}
-
-/// The returned output from the forward pass of the NN.
-#[derive(Debug, Clone)]
-pub struct EvalPosResult {
-    pub policy: Policy,
-    pub value: PosValue,
-}
-
 /// A single MCTS game.
 /// We store the Monte Carlo Tree in Vec form where child pointers are indicated by NodeId (the
 /// index within the Vec where the given node is stored).
 /// The root_id indicates the root and the leaf_id indicates the leaf node that has yet to be
 /// expanded.
+/// fn play_move allows us to play a move (updating the root node to the played child) so we can
+/// preserve any prior MCTS iterations through that node.
 #[derive(Debug, Clone)]
 pub struct MctsGame {
     nodes: Vec<Node>,
@@ -225,28 +159,16 @@ impl MctsGame {
         self.moves.push(m);
     }
 
-    /// After performing many MCTS iterations, the resulting policy is determined by the visit count
-    /// of each child (more visits implies more lucrative).
-    pub fn final_policy(&self) -> Policy {
-        let root = self.get(self.root_id);
-
-        let child_counts = if let Some(children) = root.children {
-            children.map(|o| match o {
-                Some(child_id) => self.get(child_id).visit_count,
-                None => 0,
-            })
-        } else {
-            [0; Pos::N_COLS]
-        };
-
-        // Prevent div by zero
-        let total = usize::max(child_counts.iter().sum(), 1) as f64;
-        child_counts.map(|c| c as f64 / total)
-    }
-
     /// The number of visits to the root node.
     pub fn root_visit_count(&self) -> usize {
         self.get(self.root_id).visit_count
+    }
+
+    /// After performing many MCTS iterations, the resulting policy is determined by the visit count
+    /// of each child (more visits implies more lucrative).
+    pub fn root_policy(&self) -> Policy {
+        let root = self.get(self.root_id);
+        root.policy(self)
     }
 
     /// Converts a finished game into a Vec of training samples for future NN training.
@@ -334,15 +256,18 @@ impl Node {
 
     /// Uses the child counts to determine the policy from this position.
     fn policy(&self, game: &MctsGame) -> Policy {
-        if self.visit_count == 0 {
-            Self::UNIFORM_POLICY
-        } else if let Some(children) = self.children {
+        if let Some(children) = self.children {
             let child_counts = children.map(|maybe_child| {
                 maybe_child
                     .map(|child_id| game.get(child_id).visit_count as f64)
                     .unwrap_or(0 as f64)
             });
-            child_counts.map(|c| c / self.visit_count as f64)
+            let child_counts_sum: f64 = child_counts.iter().sum();
+            if child_counts_sum == 0.0 {
+                Self::UNIFORM_POLICY
+            } else {
+                child_counts.map(|c| c / child_counts_sum)
+            }
         } else {
             Self::UNIFORM_POLICY
         }
@@ -351,64 +276,52 @@ impl Node {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use approx::{assert_relative_eq, assert_relative_ne};
     use more_asserts::assert_gt;
 
-    use super::*;
-
     const CONST_COL_WEIGHT: f64 = 1.0 / (Pos::N_COLS as f64);
-    const CONST_POLICY: [f64; Pos::N_COLS] = [CONST_COL_WEIGHT; Pos::N_COLS];
+    const TEST_EXPLORATION_CONSTANT: f64 = 1.0;
 
     /// Runs a batch with a single game and a constant evaluation function.
-    fn run_batch_with_pos(pos: Pos, n_iterations: usize) -> Policy {
-        let mut batch = MctsBatch {
-            games: vec![MctsGame::new_from_pos(pos); 1],
-            n_iterations,
-            exploration_constant: 1.4,
-            eval_pos: constant_eval_pos,
-        };
-        batch.run();
-        batch.games[0].final_policy()
-    }
-
-    /// A constant evaluation function that returns a uniform policy and 0.0 value.
-    fn constant_eval_pos(pos: &Vec<Pos>) -> Vec<EvalPosResult> {
-        pos.into_iter()
-            .map(|_p| EvalPosResult {
-                policy: CONST_POLICY,
-                value: 0.0,
-            })
-            .collect()
+    fn run_mcts(pos: Pos, n_iterations: usize) -> Policy {
+        let mut game = MctsGame::new_from_pos(pos);
+        for _ in 0..n_iterations {
+            game.on_received_policy(Node::UNIFORM_POLICY, 0.0, TEST_EXPLORATION_CONSTANT)
+        }
+        game.root_policy()
     }
 
     #[test]
     fn mcts_prefers_center_column() {
-        let policy = run_batch_with_pos(Pos::new(), 1000);
+        let policy = run_mcts(Pos::new(), 1000);
         assert_gt!(policy[3], CONST_COL_WEIGHT);
     }
 
     #[test]
     fn mcts_depth_one() {
-        let policy = run_batch_with_pos(Pos::new(), 1 + Pos::N_COLS + Pos::N_COLS);
+        let policy = run_mcts(Pos::new(), 1 + Pos::N_COLS + Pos::N_COLS);
+        assert_relative_eq!(policy.iter().sum::<f64>(), 1.0);
         policy.iter().for_each(|p| {
-            assert_eq!(*p, CONST_COL_WEIGHT);
+            assert_relative_eq!(*p, CONST_COL_WEIGHT);
         });
     }
 
     #[test]
     fn mcts_depth_two() {
-        let policy = run_batch_with_pos(
+        let policy = run_mcts(
             Pos::new(),
             1 + Pos::N_COLS + (Pos::N_COLS * Pos::N_COLS) + (Pos::N_COLS * Pos::N_COLS),
         );
+        assert_relative_eq!(policy.iter().sum::<f64>(), 1.0);
         policy.iter().for_each(|p| {
-            assert_eq!(*p, CONST_COL_WEIGHT);
+            assert_relative_eq!(*p, CONST_COL_WEIGHT);
         });
     }
 
     #[test]
     fn mcts_depth_uneven() {
-        let policy = run_batch_with_pos(Pos::new(), 47);
+        let policy = run_mcts(Pos::new(), 47);
         policy.iter().for_each(|p| {
             assert_relative_ne!(*p, CONST_COL_WEIGHT, epsilon = 0.001);
         });
@@ -429,7 +342,7 @@ mod tests {
             .join("\n")
             .as_str(),
         );
-        let policy = run_batch_with_pos(pos, 1_000);
+        let policy = run_mcts(pos, 1_000);
         let winning_moves = policy[0] + policy[4];
         assert_relative_eq!(winning_moves, 1.0, epsilon = 0.01)
     }
@@ -450,7 +363,7 @@ mod tests {
             .join("\n")
             .as_str(),
         );
-        let policy = run_batch_with_pos(pos, 100_000);
+        let policy = run_mcts(pos, 100_000);
         policy.iter().for_each(|p| {
             assert_relative_eq!(*p, CONST_COL_WEIGHT, epsilon = 0.02);
         });
