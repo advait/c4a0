@@ -21,13 +21,13 @@ pub struct Sample {
     pub value: PosValue,
 }
 
-/// A single MCTS game.
-/// We store the Monte Carlo Tree in Vec form where child pointers are indicated by NodeId (the
-/// index within the Vec where the given node is stored).
-/// The [Self::root_id] indicates the root and the leaf_id indicates the leaf node that has yet to
-/// be expanded.
+/// A single Monte Carlo Tree Search connect four game.
+/// We store the MCTS tree in Vec form where child pointers are indicated by NodeId (the index
+/// within the Vec where the given node is stored).
+/// The [Self::root_id] indicates the root and the [Self::leaf_id] indicates the leaf node that has
+/// yet to be expanded.
 /// [Self::make_move] allows us to play a move (updating the root node to the played child) so we
-/// can preserve any prior MCTS iterations through that node.
+/// can preserve any prior MCTS iterations that happened through that node.
 #[derive(Debug, Clone)]
 pub struct MctsGame {
     pub game_id: u64,
@@ -41,10 +41,16 @@ pub struct MctsGame {
 impl MctsGame {
     pub const UNIFORM_POLICY: Policy = [1.0 / Pos::N_COLS as f64; Pos::N_COLS];
 
+    /// New game with the given id and default start position.
+    /// `exploration_constant` is an MCTS parameter that guides how aggressively to explore vs.
+    /// exploit.
     pub fn new_with_id(game_id: u64, exploration_constant: f64) -> MctsGame {
         Self::new_from_pos(Pos::new(), game_id, exploration_constant)
     }
 
+    /// New game with the given id and start position.
+    /// `exploration_constant` is an MCTS parameter that guides how aggressively to explore vs.
+    /// exploit.
     pub fn new_from_pos(pos: Pos, game_id: u64, exploration_constant: f64) -> MctsGame {
         let root_node = Node::new(pos, None, 0.0);
         MctsGame {
@@ -66,7 +72,7 @@ impl MctsGame {
     }
 
     /// Adds the node to the collection, return its id.
-    fn _add_node(&mut self, node: Node) -> NodeId {
+    fn add_node(&mut self, node: Node) -> NodeId {
         let id = self.nodes.len();
         self.nodes.push(node);
         id
@@ -134,7 +140,7 @@ impl MctsGame {
                     leaf.pos.make_move(m).unwrap()
                 };
                 let child = Node::new(child_pos, Some(leaf_id), policy[m]);
-                Some(self._add_node(child))
+                Some(self.add_node(child))
             } else {
                 None
             }
@@ -146,6 +152,11 @@ impl MctsGame {
     /// Backpropagate value up the tree, alternating value signs for each step.
     /// If the leaf node is a non-terminal node, the value is taken from the NN forward pass.
     /// If the leaf node is a terminal node, the value is the objective value of the win/loss/draw.
+    ///
+    /// Note we continue backpropagating counts/values up past the root's parent ancestors,
+    /// effectively invalidating the policy for these nodes. This should not be a problem as we only
+    /// expose a [MctsGame::root_policy] method (which will be valid), preventing callers from
+    /// accessing policies for the root node's parent ancestors (which will be invalid).
     fn _backpropagate(&mut self, leaf_id: NodeId, mut value: PosValue) {
         let mut pos = self.get_mut(leaf_id);
         loop {
@@ -223,7 +234,7 @@ impl MctsGame {
         root.policy(self)
     }
 
-    /// Converts a finished game into a Vec of training samples for future NN training.
+    /// Converts a finished game into a Vec of [Sample] for future NN training.
     pub fn to_training_samples(&self) -> Vec<Sample> {
         let final_value = self
             .root_pos()
