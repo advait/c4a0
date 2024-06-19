@@ -43,7 +43,7 @@ pub fn self_play(
 
     // Create initial games
     for i in 0..n_games {
-        let game = MctsGame::new_with_id(i as u64);
+        let game = MctsGame::new_with_id(i as u64, exploration_constant);
         nn_queue.push(game).unwrap();
     }
 
@@ -80,7 +80,6 @@ pub fn self_play(
                 &mcts_queue,
                 &done_queue,
                 n_mcts_iterations,
-                exploration_constant,
                 n_games,
             ) {}
             drop(wg);
@@ -146,11 +145,10 @@ fn mcts_thread(
     mcts_queue: &Arc<ArrayQueue<(MctsGame, EvalPosResult)>>,
     done_queue: &Arc<ArrayQueue<MctsGame>>,
     n_mcts_iterations: usize,
-    exploration_constant: f64,
     n_games: usize,
 ) -> bool {
     if let Some((mut game, nn_result)) = mcts_queue.pop() {
-        game.on_received_policy(nn_result.policy, nn_result.value, exploration_constant);
+        game.on_received_policy(nn_result.policy, nn_result.value);
         if game.root_visit_count() >= n_mcts_iterations {
             // We are done with one round of MCTS. Make a random move. If the game is over
             // store in the done queue. If it's not, continue MCTS.
