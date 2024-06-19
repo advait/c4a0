@@ -26,10 +26,10 @@ pub struct EvalPosResult {
 /// Generate training samples with self play and MCTS.
 /// We a pytorch NN forward pass to expand a given node (to determine the initial policy values
 /// based on the NN's output policy). Because we want to batch these NN calls for performance, we
-/// partially compute many MCTS traversals simultaneously (via mcts_thread), pausing each until we
+/// partially compute many MCTS traversals simultaneously (via [mcts_thread]), pausing each until we
 /// reach the node expansion phase. Then we are able to batch several NN calls simultaneously
-/// (via nn_thread). This process ping-pongs until the game reaches a terminal state after which
-/// it is added to done_queue.
+/// (via [nn_thread]). This process ping-pongs until the game reaches a terminal state after which
+/// it is added to `done_queue`.
 pub fn self_play(
     eval_pos: EvalPosFn,
     n_games: usize,
@@ -95,7 +95,9 @@ pub fn self_play(
     ret
 }
 
-/// Performs NN batch inference.
+/// Performs NN batch inference by reading from the `nn_queue`. Performas a batch inference
+/// using `eval_pos` with up to `max_nn_batch_size` positions. Passes the resulting position
+/// evaluations to the `mcts_queue`.
 /// Returns whether the thread should continue looping.
 fn nn_thread(
     nn_queue: &Arc<ArrayQueue<MctsGame>>,
@@ -138,7 +140,10 @@ fn nn_thread(
     true
 }
 
-/// Performs MCTS iterations by reading from the mcts_queue.
+/// Performs MCTS iterations by reading from the `mcts_queue`.
+/// If we reach the requisite number of iterations, we probabalistically make a move with
+/// [MctsGame::make_move]. Then, if the game reaches a terminal position, pass the game to
+/// `done_queue`. Otherwise, we pass back to the nn via `nn_queue`.
 /// Returns whether the thread should continue looping.
 fn mcts_thread(
     nn_queue: &Arc<ArrayQueue<MctsGame>>,
@@ -216,15 +221,25 @@ mod tests {
                 "game {} should have a single starting position",
                 g
             );
+
+            let terminal_positions = game_samples
+                .iter()
+                .filter(|Sample { pos, .. }| pos.is_terminal_state().is_some())
+                .collect::<Vec<_>>();
             assert_eq!(
-                game_samples
-                    .iter()
-                    .filter(|Sample { pos, .. }| pos.is_terminal_state().is_some())
-                    .count(),
+                terminal_positions.len(),
                 1,
                 "game {} should have a single terminal position",
                 g
             );
+            let terminal_value = terminal_positions[0].value;
+            if terminal_value != -1.0 && terminal_value != 0.0 && terminal_value != 1.0 {
+                assert!(
+                    false,
+                    "expected terminal value {} to be -1, 0, or 1",
+                    terminal_value
+                );
+            }
         }
     }
 }

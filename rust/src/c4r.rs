@@ -2,14 +2,14 @@ use std::array::from_fn;
 
 /// Connect Four game logic
 
-/// Represents the value of a cell in a connect four position.
+/// The oponnent/player token within a cell.
 #[derive(Debug, PartialEq, Eq)]
 pub enum CellValue {
     Opponent = 0,
     Player = 1,
 }
 
-/// Represents the possible terminal states of a connect four game.
+/// Possible terminal states of a connect four game.
 #[derive(Debug, PartialEq, Eq)]
 pub enum TerminalState {
     PlayerWin,
@@ -17,17 +17,17 @@ pub enum TerminalState {
     Draw,
 }
 
-/// Represents a connect four position.
+/// Connect four position.
 /// Internally consists of a u64 mask (bitmask representing whether a piece exists at a given
 /// location) and a u64 value (bitmask representing the color of the given piece).
-/// Bit indexing is specified by `_idx_mask_unsafe`.
+/// Bit indexing is specified by [Pos::_idx_mask_unsafe].
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Pos {
     mask: u64,
     value: u64,
 }
 
-/// The column for a given move (0..Pos::N_COLS)
+/// The column for a given move (0..[Pos::N_COLS])
 pub type Move = usize;
 
 impl Pos {
@@ -38,7 +38,7 @@ impl Pos {
         Pos { mask: 0, value: 0 }
     }
 
-    /// Plays a move in the given column from the perspective of the 1 player.
+    /// Plays a move in the given column from the perspective of the [CellValue::Player].
     /// Returns a new position where the cell values are flipped.
     /// Performs bounds and collision checing.
     /// DOES NOT perform win checking.
@@ -198,6 +198,9 @@ impl Pos {
             row += 1;
         }
 
+        if index != 69 {
+            panic!("expected 69 win masks");
+        }
         masks
     };
 

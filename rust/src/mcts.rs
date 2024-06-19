@@ -24,10 +24,10 @@ pub struct Sample {
 /// A single MCTS game.
 /// We store the Monte Carlo Tree in Vec form where child pointers are indicated by NodeId (the
 /// index within the Vec where the given node is stored).
-/// The root_id indicates the root and the leaf_id indicates the leaf node that has yet to be
-/// expanded.
-/// fn make_move allows us to play a move (updating the root node to the played child) so we can
-/// preserve any prior MCTS iterations through that node.
+/// The [Self::root_id] indicates the root and the leaf_id indicates the leaf node that has yet to
+/// be expanded.
+/// [Self::make_move] allows us to play a move (updating the root node to the played child) so we
+/// can preserve any prior MCTS iterations through that node.
 #[derive(Debug, Clone)]
 pub struct MctsGame {
     pub game_id: u64,
@@ -83,8 +83,10 @@ impl MctsGame {
     }
 
     /// Called when we receive a new policy/value from the NN forward pass for this leaf node.
-    /// Expands the current leaf with the given policy, backpropagates up the tree with the given
-    /// value, and selects a new leaf for the next MCTS iteration.
+    /// This is the heart of the MCTS algorithm:
+    /// 1. Expands the current leaf with the given policy
+    /// 2. Backpropagates up the tree with the given value
+    /// 3. selects a new leaf for the next MCTS iteration.
     pub fn on_received_policy(&mut self, mut policy: Policy, nn_value: PosValue) {
         // Mask policy for illegal moves
         let leaf = self.get(self.leaf_id);
@@ -116,8 +118,8 @@ impl MctsGame {
     }
 
     /// Expands the the leaf by adding child nodes to it which then be eligible for exploration via
-    /// subsequent MCTS iterations. Each child node's initial_policy_value is determined by the
-    /// provided policy.
+    /// subsequent MCTS iterations. Each child node's [Node::initial_policy_value] is determined by
+    /// the provided policy.
     /// Noop for terminal nodes.
     fn _expand_leaf(&mut self, leaf_id: NodeId, policy: Policy) {
         let leaf = self.get_mut(leaf_id);
@@ -160,7 +162,8 @@ impl MctsGame {
     }
 
     /// Select the next leaf node by traversing from the root node, repeatedly selecting the child
-    /// with the highest uct_value until we reach a node with no expanded children (leaf node).
+    /// with the highest [Node::uct_value] until we reach a node with no expanded children (leaf
+    /// node).
     fn _select_new_leaf(&mut self) {
         let mut cur_id = self.root_id;
 
@@ -261,6 +264,7 @@ impl MctsGame {
 /// convenience.
 type NodeId = usize;
 
+/// A node within an MCTS tree.
 #[derive(Debug, Clone)]
 struct Node {
     pos: Pos,
@@ -313,7 +317,7 @@ impl Node {
         self.pos.is_terminal_state().is_some()
     }
 
-    /// Uses the child counts to determine the policy from this position.
+    /// Uses the child counts as weights to determine the implied policy from this position.
     fn policy(&self, game: &MctsGame) -> Policy {
         if let Some(children) = self.children {
             let child_counts = children.map(|maybe_child| {
