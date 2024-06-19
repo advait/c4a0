@@ -5,7 +5,10 @@ use std::{
     time::Duration,
 };
 
-use crossbeam::sync::WaitGroup;
+use crossbeam::{
+    channel::{Receiver, RecvError, Sender, TryRecvError},
+    sync::WaitGroup,
+};
 use crossbeam_queue::ArrayQueue;
 
 use crate::{
@@ -37,35 +40,26 @@ pub fn self_play(
     n_mcts_iterations: usize,
     exploration_constant: f64,
 ) -> Vec<Sample> {
-    let nn_queue = Arc::new(ArrayQueue::<MctsGame>::new(n_games));
+    let (nn_queue_tx, mut nn_queue_rx) = crossbeam::channel::bounded(n_games);
     let mcts_queue = Arc::new(ArrayQueue::<(MctsGame, EvalPosResult)>::new(n_games));
     let done_queue = Arc::new(ArrayQueue::<MctsGame>::new(n_games));
 
     // Create initial games
     for i in 0..n_games {
         let game = MctsGame::new_with_id(i as u64, exploration_constant);
-        nn_queue.push(game).unwrap();
+        nn_queue_tx.send(game).unwrap();
     }
 
     let wg = WaitGroup::new();
 
     // NN batch inference thread
     {
-        let nn_queue = Arc::clone(&nn_queue);
         let mcts_queue = Arc::clone(&mcts_queue);
-        let done_queue = Arc::clone(&done_queue);
         let wg = wg.clone();
         thread::Builder::new()
             .name("nn_thread".into())
             .spawn(move || {
-                while nn_thread(
-                    &nn_queue,
-                    &mcts_queue,
-                    &done_queue,
-                    max_nn_batch_size,
-                    n_games,
-                    eval_pos,
-                ) {}
+                while nn_thread(&mut nn_queue_rx, &mcts_queue, max_nn_batch_size, eval_pos) {}
                 drop(wg);
             })
             .unwrap();
@@ -74,7 +68,7 @@ pub fn self_play(
     // MCTS threads
     let mcts_thread_count = usize::max(1, num_cpus::get() - 1);
     for i in 0..mcts_thread_count {
-        let nn_queue = Arc::clone(&nn_queue);
+        let nn_queue_tx = nn_queue_tx.clone();
         let mcts_queue = Arc::clone(&mcts_queue);
         let done_queue = Arc::clone(&done_queue);
         let wg = wg.clone();
@@ -82,7 +76,7 @@ pub fn self_play(
             .name(format!("mcts_thread {}", i))
             .spawn(move || {
                 while mcts_thread(
-                    &nn_queue,
+                    &nn_queue_tx,
                     &mcts_queue,
                     &done_queue,
                     n_mcts_iterations,
@@ -93,6 +87,10 @@ pub fn self_play(
             .unwrap();
     }
 
+    // Only `mcts_thread`s tx to the `nn_queue`, so we explicitly drop here so that `nn_thread` will
+    // receivie a disconnect signal after the last `mcts_thread` finishes.
+    drop(nn_queue_tx);
+
     wg.wait();
 
     let mut ret = Vec::<Sample>::with_capacity(n_games * 8);
@@ -102,36 +100,46 @@ pub fn self_play(
     ret
 }
 
-/// Performs NN batch inference by reading from the `nn_queue`. Performas a batch inference
+/// Performs NN batch inference by reading from the `nn_queue_rx`. Performas a batch inference
 /// using `eval_pos` with up to `max_nn_batch_size` positions. Passes the resulting position
 /// evaluations to the `mcts_queue`.
 /// Returns whether the thread should continue looping.
 fn nn_thread(
-    nn_queue: &Arc<ArrayQueue<MctsGame>>,
+    nn_queue_rx: &mut Receiver<MctsGame>,
     mcts_queue: &Arc<ArrayQueue<(MctsGame, EvalPosResult)>>,
-    done_queue: &Arc<ArrayQueue<MctsGame>>,
     max_nn_batch_size: usize,
-    n_games: usize,
     eval_pos: EvalPosFn,
 ) -> bool {
     // Read games from queue until we have max_nn_batch_size unique positions or queue is empty
     let mut games = Vec::with_capacity(max_nn_batch_size);
     let mut position_set = HashSet::<Pos>::with_capacity(max_nn_batch_size);
-    loop {
-        if let Some(game) = nn_queue.pop() {
+
+    // Block on reading the first game
+    match nn_queue_rx.recv() {
+        Ok(game) => {
             position_set.insert(game.leaf_pos().clone());
             games.push(game);
-            if position_set.len() >= max_nn_batch_size {
-                break;
-            }
-        } else if done_queue.len() == n_games {
+        }
+        Err(RecvError) => {
             return false;
-        } else if position_set.is_empty() {
-            // Waiting for more positions to enter into the queue
-            thread::sleep(Duration::from_millis(1));
-            return true;
-        } else {
-            break;
+        }
+    }
+
+    // Optimistically pull additional games from the queue until we reach `max_nn_batch_size` unique
+    // positions or the queue is empty.
+    loop {
+        match nn_queue_rx.try_recv() {
+            Ok(game) => {
+                position_set.insert(game.leaf_pos().clone());
+                games.push(game);
+                if position_set.len() >= max_nn_batch_size {
+                    break;
+                }
+            }
+            Err(TryRecvError::Empty) => break,
+            Err(TryRecvError::Disconnected) => {
+                return false;
+            }
         }
     }
 
@@ -153,33 +161,36 @@ fn nn_thread(
 /// `done_queue`. Otherwise, we pass back to the nn via `nn_queue`.
 /// Returns whether the thread should continue looping.
 fn mcts_thread(
-    nn_queue: &Arc<ArrayQueue<MctsGame>>,
+    nn_queue_tx: &Sender<MctsGame>,
     mcts_queue: &Arc<ArrayQueue<(MctsGame, EvalPosResult)>>,
     done_queue: &Arc<ArrayQueue<MctsGame>>,
     n_mcts_iterations: usize,
     n_games: usize,
 ) -> bool {
-    if let Some((mut game, nn_result)) = mcts_queue.pop() {
-        game.on_received_policy(nn_result.policy, nn_result.value);
-        if game.root_visit_count() >= n_mcts_iterations {
-            // We are done with one round of MCTS. Make a random move. If the game is over
-            // store in the done queue. If it's not, continue MCTS.
-            game.make_random_move();
-            if game.root_pos().is_terminal_state().is_some() {
-                done_queue.push(game).unwrap();
+    match mcts_queue.pop() {
+        Some((mut game, nn_result)) => {
+            game.on_received_policy(nn_result.policy, nn_result.value);
+            if game.root_visit_count() >= n_mcts_iterations {
+                // We are done with one round of MCTS. Make a random move. If the game is over
+                // store in the done queue. If it's not, continue MCTS.
+                game.make_random_move();
+                if game.root_pos().is_terminal_state().is_some() {
+                    done_queue.push(game).unwrap();
+                } else {
+                    nn_queue_tx.send(game).unwrap();
+                }
             } else {
-                nn_queue.push(game).unwrap();
+                nn_queue_tx.send(game).unwrap();
             }
-        } else {
-            nn_queue.push(game).unwrap();
+            true
         }
-        true
-    } else if done_queue.len() == n_games {
-        false
-    } else {
-        // If there are no MCTS games to process, yield to other threads
-        thread::sleep(Duration::from_millis(1));
-        true
+        None if done_queue.len() == n_games => false,
+        None => {
+            // If there are no MCTS games to process, yield to other threads
+            // TODO: replace this with a blocking mechanism
+            thread::sleep(Duration::from_millis(1));
+            true
+        }
     }
 }
 
