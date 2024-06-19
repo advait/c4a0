@@ -4,22 +4,13 @@ use std::{
     thread,
 };
 
-use crate::mcts::MctsGame;
 use crossbeam::sync::WaitGroup;
 use crossbeam_queue::ArrayQueue;
 
 use crate::{
     c4r::Pos,
-    mcts::{Policy, PosValue},
+    mcts::{MctsGame, Policy, PosValue, Sample},
 };
-
-/// A training sample generated via self-play.
-pub struct Sample {
-    game_id: u64,
-    pos: Pos,
-    policy: Policy,
-    value: PosValue,
-}
 
 /// Evaluate a batch of positions with an NN forward pass.
 pub type EvalPosFn = fn(&Vec<Pos>) -> Vec<EvalPosResult>;
@@ -31,14 +22,14 @@ pub struct EvalPosResult {
     pub value: PosValue,
 }
 
-/// A batch of MCTS games that are generated together.
+/// Generate training samples with self play and MCTS.
 /// We a pytorch NN forward pass to expand a given node (to determine the initial policy values
 /// based on the NN's output policy). Because we want to batch these NN calls for performance, we
-/// partially compute many MCTS traversals simultaneously, pausing each until we reach the node
-/// expansion phase. Then we are able to batch several NN calls simultaneously.
-/// After the batched forward pass completes, we resume the next iteration of MCTS, continuing this
-/// process until each perform n_iterations.
-pub fn generate_samples(
+/// partially compute many MCTS traversals simultaneously (via mcts_thread), pausing each until we
+/// reach the node expansion phase. Then we are able to batch several NN calls simultaneously
+/// (via nn_thread). This process ping-pongs until the game reaches a terminal state after which
+/// it is added to done_queue.
+pub fn self_play(
     eval_pos: EvalPosFn,
     n_games: usize,
     max_nn_batch_size: usize,
@@ -50,8 +41,8 @@ pub fn generate_samples(
     let done_queue = Arc::new(ArrayQueue::<MctsGame>::new(n_games));
 
     // Create initial games
-    for _ in 0..n_games {
-        let game = MctsGame::new();
+    for i in 0..n_games {
+        let game = MctsGame::new_with_id(i as u64);
         nn_queue.push(game).unwrap();
     }
 
@@ -78,15 +69,15 @@ pub fn generate_samples(
 
     // MCTS thread
     for _ in 0..(num_cpus::get() - 1) {
-        let nn_queue_producer = Arc::clone(&nn_queue);
-        let mcts_queue_consumer = Arc::clone(&mcts_queue);
-        let done_queue_producer = Arc::clone(&done_queue);
+        let nn_queue = Arc::clone(&nn_queue);
+        let mcts_queue = Arc::clone(&mcts_queue);
+        let done_queue = Arc::clone(&done_queue);
         let wg = wg.clone();
         thread::spawn(move || {
             while mcts_thread(
-                &nn_queue_producer,
-                &mcts_queue_consumer,
-                &done_queue_producer,
+                &nn_queue,
+                &mcts_queue,
+                &done_queue,
                 n_mcts_iterations,
                 exploration_constant,
                 n_games,
@@ -97,9 +88,15 @@ pub fn generate_samples(
 
     wg.wait();
 
-    todo!()
+    let mut ret = Vec::<Sample>::with_capacity(n_games * 8);
+    while let Some(game) = done_queue.pop() {
+        ret.append(&mut game.to_training_samples())
+    }
+    ret
 }
 
+/// Performs NN batch inference.
+/// Returns whether the thread should continue looping.
 fn nn_thread(
     nn_queue: &Arc<ArrayQueue<MctsGame>>,
     mcts_queue: &Arc<ArrayQueue<(MctsGame, EvalPosResult)>>,
@@ -108,11 +105,12 @@ fn nn_thread(
     n_games: usize,
     eval_pos: EvalPosFn,
 ) -> bool {
+    // Read games from queue until we have max_nn_batch_size unique positions or queue is empty
     let mut games = Vec::with_capacity(max_nn_batch_size);
-    let mut position_set = HashSet::<Pos>::new();
+    let mut position_set = HashSet::<Pos>::with_capacity(max_nn_batch_size);
     loop {
         if let Some(game) = nn_queue.pop() {
-            position_set.insert(game.get_leaf_pos().clone());
+            position_set.insert(game.leaf_pos().clone());
             games.push(game);
             if position_set.len() >= max_nn_batch_size {
                 break;
@@ -133,31 +131,39 @@ fn nn_thread(
     let eval_map: HashMap<_, _> = positions.into_iter().zip(all_evals).collect();
 
     for game in games.into_iter() {
-        let pos = game.get_leaf_pos();
+        let pos = game.leaf_pos();
         let nn_result = eval_map[pos].clone();
         mcts_queue.push((game, nn_result)).unwrap();
     }
     true
 }
 
+/// Performs MCTS iterations by reading from the mcts_queue.
+/// Returns whether the thread should continue looping.
 fn mcts_thread(
-    nn_queue_producer: &Arc<ArrayQueue<MctsGame>>,
-    mcts_queue_consumer: &Arc<ArrayQueue<(MctsGame, EvalPosResult)>>,
-    done_queue_producer: &Arc<ArrayQueue<MctsGame>>,
+    nn_queue: &Arc<ArrayQueue<MctsGame>>,
+    mcts_queue: &Arc<ArrayQueue<(MctsGame, EvalPosResult)>>,
+    done_queue: &Arc<ArrayQueue<MctsGame>>,
     n_mcts_iterations: usize,
     exploration_constant: f64,
     n_games: usize,
 ) -> bool {
-    if let Some((mut game, nn_result)) = mcts_queue_consumer.pop() {
+    if let Some((mut game, nn_result)) = mcts_queue.pop() {
         game.on_received_policy(nn_result.policy, nn_result.value, exploration_constant);
         if game.root_visit_count() >= n_mcts_iterations {
-            // We are done with one round of MCTS. Make a move and continue.
-            done_queue_producer.push(game).unwrap();
+            // We are done with one round of MCTS. Make a random move. If the game is over
+            // store in the done queue. If it's not, continue MCTS.
+            game.make_random_move();
+            if game.root_pos().is_terminal_state().is_some() {
+                done_queue.push(game).unwrap();
+            } else {
+                nn_queue.push(game).unwrap();
+            }
         } else {
-            nn_queue_producer.push(game).unwrap();
+            nn_queue.push(game).unwrap();
         }
         true
-    } else if done_queue_producer.len() == n_games {
+    } else if done_queue.len() == n_games {
         false
     } else {
         // If there are no MCTS games to process, yield to other threads

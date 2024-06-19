@@ -1,3 +1,9 @@
+use rand::{
+    distributions::{Distribution, WeightedIndex},
+    rngs::StdRng,
+    SeedableRng,
+};
+
 use crate::c4r::{Move, Pos, TerminalState};
 
 /// Probabilities for how lucrative each column is.
@@ -5,6 +11,15 @@ pub type Policy = [f64; Pos::N_COLS];
 
 /// The lucrativeness value of a given position.
 pub type PosValue = f64;
+
+/// A training sample generated via self-play.
+#[derive(Debug)]
+pub struct Sample {
+    game_id: u64,
+    pos: Pos,
+    policy: Policy,
+    value: PosValue,
+}
 
 /// A single MCTS game.
 /// We store the Monte Carlo Tree in Vec form where child pointers are indicated by NodeId (the
@@ -19,20 +34,22 @@ pub struct MctsGame {
     root_id: NodeId,
     leaf_id: NodeId,
     moves: Vec<Move>,
+    game_id: u64,
 }
 
 impl MctsGame {
-    pub fn new() -> MctsGame {
-        Self::new_from_pos(Pos::new())
+    pub fn new_with_id(game_id: u64) -> MctsGame {
+        Self::new_from_pos(Pos::new(), game_id)
     }
 
-    pub fn new_from_pos(pos: Pos) -> MctsGame {
+    pub fn new_from_pos(pos: Pos, game_id: u64) -> MctsGame {
         let root_node = Node::new(pos, None, 0.0);
         MctsGame {
             nodes: vec![root_node],
             root_id: 0,
             leaf_id: 0,
             moves: Vec::new(),
+            game_id,
         }
     }
 
@@ -51,8 +68,13 @@ impl MctsGame {
         id
     }
 
-    /// Gets the leaf node position that needs to be evaluated by the NN
-    pub fn get_leaf_pos(&self) -> &Pos {
+    /// Gets the root position - the last moved that was played.
+    pub fn root_pos(&self) -> &Pos {
+        &self.get(self.root_id).pos
+    }
+
+    /// Gets the leaf node position that needs to be evaluated by the NN.
+    pub fn leaf_pos(&self) -> &Pos {
         &self.get(self.leaf_id).pos
     }
 
@@ -159,6 +181,17 @@ impl MctsGame {
         self.moves.push(m);
     }
 
+    /// Makes a move probabalistically based on the root node's policy.
+    /// Uses the game_id and ply as rng seeds for deterministic sampling.
+    pub fn make_random_move(&mut self) {
+        let seed = self.game_id * ((Pos::N_ROWS * Pos::N_COLS) + self.moves.len()) as u64;
+        let mut rng = StdRng::seed_from_u64(seed);
+        let policy = self.root_policy();
+        let dist = WeightedIndex::new(policy).unwrap();
+        let mov = dist.sample(&mut rng);
+        self.make_move(mov);
+    }
+
     /// The number of visits to the root node.
     pub fn root_visit_count(&self) -> usize {
         self.get(self.root_id).visit_count
@@ -172,9 +205,9 @@ impl MctsGame {
     }
 
     /// Converts a finished game into a Vec of training samples for future NN training.
-    pub fn to_training_samples(&self) -> Vec<(Pos, PosValue, Policy)> {
+    pub fn to_training_samples(&self) -> Vec<Sample> {
         let final_value = self
-            .get_leaf_pos()
+            .root_pos()
             .is_terminal_state()
             .map(|ts| match ts {
                 TerminalState::PlayerWin => 1.0,
@@ -185,11 +218,22 @@ impl MctsGame {
 
         let mut cur = self.get(self.leaf_id);
         let mut cur_value = final_value;
-        let mut ret = vec![(cur.pos.clone(), cur_value, cur.policy(&self))];
+        let mut ret = vec![Sample {
+            game_id: self.game_id,
+            pos: cur.pos.clone(),
+            policy: cur.policy(&self),
+            value: cur_value,
+        }];
         while let Some(parent_id) = cur.parent {
+            // Alternate values as the each consecutive position alternates player vs. opponent
             cur_value = -cur_value;
             cur = self.get(parent_id);
-            ret.push((cur.pos.clone(), cur_value, cur.policy(&self)));
+            ret.push(Sample {
+                game_id: self.game_id,
+                pos: cur.pos.clone(),
+                policy: cur.policy(&self),
+                value: cur_value,
+            });
         }
 
         ret.reverse();
@@ -285,7 +329,7 @@ mod tests {
 
     /// Runs a batch with a single game and a constant evaluation function.
     fn run_mcts(pos: Pos, n_iterations: usize) -> Policy {
-        let mut game = MctsGame::new_from_pos(pos);
+        let mut game = MctsGame::new_from_pos(pos, 0);
         for _ in 0..n_iterations {
             game.on_received_policy(Node::UNIFORM_POLICY, 0.0, TEST_EXPLORATION_CONSTANT)
         }
@@ -295,6 +339,7 @@ mod tests {
     #[test]
     fn mcts_prefers_center_column() {
         let policy = run_mcts(Pos::new(), 1000);
+        assert_relative_eq!(policy.iter().sum::<f64>(), 1.0);
         assert_gt!(policy[3], CONST_COL_WEIGHT);
     }
 
@@ -322,6 +367,7 @@ mod tests {
     #[test]
     fn mcts_depth_uneven() {
         let policy = run_mcts(Pos::new(), 47);
+        assert_relative_eq!(policy.iter().sum::<f64>(), 1.0);
         policy.iter().for_each(|p| {
             assert_relative_ne!(*p, CONST_COL_WEIGHT, epsilon = 0.001);
         });
@@ -344,6 +390,7 @@ mod tests {
         );
         let policy = run_mcts(pos, 1_000);
         let winning_moves = policy[0] + policy[4];
+        assert_relative_eq!(policy.iter().sum::<f64>(), 1.0);
         assert_relative_eq!(winning_moves, 1.0, epsilon = 0.01)
     }
 
@@ -364,6 +411,7 @@ mod tests {
             .as_str(),
         );
         let policy = run_mcts(pos, 100_000);
+        assert_relative_eq!(policy.iter().sum::<f64>(), 1.0);
         policy.iter().for_each(|p| {
             assert_relative_eq!(*p, CONST_COL_WEIGHT, epsilon = 0.02);
         });
