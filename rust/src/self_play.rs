@@ -55,35 +55,41 @@ pub fn self_play(
         let mcts_queue = Arc::clone(&mcts_queue);
         let done_queue = Arc::clone(&done_queue);
         let wg = wg.clone();
-        thread::spawn(move || {
-            while nn_thread(
-                &nn_queue,
-                &mcts_queue,
-                &done_queue,
-                max_nn_batch_size,
-                n_games,
-                eval_pos,
-            ) {}
-            drop(wg);
-        });
+        thread::Builder::new()
+            .name("nn_thread".into())
+            .spawn(move || {
+                while nn_thread(
+                    &nn_queue,
+                    &mcts_queue,
+                    &done_queue,
+                    max_nn_batch_size,
+                    n_games,
+                    eval_pos,
+                ) {}
+                drop(wg);
+            })
+            .unwrap();
     }
 
     // MCTS thread
-    for _ in 0..(num_cpus::get() - 1) {
+    for i in 0..(num_cpus::get() - 1) {
         let nn_queue = Arc::clone(&nn_queue);
         let mcts_queue = Arc::clone(&mcts_queue);
         let done_queue = Arc::clone(&done_queue);
         let wg = wg.clone();
-        thread::spawn(move || {
-            while mcts_thread(
-                &nn_queue,
-                &mcts_queue,
-                &done_queue,
-                n_mcts_iterations,
-                n_games,
-            ) {}
-            drop(wg);
-        });
+        thread::Builder::new()
+            .name(format!("mcts_thread {}", i))
+            .spawn(move || {
+                while mcts_thread(
+                    &nn_queue,
+                    &mcts_queue,
+                    &done_queue,
+                    n_mcts_iterations,
+                    n_games,
+                ) {}
+                drop(wg);
+            })
+            .unwrap();
     }
 
     wg.wait();
