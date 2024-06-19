@@ -71,8 +71,9 @@ pub fn self_play(
             .unwrap();
     }
 
-    // MCTS thread
-    for i in 0..(num_cpus::get() - 1) {
+    // MCTS threads
+    let mcts_thread_count = usize::max(1, num_cpus::get() - 1);
+    for i in 0..mcts_thread_count {
         let nn_queue = Arc::clone(&nn_queue);
         let mcts_queue = Arc::clone(&mcts_queue);
         let done_queue = Arc::clone(&done_queue);
