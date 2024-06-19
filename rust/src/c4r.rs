@@ -1,3 +1,5 @@
+use std::array::from_fn;
+
 /// Connect Four game logic
 
 /// Represents the value of a cell in a connect four position.
@@ -224,17 +226,10 @@ impl Pos {
         false
     }
 
-    /// Determines which moves (columns) are legal to play.
-    /// The LSB represents col 0.
-    fn legal_moves(&self) -> u8 {
-        let mut moves: u8 = 0b0;
+    /// Indicates which moves (columns) are legal to play.
+    pub fn legal_moves(&self) -> [bool; Self::N_COLS] {
         let top_row = Self::N_ROWS - 1;
-        for col in 0..Self::N_COLS {
-            if let None = self.get(top_row, col) {
-                moves |= 0b1 << col;
-            }
-        }
-        moves
+        from_fn(|col| self.get(top_row, col).is_none())
     }
 }
 
@@ -303,7 +298,7 @@ mod tests {
             }
 
             // Playing here should overflow column
-            assert_eq!(pos.legal_moves() & (0b1 << col), 0);
+            assert!(!pos.legal_moves()[col]);
             assert_eq!(pos.make_move(col), None);
         }
     }
@@ -370,7 +365,7 @@ mod tests {
     #[test]
     fn legal_moves() {
         let mut pos = Pos::new();
-        assert_eq!(pos.legal_moves(), 0b1111111);
+        assert_legal_moves(&pos, "OOOOOOO");
 
         pos = pos.test_moves(&[
             0, 1, 2, 3, 4, 5, // First row
@@ -381,22 +376,43 @@ mod tests {
         ]);
 
         // Fill up top row
-        assert_eq!(pos.legal_moves(), 0b1111111);
+        assert_legal_moves(&pos, "OOOOOOO");
         pos = pos.test_move(5);
-        assert_eq!(pos.legal_moves(), 0b1011111);
+        assert_legal_moves(&pos, "OOOOOXO");
         pos = pos.test_move(4);
-        assert_eq!(pos.legal_moves(), 0b1001111);
+        assert_legal_moves(&pos, "OOOOXXO");
         pos = pos.test_move(3);
-        assert_eq!(pos.legal_moves(), 0b1000111);
+        assert_legal_moves(&pos, "OOOXXXO");
         pos = pos.test_move(2);
-        assert_eq!(pos.legal_moves(), 0b1000011);
+        assert_legal_moves(&pos, "OOXXXXO");
         pos = pos.test_move(1);
-        assert_eq!(pos.legal_moves(), 0b1000001);
+        assert_legal_moves(&pos, "OXXXXXO");
         pos = pos.test_move(0);
-        assert_eq!(pos.legal_moves(), 0b1000000);
+        assert_legal_moves(&pos, "XXXXXXO");
 
         // Fill up last column
         pos = pos.test_moves(&[6, 6, 6, 6, 6, 6]);
-        assert_eq!(pos.legal_moves(), 0b0);
+        assert_legal_moves(&pos, "XXXXXXX");
+    }
+
+    fn assert_legal_moves(pos: &Pos, s: &str) {
+        let legal_moves = pos.legal_moves();
+        for mov in 0..Pos::N_COLS {
+            if legal_moves[mov] && s[mov..mov + 1] != *"O" {
+                assert!(
+                    false,
+                    "expected col {} to be legal in game\n\n{}",
+                    mov,
+                    pos.to_string()
+                );
+            } else if !legal_moves[mov] && s[mov..mov + 1] != *"X" {
+                assert!(
+                    false,
+                    "expected col {} to be illegal in game\n\n{}",
+                    mov,
+                    pos.to_string()
+                );
+            }
+        }
     }
 }

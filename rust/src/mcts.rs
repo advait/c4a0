@@ -15,10 +15,10 @@ pub type PosValue = f64;
 /// A training sample generated via self-play.
 #[derive(Debug)]
 pub struct Sample {
-    game_id: u64,
-    pos: Pos,
-    policy: Policy,
-    value: PosValue,
+    pub game_id: u64,
+    pub pos: Pos,
+    pub policy: Policy,
+    pub value: PosValue,
 }
 
 /// A single MCTS game.
@@ -30,14 +30,16 @@ pub struct Sample {
 /// preserve any prior MCTS iterations through that node.
 #[derive(Debug, Clone)]
 pub struct MctsGame {
+    pub game_id: u64,
     nodes: Vec<Node>,
     root_id: NodeId,
     leaf_id: NodeId,
     moves: Vec<Move>,
-    game_id: u64,
 }
 
 impl MctsGame {
+    pub const UNIFORM_POLICY: Policy = [1.0 / Pos::N_COLS as f64; Pos::N_COLS];
+
     pub fn new_with_id(game_id: u64) -> MctsGame {
         Self::new_from_pos(Pos::new(), game_id)
     }
@@ -110,9 +112,9 @@ impl MctsGame {
         if leaf.is_terminal() {
             return;
         }
-
+        let legal_moves = leaf.pos.legal_moves();
         let children: [Option<NodeId>; Pos::N_COLS] = std::array::from_fn(|m| {
-            if policy[m] > 0.0 {
+            if legal_moves[m] {
                 let child_pos = {
                     let leaf = self.get(leaf_id);
                     leaf.pos.make_move(m).unwrap()
@@ -257,7 +259,6 @@ struct Node {
 
 impl Node {
     const EPS: f64 = 1e-8;
-    const UNIFORM_POLICY: Policy = [1.0 / Pos::N_COLS as f64; Pos::N_COLS];
 
     fn new(pos: Pos, parent: Option<NodeId>, initial_policy_value: PosValue) -> Node {
         Node {
@@ -295,7 +296,7 @@ impl Node {
 
     /// Whether the game is over (won, los, draw) from this position.
     fn is_terminal(&self) -> bool {
-        self.pos.is_terminal_state() != None
+        self.pos.is_terminal_state().is_some()
     }
 
     /// Uses the child counts to determine the policy from this position.
@@ -308,12 +309,12 @@ impl Node {
             });
             let child_counts_sum: f64 = child_counts.iter().sum();
             if child_counts_sum == 0.0 {
-                Self::UNIFORM_POLICY
+                MctsGame::UNIFORM_POLICY
             } else {
                 child_counts.map(|c| c / child_counts_sum)
             }
         } else {
-            Self::UNIFORM_POLICY
+            MctsGame::UNIFORM_POLICY
         }
     }
 }
@@ -331,7 +332,7 @@ mod tests {
     fn run_mcts(pos: Pos, n_iterations: usize) -> Policy {
         let mut game = MctsGame::new_from_pos(pos, 0);
         for _ in 0..n_iterations {
-            game.on_received_policy(Node::UNIFORM_POLICY, 0.0, TEST_EXPLORATION_CONSTANT)
+            game.on_received_policy(MctsGame::UNIFORM_POLICY, 0.0, TEST_EXPLORATION_CONSTANT)
         }
         game.root_policy()
     }

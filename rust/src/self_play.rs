@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
     thread,
+    time::Duration,
 };
 
 use crossbeam::sync::WaitGroup;
@@ -119,7 +120,7 @@ fn nn_thread(
             return false;
         } else if position_set.is_empty() {
             // Waiting for more positions to enter into the queue
-            thread::yield_now();
+            thread::sleep(Duration::from_millis(1));
             return true;
         } else {
             break;
@@ -167,7 +168,65 @@ fn mcts_thread(
         false
     } else {
         // If there are no MCTS games to process, yield to other threads
-        thread::yield_now();
+        thread::sleep(Duration::from_millis(1));
         true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use more_asserts::assert_ge;
+
+    use super::*;
+
+    fn uniform_eval_pos(pos: &Vec<Pos>) -> Vec<EvalPosResult> {
+        pos.into_iter()
+            .map(|_| EvalPosResult {
+                policy: MctsGame::UNIFORM_POLICY,
+                value: 0.0,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_self_play() {
+        let n_games = 10;
+        let mcts_iterations = 5;
+        let max_nn_batch_size = 2;
+        let exploration_constant = 1.0;
+        let samples = self_play(
+            uniform_eval_pos,
+            n_games,
+            max_nn_batch_size,
+            mcts_iterations,
+            exploration_constant,
+        );
+
+        for g in 0..n_games {
+            let game_samples = samples
+                .iter()
+                .filter(|Sample { game_id, .. }| *game_id == (g as u64))
+                .collect::<Vec<_>>();
+
+            assert_ge!(game_samples.len(), 7);
+            assert_eq!(
+                game_samples
+                    .iter()
+                    .filter(|Sample { pos, .. }| *pos == Pos::new())
+                    .count(),
+                1,
+                "game {} should have a single starting position",
+                g
+            );
+            assert_eq!(
+                game_samples
+                    .iter()
+                    .filter(|Sample { pos, .. }| pos.is_terminal_state().is_some())
+                    .count(),
+                1,
+                "game {} should have a single terminal position",
+                g
+            );
+        }
     }
 }
