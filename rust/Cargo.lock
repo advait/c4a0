@@ -29,7 +29,7 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "crossbeam",
- "crossbeam-queue",
+ "crossbeam-channel",
  "more-asserts",
  "num_cpus",
  "pyo3",

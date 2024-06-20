@@ -5,15 +5,10 @@ use std::{
         Arc,
     },
     thread,
-    time::Duration,
 };
 
-use crossbeam::{
-    channel,
-    channel::{Receiver, RecvError, Sender, TryRecvError},
-    sync::WaitGroup,
-};
-use crossbeam_queue::ArrayQueue;
+use crossbeam::sync::WaitGroup;
+use crossbeam_channel::{bounded, unbounded, Receiver, RecvError, Sender, TryRecvError};
 
 use crate::{
     c4r::Pos,
@@ -32,12 +27,24 @@ pub struct EvalPosResult {
 }
 
 /// Generate training samples with self play and MCTS.
+///
 /// We use a batched NN forward pass to expand a given node (to determine the initial policy values
 /// based on the NN's output policy). Because we want to batch these NN calls for performance, we
 /// partially compute many MCTS traversals simultaneously (via [mcts_thread]), pausing each until we
 /// reach the node expansion phase. Then we are able to batch several NN calls simultaneously
 /// (via [nn_thread]). This process ping-pongs until the game reaches a terminal state after which
 /// it is added to `done_queue`.
+///
+/// We use one [nn_thread] and (n-1) [mcts_thread]s (where n=core count).
+/// The thread termination mechanism is as follows:
+/// 1. [mcts_thread]s whether we have finished all games via `n_games_remaining` atomic. When the
+///    first thread detects all work is complete, it sends a [MctsJob::PoisonPill] to all remaining
+///    [mcts_thread]s, resulting in all of these threads completing.
+/// 2. When the last [mcts_thread] completes, it drops the last `nn_queue_tx`
+///    [crossbeam_channel::Sender], causing the `nn_queue_rx` [crossbeam_channel::Receiver] to
+///    close. This notifies the [nn_thread], allowing it to close.
+/// 3. The main thread uses a [WaitGroup] to block on all of the above threads. When the wg
+///    completes, we are able to drain all [Sample]s from the `done_queue` and return.
 pub fn self_play(
     eval_pos: EvalPosFn,
     n_games: usize,
@@ -45,9 +52,9 @@ pub fn self_play(
     n_mcts_iterations: usize,
     exploration_constant: f64,
 ) -> Vec<Sample> {
-    let (nn_queue_tx, mut nn_queue_rx) = channel::bounded(n_games);
-    let mcts_queue = Arc::new(ArrayQueue::<(MctsGame, EvalPosResult)>::new(n_games));
-    let (done_queue_tx, done_queue_rx) = channel::unbounded::<Sample>();
+    let (nn_queue_tx, nn_queue_rx) = bounded::<MctsGame>(n_games);
+    let (mcts_queue_tx, mcts_queue_rx) = bounded::<MctsJob>(n_games);
+    let (done_queue_tx, done_queue_rx) = unbounded::<Sample>();
     let n_games_remaining = Arc::new(AtomicUsize::new(n_games));
 
     // Create initial games
@@ -60,12 +67,12 @@ pub fn self_play(
 
     // NN batch inference thread
     {
-        let mcts_queue = Arc::clone(&mcts_queue);
+        let mcts_queue = mcts_queue_tx.clone();
         let wg = wg.clone();
         thread::Builder::new()
             .name("nn_thread".into())
             .spawn(move || {
-                while nn_thread(&mut nn_queue_rx, &mcts_queue, max_nn_batch_size, eval_pos) {}
+                while nn_thread(&nn_queue_rx, &mcts_queue, max_nn_batch_size, eval_pos) {}
                 drop(wg);
             })
             .unwrap();
@@ -75,7 +82,8 @@ pub fn self_play(
     let mcts_thread_count = usize::max(1, num_cpus::get() - 1);
     for i in 0..mcts_thread_count {
         let nn_queue_tx = nn_queue_tx.clone();
-        let mcts_queue = Arc::clone(&mcts_queue);
+        let mcts_queue_tx = mcts_queue_tx.clone();
+        let mcts_queue_rx = mcts_queue_rx.clone();
         let done_queue_tx = done_queue_tx.clone();
         let n_games_remaining = Arc::clone(&n_games_remaining);
         let wg = wg.clone();
@@ -84,20 +92,23 @@ pub fn self_play(
             .spawn(move || {
                 while mcts_thread(
                     &nn_queue_tx,
-                    &mcts_queue,
+                    &mcts_queue_tx,
+                    &mcts_queue_rx,
                     &done_queue_tx,
                     &n_games_remaining,
                     n_mcts_iterations,
+                    mcts_thread_count,
                 ) {}
                 drop(wg);
             })
             .unwrap();
     }
 
-    // Only `mcts_thread`s txs to the `nn_queue` and `done_queue`, so we explicitly drop here so
-    // the readers appropriately receive done signals after the last `mcts_thread` finishes.
-    drop(done_queue_tx);
+    // The main thread doesn't tx on any channels. Explicitly drop the txs so the zero reader
+    // channel close mechanism enables all threads to terminate.
     drop(nn_queue_tx);
+    drop(mcts_queue_tx);
+    drop(done_queue_tx);
 
     wg.wait();
     done_queue_rx.into_iter().collect()
@@ -108,8 +119,8 @@ pub fn self_play(
 /// evaluations to the `mcts_queue`.
 /// Returns whether the thread should continue looping.
 fn nn_thread(
-    nn_queue: &mut Receiver<MctsGame>,
-    mcts_queue: &Arc<ArrayQueue<(MctsGame, EvalPosResult)>>,
+    nn_queue: &Receiver<MctsGame>,
+    mcts_queue: &Sender<MctsJob>,
     max_nn_batch_size: usize,
     eval_pos: EvalPosFn,
 ) -> bool {
@@ -141,7 +152,7 @@ fn nn_thread(
             }
             Err(TryRecvError::Empty) => break,
             Err(TryRecvError::Disconnected) => {
-                return false;
+                panic!("nn_thread should never terminate before mcts_thread");
             }
         }
     }
@@ -153,7 +164,7 @@ fn nn_thread(
     for game in games.into_iter() {
         let pos = game.leaf_pos();
         let nn_result = eval_map[pos].clone();
-        mcts_queue.push((game, nn_result)).unwrap();
+        mcts_queue.send(MctsJob::Job(game, nn_result)).unwrap();
     }
     true
 }
@@ -165,14 +176,18 @@ fn nn_thread(
 /// Returns whether the thread should continue looping.
 fn mcts_thread(
     nn_queue: &Sender<MctsGame>,
-    mcts_queue: &Arc<ArrayQueue<(MctsGame, EvalPosResult)>>,
+    mcts_queue_tx: &Sender<MctsJob>,
+    mcts_queue_rx: &Receiver<MctsJob>,
     done_queue: &Sender<Sample>,
     n_games_remaining: &Arc<AtomicUsize>,
     n_mcts_iterations: usize,
+    n_mcts_threads: usize,
 ) -> bool {
-    match mcts_queue.pop() {
-        Some((mut game, nn_result)) => {
+    match mcts_queue_rx.recv() {
+        Ok(MctsJob::PoisonPill) => false,
+        Ok(MctsJob::Job(mut game, nn_result)) => {
             game.on_received_policy(nn_result.policy, nn_result.value);
+
             if game.root_visit_count() >= n_mcts_iterations {
                 // We have reached the sufficient number of MCTS iterations to make a move.
                 game.make_random_move();
@@ -187,25 +202,39 @@ fn mcts_thread(
             } else {
                 nn_queue.send(game).unwrap();
             }
-            true
+
+            if n_games_remaining.load(Ordering::Relaxed) == 0 {
+                // We wrote the last game. Send poison pills to remaining threads.
+                for _ in 0..(n_mcts_threads - 1) {
+                    mcts_queue_tx.send(MctsJob::PoisonPill).unwrap();
+                }
+                false
+            } else {
+                true
+            }
         }
-        None if n_games_remaining.load(Ordering::Relaxed) == 0 => false,
-        None => {
-            // If there are no MCTS games to process, yield to other threads
-            // TODO: replace this with a blocking mechanism
-            thread::sleep(Duration::from_millis(1));
-            true
+        Err(RecvError) => {
+            panic!("mcts_thread: mcts_queue unexpectedly closed")
         }
     }
 }
 
+/// A piece of work for [mcts_thread]s. [MctsJob::PoisonPill] indicates the thread should terminate.
+enum MctsJob {
+    Job(MctsGame, EvalPosResult),
+    PoisonPill,
+}
+
 #[cfg(test)]
 mod tests {
-    use more_asserts::assert_ge;
+    use more_asserts::{assert_ge, assert_le};
 
     use super::*;
 
+    const MAX_NN_BATCH_SIZE: usize = 10;
+
     fn uniform_eval_pos(pos: &Vec<Pos>) -> Vec<EvalPosResult> {
+        assert_le!(pos.len(), MAX_NN_BATCH_SIZE);
         pos.into_iter()
             .map(|_| EvalPosResult {
                 policy: MctsGame::UNIFORM_POLICY,
@@ -216,14 +245,13 @@ mod tests {
 
     #[test]
     fn test_self_play() {
-        let n_games = 10;
-        let mcts_iterations = 5;
-        let max_nn_batch_size = 2;
+        let n_games = 100;
+        let mcts_iterations = 50;
         let exploration_constant = 1.0;
         let samples = self_play(
             uniform_eval_pos,
             n_games,
-            max_nn_batch_size,
+            MAX_NN_BATCH_SIZE,
             mcts_iterations,
             exploration_constant,
         );
