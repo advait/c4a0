@@ -1,6 +1,8 @@
 #![allow(dead_code)]
 mod c4r;
 mod mcts;
+mod nn;
+mod nn_utils;
 mod self_play;
 
 use pyo3::prelude::*;
