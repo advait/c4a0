@@ -1,4 +1,6 @@
-use std::array::from_fn;
+use std::array::{self, from_fn};
+
+use burn::tensor::{backend::Backend, Tensor};
 
 /// Connect Four game logic
 
@@ -233,6 +235,36 @@ impl Pos {
     pub fn legal_moves(&self) -> [bool; Self::N_COLS] {
         let top_row = Self::N_ROWS - 1;
         from_fn(|col| self.get(top_row, col).is_none())
+    }
+
+    /// Convert into a [Tensor] on the given [Backend::Device].
+    pub fn to_tensor<B: Backend>(&self, device: &B::Device) -> Tensor<B, 3> {
+        let player: [[f32; Pos::N_COLS]; Pos::N_ROWS] = array::from_fn(|r| {
+            array::from_fn(|c| match self.get(r, c) {
+                Some(CellValue::Player) => 1.0,
+                _ => 0.0,
+            })
+        });
+
+        let opponent: [[f32; Pos::N_COLS]; Pos::N_ROWS] = array::from_fn(|r| {
+            array::from_fn(|c| match self.get(r, c) {
+                Some(CellValue::Opponent) => 1.0,
+                _ => 0.0,
+            })
+        });
+        let player: Tensor<B, 3> = Tensor::from_floats(player, device).unsqueeze_dim(0); // h w -> c=1 h w
+        let opponent: Tensor<B, 3> = Tensor::from_floats(opponent, device).unsqueeze_dim(0); // h w -> c=1 h w
+        Tensor::cat(vec![player, opponent], 0) // c=2 h w
+    }
+
+    /// Converts a [Vec] of positions into a single batched [Tensor] on the given [Backend::Device].
+    pub fn to_batched_tensor<B: Backend>(vec: Vec<Pos>, device: &B::Device) -> Tensor<B, 4> {
+        Tensor::cat(
+            vec.into_iter()
+                .map(|p| p.to_tensor(device).unsqueeze_dim(0))
+                .collect(),
+            0,
+        )
     }
 }
 
