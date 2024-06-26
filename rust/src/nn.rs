@@ -1,5 +1,4 @@
 use burn::{
-    module::Module,
     nn::{
         conv::{Conv2d, Conv2dConfig},
         BatchNorm, BatchNormConfig,
@@ -12,7 +11,7 @@ use burn::{
     },
 };
 
-use crate::c4r::Pos;
+use crate::{c4r::Pos, nn_utils::kl_divergence_loss};
 
 /// A CNN that inputs a position from [Pos::to_batched_tensor] and produces a [crate::mcts::Policy]
 /// and a [crate::mcts::PosValue] to help guide MCTS.
@@ -77,7 +76,32 @@ impl<B: Backend> ConnectFourNet<B> {
 
         (policy_logprobs, value)
     }
+
+    fn forward_classification(&self, item: PosBatch<B>) -> ClassificationOutput<B> {
+        let (policy_logprobs, value) = self.forward(item.pos);
+        let kl_loss = kl_divergence_loss(policy_logprobs, item.policy_targets);
+        let mse_loss = (item.value_targets - value).powi_scalar(2).mean().sqrt();
+        let loss = kl_loss + mse_loss;
+        ClassificationOutput { loss }
+    }
 }
+
+struct PosBatch<B: Backend> {
+    pos: Tensor<B, 4>,
+    policy_targets: Tensor<B, 2>,
+    value_targets: Tensor<B, 1>,
+}
+
+struct ClassificationOutput<B: Backend> {
+    loss: Tensor<B, 1>,
+}
+
+// impl<B: AutodiffBackend> TrainStep<PosBatch<B>, ClassificationOutput<B>> for ConnectFourNet<B> {
+//     fn step(&self, item: PosBatch<B>) -> TrainOutput<ClassificationOutput<B>> {
+//         let item = self.forward_classification(item);
+//         TrainOutput::new(self, item.loss.backward(), item)
+//     }
+// }
 
 /// CNN Block with batch normalization.
 #[derive(Module, Debug)]
@@ -116,7 +140,7 @@ mod tests {
     fn forward_pass() {
         let device = NdArrayDevice::default();
         let model = ConnectFourNet::<TestBackend>::new(&device);
-        let batch = Pos::to_batched_tensor::<TestBackend>(vec![Pos::new()], &device);
+        let batch = Pos::to_batched_tensor::<TestBackend>(&vec![Pos::new()], &device);
         let (policy, value) = model.forward(batch);
         assert_eq!(policy.shape(), [1, Pos::N_COLS].into());
         assert_relative_eq!(policy.exp().sum().into_scalar(), 1.0);

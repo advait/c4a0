@@ -501,6 +501,7 @@ dependencies = [
  "metrics",
  "more-asserts",
  "ndarray",
+ "num-traits",
  "num_cpus",
  "pyo3",
  "rand",

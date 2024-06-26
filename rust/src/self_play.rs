@@ -16,7 +16,7 @@ use crate::{
 
 /// Evaluate a batch of positions with an NN forward pass.
 /// The ordering of the results corresponds to the ordering of the input positions.
-pub trait EvalPosT: Send + Sync {
+pub trait EvalPosT {
     fn eval_pos(&self, pos: &Vec<Pos>) -> Vec<EvalPosResult>;
 }
 
@@ -46,12 +46,12 @@ pub struct EvalPosResult {
 ///    close. This notifies the [nn_thread], allowing it to close.
 /// 3. The main thread uses a [WaitGroup] to block on all of the above threads. When the wg
 ///    completes, we are able to drain all [Sample]s from the `done_queue` and return.
-pub fn self_play<E: EvalPosT>(
+pub fn self_play<E: EvalPosT + Send + Sync>(
     eval_pos: E,
     n_games: usize,
     max_nn_batch_size: usize,
     n_mcts_iterations: usize,
-    exploration_constant: f64,
+    exploration_constant: f32,
 ) -> Vec<Sample> {
     let eval_pos = Arc::new(eval_pos);
     let (nn_queue_tx, nn_queue_rx) = bounded::<MctsGame>(n_games);

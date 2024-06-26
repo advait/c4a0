@@ -258,9 +258,9 @@ impl Pos {
     }
 
     /// Converts a [Vec] of positions into a single batched [Tensor] on the given [Backend::Device].
-    pub fn to_batched_tensor<B: Backend>(vec: Vec<Pos>, device: &B::Device) -> Tensor<B, 4> {
+    pub fn to_batched_tensor<B: Backend>(vec: &Vec<Pos>, device: &B::Device) -> Tensor<B, 4> {
         Tensor::cat(
-            vec.into_iter()
+            vec.iter()
                 .map(|p| p.to_tensor(device).unsqueeze_dim(0))
                 .collect(),
             0,

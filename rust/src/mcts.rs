@@ -7,10 +7,10 @@ use rand::{
 use crate::c4r::{Move, Pos, TerminalState};
 
 /// Probabilities for how lucrative each column is.
-pub type Policy = [f64; Pos::N_COLS];
+pub type Policy = [f32; Pos::N_COLS];
 
 /// The lucrativeness value of a given position.
-pub type PosValue = f64;
+pub type PosValue = f32;
 
 /// A training sample generated via self-play.
 #[derive(Debug)]
@@ -35,23 +35,23 @@ pub struct MctsGame {
     root_id: NodeId,
     leaf_id: NodeId,
     moves: Vec<Move>,
-    exploration_constant: f64,
+    exploration_constant: f32,
 }
 
 impl MctsGame {
-    pub const UNIFORM_POLICY: Policy = [1.0 / Pos::N_COLS as f64; Pos::N_COLS];
+    pub const UNIFORM_POLICY: Policy = [1.0 / Pos::N_COLS as f32; Pos::N_COLS];
 
     /// New game with the given id and default start position.
     /// `exploration_constant` is an MCTS parameter that guides how aggressively to explore vs.
     /// exploit.
-    pub fn new_with_id(game_id: u64, exploration_constant: f64) -> MctsGame {
+    pub fn new_with_id(game_id: u64, exploration_constant: f32) -> MctsGame {
         Self::new_from_pos(Pos::new(), game_id, exploration_constant)
     }
 
     /// New game with the given id and start position.
     /// `exploration_constant` is an MCTS parameter that guides how aggressively to explore vs.
     /// exploit.
-    pub fn new_from_pos(pos: Pos, game_id: u64, exploration_constant: f64) -> MctsGame {
+    pub fn new_from_pos(pos: Pos, game_id: u64, exploration_constant: f32) -> MctsGame {
         let root_node = Node::new(pos, None, 0.0);
         MctsGame {
             nodes: vec![root_node],
@@ -102,7 +102,7 @@ impl MctsGame {
                 policy[mov] = 0.0;
             }
         }
-        let p_sum = policy.iter().sum::<f64>();
+        let p_sum = policy.iter().sum::<f32>();
         if p_sum == 0.0 {
             policy = Self::UNIFORM_POLICY;
         } else {
@@ -281,13 +281,13 @@ struct Node {
     pos: Pos,
     parent: Option<NodeId>,
     visit_count: usize,
-    exploitation_value_sum: f64,
+    exploitation_value_sum: f32,
     initial_policy_value: PosValue,
     children: Option<[Option<NodeId>; Pos::N_COLS]>,
 }
 
 impl Node {
-    const EPS: f64 = 1e-8;
+    const EPS: f32 = 1e-8;
 
     fn new(pos: Pos, parent: Option<NodeId>, initial_policy_value: PosValue) -> Node {
         Node {
@@ -303,7 +303,7 @@ impl Node {
     /// The exploitation component of the UCT value, i.e. the average win rate.
     /// Because we are viewing the value from the perspective of the parent node, we negate it.
     fn exploitation_value(&self) -> PosValue {
-        -1.0 * self.exploitation_value_sum / ((self.visit_count as f64) + 1.0)
+        -1.0 * self.exploitation_value_sum / ((self.visit_count as f32) + 1.0)
     }
 
     /// The exploration component of the UCT value. Higher visit counts result in lower values.
@@ -313,13 +313,13 @@ impl Node {
         let parent_visit_count = match self.parent {
             Some(parent_id) => game.get(parent_id).visit_count,
             None => self.visit_count,
-        } as f64;
-        let exploration_value = (parent_visit_count.ln() / (self.visit_count as f64 + 1.)).sqrt();
+        } as f32;
+        let exploration_value = (parent_visit_count.ln() / (self.visit_count as f32 + 1.)).sqrt();
         exploration_value * (self.initial_policy_value + Self::EPS)
     }
 
     /// The UCT value of this node. Represents the lucrativeness of this node according to MCTS.
-    fn uct_value(&self, exploration_constant: f64, game: &MctsGame) -> PosValue {
+    fn uct_value(&self, exploration_constant: f32, game: &MctsGame) -> PosValue {
         self.exploitation_value() + exploration_constant * self.exploration_value(game)
     }
 
@@ -333,10 +333,10 @@ impl Node {
         if let Some(children) = self.children {
             let child_counts = children.map(|maybe_child| {
                 maybe_child
-                    .map(|child_id| game.get(child_id).visit_count as f64)
-                    .unwrap_or(0 as f64)
+                    .map(|child_id| game.get(child_id).visit_count as f32)
+                    .unwrap_or(0.)
             });
-            let child_counts_sum: f64 = child_counts.iter().sum();
+            let child_counts_sum = child_counts.iter().sum::<f32>();
             if child_counts_sum == 0.0 {
                 MctsGame::UNIFORM_POLICY
             } else {
@@ -354,8 +354,8 @@ mod tests {
     use approx::{assert_relative_eq, assert_relative_ne};
     use more_asserts::assert_gt;
 
-    const CONST_COL_WEIGHT: f64 = 1.0 / (Pos::N_COLS as f64);
-    const TEST_EXPLORATION_CONSTANT: f64 = 1.0;
+    const CONST_COL_WEIGHT: f32 = 1.0 / (Pos::N_COLS as f32);
+    const TEST_EXPLORATION_CONSTANT: f32 = 1.0;
 
     /// Runs a batch with a single game and a constant evaluation function.
     fn run_mcts(pos: Pos, n_iterations: usize) -> Policy {
@@ -369,14 +369,14 @@ mod tests {
     #[test]
     fn mcts_prefers_center_column() {
         let policy = run_mcts(Pos::new(), 1000);
-        assert_relative_eq!(policy.iter().sum::<f64>(), 1.0);
+        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
         assert_gt!(policy[3], CONST_COL_WEIGHT);
     }
 
     #[test]
     fn mcts_depth_one() {
         let policy = run_mcts(Pos::new(), 1 + Pos::N_COLS + Pos::N_COLS);
-        assert_relative_eq!(policy.iter().sum::<f64>(), 1.0);
+        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
         policy.iter().for_each(|p| {
             assert_relative_eq!(*p, CONST_COL_WEIGHT);
         });
@@ -388,7 +388,7 @@ mod tests {
             Pos::new(),
             1 + Pos::N_COLS + (Pos::N_COLS * Pos::N_COLS) + (Pos::N_COLS * Pos::N_COLS),
         );
-        assert_relative_eq!(policy.iter().sum::<f64>(), 1.0);
+        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
         policy.iter().for_each(|p| {
             assert_relative_eq!(*p, CONST_COL_WEIGHT);
         });
@@ -397,7 +397,7 @@ mod tests {
     #[test]
     fn mcts_depth_uneven() {
         let policy = run_mcts(Pos::new(), 47);
-        assert_relative_eq!(policy.iter().sum::<f64>(), 1.0);
+        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
         policy.iter().for_each(|p| {
             assert_relative_ne!(*p, CONST_COL_WEIGHT, epsilon = 0.001);
         });
@@ -420,7 +420,7 @@ mod tests {
         );
         let policy = run_mcts(pos, 1_000);
         let winning_moves = policy[0] + policy[4];
-        assert_relative_eq!(policy.iter().sum::<f64>(), 1.0);
+        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
         assert_relative_eq!(winning_moves, 1.0, epsilon = 0.01)
     }
 
@@ -441,7 +441,7 @@ mod tests {
             .as_str(),
         );
         let policy = run_mcts(pos, 100_000);
-        assert_relative_eq!(policy.iter().sum::<f64>(), 1.0);
+        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
         policy.iter().for_each(|p| {
             assert_relative_eq!(*p, CONST_COL_WEIGHT, epsilon = 0.02);
         });
