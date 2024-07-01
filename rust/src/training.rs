@@ -1,32 +1,126 @@
 use std::array;
 
 use burn::{
-    backend::{wgpu::WgpuDevice, Autodiff, Wgpu},
-    tensor::backend::Backend,
+    config::Config,
+    data::dataloader::DataLoaderBuilder,
+    module::Module,
+    optim::AdamConfig,
+    record::CompactRecorder,
+    tensor::backend::{AutodiffBackend, Backend},
+    train::{metric::LossMetric, LearnerBuilder},
 };
 use num_traits::ToPrimitive;
+use rand::{rngs::StdRng, SeedableRng};
 
 use crate::{
     c4r::Pos,
+    data::{split_train_test, TrainingBatcher},
     mcts::Sample,
-    nn::ConnectFourNet,
+    nn::{ConnectFourNet, ConnectFourNetConfig},
     self_play::{self, EvalPosResult, EvalPosT},
 };
 
-type WgpuBackend = Autodiff<Wgpu>;
+#[derive(Config)]
+pub struct TrainingConfig {
+    pub model: ConnectFourNetConfig,
+    pub optimizer: AdamConfig,
 
-fn train_gen(n_games: usize, mcts_iterations: usize, exploration_constant: f32, batch_size: usize) {
-    let device = WgpuDevice::default();
-    let model = ConnectFourNet::<WgpuBackend>::new(&device);
+    #[config(default = 10)]
+    pub num_epochs: usize,
 
-    let _samples = gen_games(
+    #[config(default = 4)]
+    pub num_workers: usize,
+
+    #[config(default = 1.0e-3)]
+    pub learning_rate: f64,
+
+    #[config(default = 100)]
+    pub n_games: usize,
+
+    #[config(default = 1000)]
+    pub batch_size: usize,
+
+    #[config(default = 10)]
+    pub mcts_iterations: usize,
+
+    #[config(default = 1.4)]
+    pub exploration_constant: f32,
+}
+
+fn create_artifact_dir(artifact_dir: &str) {
+    // Remove existing artifacts before to get an accurate learner summary
+    std::fs::remove_dir_all(artifact_dir).ok();
+    std::fs::create_dir_all(artifact_dir).ok();
+}
+
+enum TrainingStateFoo {
+    BeforeSelfPlay { base_model: () },
+    BeforeTraining { samples: Vec<Sample> },
+}
+
+struct TrainingState {
+    state: TrainingStateFoo,
+    parent: Option<TrainingState>,
+}
+
+/// Main training loop:
+/// 1. Load the [TrainingState] from disk. If it doesn't exist, create a fresh one.
+/// 2.
+/// 1. Load the best model from the `model_store`.
+/// 2. Generate `n_games` games using MCTS.
+/// 3.
+pub fn train<B: AutodiffBackend>(artifact_dir: &str, config: TrainingConfig, device: B::Device) {
+    create_artifact_dir(artifact_dir);
+    config
+        .save(format!("{artifact_dir}/config.json"))
+        .expect("Config should be saved successfully");
+
+    let seed = 1337;
+    B::seed(seed);
+
+    let model = ConnectFourNetConfig::new().init::<B>(&device);
+    println!("Generating games");
+    let mut samples = gen_games(
         &device,
         &model,
-        n_games,
-        mcts_iterations,
-        exploration_constant,
-        batch_size,
+        config.n_games,
+        config.mcts_iterations,
+        config.exploration_constant,
+        config.batch_size,
     );
+    println!("Done generating {} games", samples.len());
+
+    let (train, test) = split_train_test(&mut samples, &mut StdRng::seed_from_u64(seed));
+
+    let batcher_train = TrainingBatcher::<B>::new(device.clone());
+    let batcher_test = TrainingBatcher::<B::InnerBackend>::new(device.clone());
+
+    let dataloader_train = DataLoaderBuilder::new(batcher_train)
+        .batch_size(config.batch_size)
+        .shuffle(seed)
+        .num_workers(config.num_workers)
+        .build(train);
+
+    let dataloader_test = DataLoaderBuilder::new(batcher_test)
+        .batch_size(config.batch_size)
+        .shuffle(seed)
+        .num_workers(config.num_workers)
+        .build(test);
+
+    let learner = LearnerBuilder::new(artifact_dir)
+        .metric_train_numeric(LossMetric::new())
+        .metric_valid_numeric(LossMetric::new())
+        .with_file_checkpointer(CompactRecorder::new())
+        .devices(vec![device.clone()])
+        .num_epochs(config.num_epochs)
+        .summary()
+        .build(model, config.optimizer.init(), config.learning_rate);
+
+    let model_trained = learner.fit(dataloader_train, dataloader_test);
+
+    model_trained
+        .save_file(format!("{artifact_dir}/model"), &CompactRecorder::new())
+        .expect("Trained model should be saved successfully");
 }
 
 fn gen_games<B: Backend>(
@@ -92,6 +186,7 @@ unsafe impl<'a, B: Backend> Send for BatchEvalPos<'a, B> {}
 
 #[cfg(test)]
 mod tests {
+    use burn::backend::{wgpu::WgpuDevice, Wgpu};
     use more_asserts::assert_ge;
 
     use super::*;
@@ -99,7 +194,7 @@ mod tests {
     #[test]
     fn gen_games_test() {
         let device = WgpuDevice::default();
-        let model = ConnectFourNet::<Wgpu>::new(&device);
+        let model = ConnectFourNetConfig::new().init::<Wgpu>(&device);
         let n_games = 2;
         let mcts_iterations = 2;
         let exploration_constant = 1.0;
