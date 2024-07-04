@@ -1,6 +1,6 @@
-use std::array::{self, from_fn};
+use std::array::from_fn;
 
-use burn::tensor::{backend::Backend, Tensor};
+use burn::tensor::Data;
 
 /// Connect Four game logic
 
@@ -238,32 +238,30 @@ impl Pos {
     }
 
     /// Convert into a [Tensor] on the given [Backend::Device].
-    pub fn to_tensor<B: Backend>(&self, device: &B::Device) -> Tensor<B, 3> {
-        let player: [[f32; Pos::N_COLS]; Pos::N_ROWS] = array::from_fn(|r| {
-            array::from_fn(|c| match self.get(r, c) {
+    // pub fn to_tensor<B: Backend>(&self, device: &B::Device) -> Tensor<B, 3> {
+    //     Tensor::from_data(self.to_data().convert::<B::FloatElem>(), device)
+    // }
+
+    pub fn to_data(&self) -> Data<f32, 3> {
+        let player: Vec<f32> = (0..Pos::N_ROWS)
+            .flat_map(|r| (0..Pos::N_COLS).map(move |c| self.get(r, c)))
+            .map(|cell| match cell {
                 Some(CellValue::Player) => 1.0,
                 _ => 0.0,
             })
-        });
+            .collect();
 
-        let opponent: [[f32; Pos::N_COLS]; Pos::N_ROWS] = array::from_fn(|r| {
-            array::from_fn(|c| match self.get(r, c) {
+        let opponent: Vec<f32> = (0..Pos::N_ROWS)
+            .flat_map(|r| (0..Pos::N_COLS).map(move |c| self.get(r, c)))
+            .map(|cell| match cell {
                 Some(CellValue::Opponent) => 1.0,
                 _ => 0.0,
             })
-        });
-        let player: Tensor<B, 3> = Tensor::from_floats(player, device).unsqueeze_dim(0); // h w -> c=1 h w
-        let opponent: Tensor<B, 3> = Tensor::from_floats(opponent, device).unsqueeze_dim(0); // h w -> c=1 h w
-        Tensor::cat(vec![player, opponent], 0) // c=2 h w
-    }
+            .collect();
 
-    /// Converts a [Vec] of positions into a single batched [Tensor] on the given [Backend::Device].
-    pub fn to_batched_tensor<B: Backend>(vec: &Vec<Pos>, device: &B::Device) -> Tensor<B, 4> {
-        Tensor::cat(
-            vec.iter()
-                .map(|p| p.to_tensor(device).unsqueeze_dim(0))
-                .collect(),
-            0,
+        Data::new(
+            vec![player, opponent].concat(),
+            [2, Pos::N_ROWS, Pos::N_COLS].into(),
         )
     }
 }
@@ -395,6 +393,13 @@ mod tests {
 
         assert_eq!(pos.to_string(), expected);
         assert_eq!(Pos::from(expected.as_str()), pos);
+    }
+
+    #[test]
+    fn to_data() {
+        let pos = Pos::new();
+        let data = pos.to_data();
+        assert_eq!(data.shape, [2, Pos::N_ROWS, Pos::N_COLS].into());
     }
 
     #[test]

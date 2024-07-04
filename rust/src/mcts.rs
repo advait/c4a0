@@ -13,7 +13,7 @@ pub type Policy = [f32; Pos::N_COLS];
 pub type PosValue = f32;
 
 /// A training sample generated via self-play.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Sample {
     pub game_id: u64,
     pub pos: Pos,

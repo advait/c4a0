@@ -6,12 +6,42 @@ use burn::{
     prelude::*,
     tensor::{
         activation::{log_softmax, relu},
-        backend::Backend,
+        backend::{AutodiffBackend, Backend},
         Tensor,
+    },
+    train::{
+        metric::{Adaptor, LossInput},
+        TrainOutput, TrainStep, ValidStep,
     },
 };
 
-use crate::{c4r::Pos, nn_utils::kl_divergence_loss};
+use crate::{batching::TrainingBatch, c4r::Pos, nn_utils::kl_divergence_loss};
+
+#[derive(Config, Debug)]
+pub struct ConnectFourNetConfig {
+    #[config(default = "64")]
+    cnn_channels: usize,
+}
+
+impl ConnectFourNetConfig {
+    pub fn init<B: Backend>(&self, device: &B::Device) -> ConnectFourNet<B> {
+        let fc_size = self.cnn_channels * Pos::N_ROWS * Pos::N_COLS;
+
+        ConnectFourNet {
+            conv1: ConvBlock::new([2, self.cnn_channels], [3, 3], device), // b c=2 h=6 w=7
+            conv2: ConvBlock::new([self.cnn_channels, self.cnn_channels], [3, 3], device),
+            conv3: ConvBlock::new([self.cnn_channels, self.cnn_channels], [3, 3], device),
+
+            fc_policy1: nn::LinearConfig::new(fc_size, fc_size).init(device),
+            fc_policy2: nn::LinearConfig::new(fc_size, fc_size).init(device),
+            fc_policy3: nn::LinearConfig::new(fc_size, Pos::N_COLS).init(device),
+
+            fc_value1: nn::LinearConfig::new(fc_size, fc_size).init(device),
+            fc_value2: nn::LinearConfig::new(fc_size, fc_size).init(device),
+            fc_value3: nn::LinearConfig::new(fc_size, 1).init(device),
+        }
+    }
+}
 
 /// A CNN that inputs a position from [Pos::to_batched_tensor] and produces a [crate::mcts::Policy]
 /// and a [crate::mcts::PosValue] to help guide MCTS.
@@ -36,26 +66,6 @@ pub struct ConnectFourNet<B: Backend> {
 }
 
 impl<B: Backend> ConnectFourNet<B> {
-    const CNN_CHANNELS: usize = 64;
-
-    pub fn new(device: &B::Device) -> Self {
-        let fc_size = Self::CNN_CHANNELS * Pos::N_ROWS * Pos::N_COLS;
-
-        Self {
-            conv1: ConvBlock::new([2, Self::CNN_CHANNELS], [3, 3], device), // b c=2 h=6 w=7
-            conv2: ConvBlock::new([Self::CNN_CHANNELS, Self::CNN_CHANNELS], [3, 3], device),
-            conv3: ConvBlock::new([Self::CNN_CHANNELS, Self::CNN_CHANNELS], [3, 3], device),
-
-            fc_policy1: nn::LinearConfig::new(fc_size, fc_size).init(device),
-            fc_policy2: nn::LinearConfig::new(fc_size, fc_size).init(device),
-            fc_policy3: nn::LinearConfig::new(fc_size, Pos::N_COLS).init(device),
-
-            fc_value1: nn::LinearConfig::new(fc_size, fc_size).init(device),
-            fc_value2: nn::LinearConfig::new(fc_size, fc_size).init(device),
-            fc_value3: nn::LinearConfig::new(fc_size, 1).init(device),
-        }
-    }
-
     pub fn forward(&self, x: Tensor<B, 4>) -> (Tensor<B, 2>, Tensor<B, 1>) {
         let x = self.conv1.forward(x);
         let x = self.conv2.forward(x);
@@ -77,31 +87,51 @@ impl<B: Backend> ConnectFourNet<B> {
         (policy_logprobs, value)
     }
 
-    fn forward_classification(&self, item: PosBatch<B>) -> ClassificationOutput<B> {
-        let (policy_logprobs, value) = self.forward(item.pos);
-        let kl_loss = kl_divergence_loss(policy_logprobs, item.policy_targets);
-        let mse_loss = (item.value_targets - value).powi_scalar(2).mean().sqrt();
-        let loss = kl_loss + mse_loss;
-        ClassificationOutput { loss }
+    fn forward_with_loss(&self, batch: TrainingBatch<B>) -> ConnectFourLoss<B> {
+        let (policy_logprobs, value) = self.forward(batch.pos);
+        let kl_loss = kl_divergence_loss(policy_logprobs.clone(), batch.policy_target);
+        let mse_loss = (batch.value_target - value.clone())
+            .powi_scalar(2)
+            .mean()
+            .sqrt();
+        let loss = kl_loss.clone() + mse_loss.clone();
+
+        ConnectFourLoss {
+            kl_loss,
+            mse_loss,
+            loss,
+            policy_logprobs,
+            value,
+        }
     }
 }
 
-struct PosBatch<B: Backend> {
-    pos: Tensor<B, 4>,
-    policy_targets: Tensor<B, 2>,
-    value_targets: Tensor<B, 1>,
-}
-
-struct ClassificationOutput<B: Backend> {
+pub struct ConnectFourLoss<B: Backend> {
+    kl_loss: Tensor<B, 1>,
+    mse_loss: Tensor<B, 1>,
     loss: Tensor<B, 1>,
+    policy_logprobs: Tensor<B, 2>,
+    value: Tensor<B, 1>,
 }
 
-// impl<B: AutodiffBackend> TrainStep<PosBatch<B>, ClassificationOutput<B>> for ConnectFourNet<B> {
-//     fn step(&self, item: PosBatch<B>) -> TrainOutput<ClassificationOutput<B>> {
-//         let item = self.forward_classification(item);
-//         TrainOutput::new(self, item.loss.backward(), item)
-//     }
-// }
+impl<B: Backend> Adaptor<LossInput<B>> for ConnectFourLoss<B> {
+    fn adapt(&self) -> LossInput<B> {
+        LossInput::new(self.loss.clone())
+    }
+}
+
+impl<B: AutodiffBackend> TrainStep<TrainingBatch<B>, ConnectFourLoss<B>> for ConnectFourNet<B> {
+    fn step(&self, batch: TrainingBatch<B>) -> TrainOutput<ConnectFourLoss<B>> {
+        let output = self.forward_with_loss(batch);
+        TrainOutput::new(self, output.loss.backward(), output)
+    }
+}
+
+impl<B: Backend> ValidStep<TrainingBatch<B>, ConnectFourLoss<B>> for ConnectFourNet<B> {
+    fn step(&self, batch: TrainingBatch<B>) -> ConnectFourLoss<B> {
+        self.forward_with_loss(batch)
+    }
+}
 
 /// CNN Block with batch normalization.
 #[derive(Module, Debug)]
@@ -129,18 +159,26 @@ impl<B: Backend> ConvBlock<B> {
 
 #[cfg(test)]
 mod tests {
+    use std::array;
+
+    use crate::{batching::TrainingBatcher, mcts::Sample};
+
     use super::*;
     use approx::assert_relative_eq;
-    use burn::backend::{ndarray::NdArrayDevice, NdArray};
+    use burn::{
+        backend::{candle::CandleDevice, ndarray::NdArrayDevice, Candle, NdArray},
+        data::dataloader::batcher::Batcher,
+    };
     use more_asserts::{assert_ge, assert_le};
 
     type TestBackend = NdArray<f32>;
 
     #[test]
-    fn forward_pass() {
+    fn forward_ndarray() {
         let device = NdArrayDevice::default();
-        let model = ConnectFourNet::<TestBackend>::new(&device);
-        let batch = Pos::to_batched_tensor::<TestBackend>(&vec![Pos::new()], &device);
+        let model = ConnectFourNetConfig::new().init::<TestBackend>(&device);
+        let batcher = TrainingBatcher::new(device);
+        let batch = batcher.batch_pos(&vec![Pos::new()]);
         let (policy, value) = model.forward(batch);
         assert_eq!(policy.shape(), [1, Pos::N_COLS].into());
         assert_relative_eq!(policy.exp().sum().into_scalar(), 1.0);
@@ -148,5 +186,46 @@ mod tests {
         let value = value.into_scalar();
         assert_ge!(value, -1.);
         assert_le!(value, 1.);
+    }
+
+    #[test]
+    fn forward_candle() {
+        let device = CandleDevice::default();
+        let model = ConnectFourNetConfig::new().init::<Candle>(&device);
+        let batcher = TrainingBatcher::new(device);
+        let batch = batcher.batch_pos(&vec![Pos::new()]);
+        let (policy, value) = model.forward(batch);
+        assert_eq!(policy.shape(), [1, Pos::N_COLS].into());
+        assert_relative_eq!(policy.exp().sum().into_scalar(), 1.0);
+        assert_eq!(value.shape(), vec![1 as usize].into());
+        let value = value.into_scalar();
+        assert_ge!(value, -1.);
+        assert_le!(value, 1.);
+    }
+
+    /// Using the NN's output as training data should yield zero loss.
+    #[test]
+    fn zero_loss() {
+        let device = NdArrayDevice::default();
+        let model = ConnectFourNetConfig::new().init::<TestBackend>(&device);
+        let batcher = TrainingBatcher::new(device);
+        let pos = vec![Pos::new()];
+        let batch = batcher.batch_pos(&pos);
+        let (policy, value) = model.forward(batch);
+        let policy = policy.clone().exp().into_data().value;
+
+        let sample = Sample {
+            pos: pos[0].clone(),
+            policy: array::from_fn(|i| policy[i]),
+            value: value.clone().into_data().value[0],
+            game_id: 0,
+        };
+
+        let batch = batcher.batch(vec![sample]);
+
+        let loss = model.forward_with_loss(batch);
+        assert_relative_eq!(loss.mse_loss.into_scalar(), 0.0);
+        assert_relative_eq!(loss.kl_loss.into_scalar(), 0.0);
+        assert_relative_eq!(loss.loss.into_scalar(), 0.0);
     }
 }
