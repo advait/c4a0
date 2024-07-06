@@ -1,7 +1,5 @@
 use std::array::from_fn;
 
-use burn::tensor::Data;
-
 /// Connect Four game logic
 
 /// The oponnent/player token within a cell.
@@ -236,34 +234,6 @@ impl Pos {
         let top_row = Self::N_ROWS - 1;
         from_fn(|col| self.get(top_row, col).is_none())
     }
-
-    /// Convert into a [Tensor] on the given [Backend::Device].
-    // pub fn to_tensor<B: Backend>(&self, device: &B::Device) -> Tensor<B, 3> {
-    //     Tensor::from_data(self.to_data().convert::<B::FloatElem>(), device)
-    // }
-
-    pub fn to_data(&self) -> Data<f32, 3> {
-        let player: Vec<f32> = (0..Pos::N_ROWS)
-            .flat_map(|r| (0..Pos::N_COLS).map(move |c| self.get(r, c)))
-            .map(|cell| match cell {
-                Some(CellValue::Player) => 1.0,
-                _ => 0.0,
-            })
-            .collect();
-
-        let opponent: Vec<f32> = (0..Pos::N_ROWS)
-            .flat_map(|r| (0..Pos::N_COLS).map(move |c| self.get(r, c)))
-            .map(|cell| match cell {
-                Some(CellValue::Opponent) => 1.0,
-                _ => 0.0,
-            })
-            .collect();
-
-        Data::new(
-            vec![player, opponent].concat(),
-            [2, Pos::N_ROWS, Pos::N_COLS].into(),
-        )
-    }
 }
 
 impl ToString for Pos {
@@ -393,13 +363,6 @@ mod tests {
 
         assert_eq!(pos.to_string(), expected);
         assert_eq!(Pos::from(expected.as_str()), pos);
-    }
-
-    #[test]
-    fn to_data() {
-        let pos = Pos::new();
-        let data = pos.to_data();
-        assert_eq!(data.shape, [2, Pos::N_ROWS, Pos::N_COLS].into());
     }
 
     #[test]
