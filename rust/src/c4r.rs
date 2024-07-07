@@ -34,6 +34,13 @@ impl Pos {
     pub const N_ROWS: usize = 6;
     pub const N_COLS: usize = 7;
 
+    /// The number of channels in the numpy buffer (one per player)
+    pub const BUF_N_CHANNELS: usize = 2;
+    /// The length of a single channel (in # of f32s) of the numpy buffer
+    pub const BUF_CHANNEL_LEN: usize = Self::N_ROWS * Self::N_COLS;
+    /// The required length (in # of f32s) of the numpy buffer
+    pub const BUF_LEN: usize = Self::BUF_N_CHANNELS * Self::BUF_CHANNEL_LEN;
+
     pub fn new() -> Pos {
         Pos { mask: 0, value: 0 }
     }
@@ -233,6 +240,26 @@ impl Pos {
     pub fn legal_moves(&self) -> [bool; Self::N_COLS] {
         let top_row = Self::N_ROWS - 1;
         from_fn(|col| self.get(top_row, col).is_none())
+    }
+
+    /// Writes the position to a buffer intended to be interpreted as a [numpy] array.
+    /// The final array is of shape (2, 6, 7) where the first dim represents player/opponent,
+    /// the second dim represents rows, and the final dim represents columns. The data is written
+    /// in row-major format.
+    pub fn write_numpy_buffer(&self, buf: &mut [f32]) {
+        assert_eq!(buf.len(), Self::BUF_LEN);
+        (0..Self::BUF_N_CHANNELS).for_each(|player| {
+            (0..Self::N_ROWS).for_each(|row| {
+                (0..Self::N_COLS).for_each(|col| {
+                    let idx = player * Self::BUF_CHANNEL_LEN + row * Self::N_COLS + col;
+                    buf[idx] = match self.get(row, col) {
+                        Some(CellValue::Player) if player == 0 => 1.0,
+                        Some(CellValue::Opponent) if player == 1 => 1.0,
+                        _ => 0.0,
+                    };
+                });
+            });
+        })
     }
 }
 

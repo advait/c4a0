@@ -39,7 +39,7 @@ class ConnectFourNet(pl.LightningModule):
         super(ConnectFourNet, self).__init__()
 
         # Shared conv blocks
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=4)
+        self.conv1 = nn.Conv2d(2, 16, kernel_size=4)
         self.bn1 = nn.BatchNorm2d(16)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
         self.bn2 = nn.BatchNorm2d(32)
@@ -67,7 +67,6 @@ class ConnectFourNet(pl.LightningModule):
         self.value_mse = torchmetrics.MeanSquaredError()
 
     def forward(self, x):
-        x = rearrange(x, "b h w -> b 1 h w")
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
         x = F.relu(self.bn3(self.conv3(x)))
@@ -82,14 +81,27 @@ class ConnectFourNet(pl.LightningModule):
         x_v = F.relu(self.bn_value1(self.fc_value1(x)))
         x_v = F.relu(self.bn_value2(self.fc_value2(x_v)))
         x_v = self.fc_value3(x_v)
-        value = F.tanh(x_v)
+        x_v = F.tanh(x_v)
+        value = x_v.squeeze(1)
 
         return policy_logprobs, value
+
+    def forward_numpy(self, x):
+        """
+        Forward pass with input/output as numpy. Model is run in inference mode. Used for self play.
+        """
+        self.eval()
+        pos = torch.from_numpy(x).to(self.device)
+        with torch.no_grad():
+            policy, value = self.forward(pos)
+        policy = policy.cpu().numpy()
+        value = value.cpu().numpy()
+        return policy, value
 
     def _calculate_conv_output_size(self):
         """Helper function to calculate the output size of the last convolutional layer."""
         # Apply the convolutional layers to a dummy input
-        dummy_input = torch.zeros(1, 1, N_ROWS, N_COLS)
+        dummy_input = torch.zeros(1, 2, N_ROWS, N_COLS)
         with torch.no_grad():
             dummy_output = self.conv3(self.conv2(self.conv1(dummy_input)))
         return int(torch.numel(dummy_output) / dummy_output.shape[0])
