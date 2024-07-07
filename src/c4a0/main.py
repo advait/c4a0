@@ -10,9 +10,12 @@ import clipstick
 from pydantic import BaseModel
 import torch
 
+from c4a0.nn import ConnectFourNet
 from c4a0.tournament import GenID, ModelPlayer, Player, play_tournament
 from c4a0.training import TrainingState, train_gen
 from c4a0.utils import get_torch_device
+
+import c4a0_rust  # type: ignore
 
 
 class Train(BaseModel):
@@ -71,10 +74,38 @@ class Tournament(BaseModel):
         print(result.scores_table())
 
 
+class RustTest(BaseModel):
+    """Tests rust integration"""
+
+    n_games: int = 2000
+    """number of games per generation"""
+
+    batch_size: int = 1000
+    """batch size for training"""
+
+    n_mcts_iterations: int = 150
+    """number of MCTS iterations per move"""
+
+    exploration_constant: float = 1.4
+    """MCTS exploration constant"""
+
+    async def run(self, args: "MainArgs"):
+        model = ConnectFourNet().to(args.device)
+        reqs = [(0, 0, 0)] * self.n_games
+        samples = c4a0_rust.gen_samples(
+            reqs,
+            self.batch_size,
+            self.n_mcts_iterations,
+            self.exploration_constant,
+            model.forward_numpy,
+        )
+        print(samples)
+
+
 class MainArgs(BaseModel):
     """c4a0: self-improving connect four AI."""
 
-    sub_command: Train | Tournament
+    sub_command: Train | Tournament | RustTest
 
     n_processes: int = mp.cpu_count() - 1
     """number of processes to use for self-play/tournament"""

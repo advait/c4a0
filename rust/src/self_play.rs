@@ -54,22 +54,7 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
     n_mcts_iterations: usize,
     exploration_constant: f32,
 ) -> Vec<Sample> {
-    let multi_pb = MultiProgress::new();
-    let pb_games = multi_pb.add(ProgressBar::new(n_games as u64));
-    pb_games.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} games ({per_sec} games/sec)")
-        .unwrap()
-        .progress_chars("#>-"));
-    multi_pb.add(pb_games.clone());
-    let pb_nn = multi_pb.add(ProgressBar::new_spinner());
-    pb_nn.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] NN evals: {pos} ({per_sec} pos/sec)")
-            .unwrap()
-            .progress_chars("#>-"),
-    );
-    multi_pb.add(pb_nn.clone());
-
+    let (pb_game_done, pb_nn_eval, pb_mcts_iter) = init_progress_bars(n_games);
     let eval_pos = Arc::new(eval_pos);
     let (nn_queue_tx, nn_queue_rx) = bounded::<MctsGame>(n_games);
     let (mcts_queue_tx, mcts_queue_rx) = bounded::<MctsJob>(n_games);
@@ -86,7 +71,7 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
         // NN batch inference thread
         let eval_pos = Arc::clone(&eval_pos);
         let mcts_queue = mcts_queue_tx.clone();
-        let pb_nn = pb_nn.clone();
+        let pb_nn = pb_nn_eval.clone();
         s.builder()
             .name("nn_thread".into())
             .spawn(move |_| {
@@ -108,8 +93,9 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
             let mcts_queue_tx = mcts_queue_tx.clone();
             let mcts_queue_rx = mcts_queue_rx.clone();
             let done_queue_tx = done_queue_tx.clone();
-            let done_pb = pb_games.clone();
             let n_games_remaining = Arc::clone(&n_games_remaining);
+            let pb_game_done = pb_game_done.clone();
+            let pb_mcts_iter = pb_mcts_iter.clone();
             s.builder()
                 .name(format!("mcts_thread {}", i))
                 .spawn(move |_| {
@@ -118,10 +104,11 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
                         &mcts_queue_tx,
                         &mcts_queue_rx,
                         &done_queue_tx,
-                        done_pb.clone(),
                         &n_games_remaining,
                         n_mcts_iterations,
                         mcts_thread_count,
+                        pb_game_done.clone(),
+                        pb_mcts_iter.clone(),
                     ) {}
                 })
                 .unwrap();
@@ -147,7 +134,7 @@ fn nn_thread<E: EvalPosT>(
     mcts_queue: &Sender<MctsJob>,
     max_nn_batch_size: usize,
     eval_pos: &Arc<E>,
-    pb_nn: ProgressBar,
+    pb_nn_eval: ProgressBar,
 ) -> bool {
     // Read games from queue until we have max_nn_batch_size unique positions or queue is empty
     let mut games = Vec::with_capacity(max_nn_batch_size);
@@ -176,7 +163,7 @@ fn nn_thread<E: EvalPosT>(
 
     let positions: Vec<_> = position_set.into_iter().collect();
     let all_evals = eval_pos.eval_pos(&positions);
-    pb_nn.inc(positions.len() as u64);
+    pb_nn_eval.inc(positions.len() as u64);
     let eval_map: HashMap<_, _> = positions.into_iter().zip(all_evals).collect();
 
     for game in games.into_iter() {
@@ -197,14 +184,16 @@ fn mcts_thread(
     mcts_queue_tx: &Sender<MctsJob>,
     mcts_queue_rx: &Receiver<MctsJob>,
     done_queue: &Sender<Sample>,
-    done_pb: ProgressBar,
     n_games_remaining: &Arc<AtomicUsize>,
     n_mcts_iterations: usize,
     n_mcts_threads: usize,
+    pb_game_done: ProgressBar,
+    pb_mcts_iter: ProgressBar,
 ) -> bool {
     match mcts_queue_rx.recv() {
         Ok(MctsJob::PoisonPill) => false,
         Ok(MctsJob::Job(mut game, nn_result)) => {
+            pb_mcts_iter.inc(1);
             game.on_received_policy(nn_result.policy, nn_result.value);
 
             if game.root_visit_count() >= n_mcts_iterations {
@@ -214,8 +203,8 @@ fn mcts_thread(
                     n_games_remaining.fetch_sub(1, Ordering::Relaxed);
                     for sample in game.to_training_samples() {
                         done_queue.send(sample).unwrap();
-                        done_pb.inc(1);
                     }
+                    pb_game_done.inc(1);
                 } else {
                     nn_queue.send(game).unwrap();
                 }
@@ -225,7 +214,8 @@ fn mcts_thread(
 
             if n_games_remaining.load(Ordering::Relaxed) == 0 {
                 // We wrote the last game. Send poison pills to remaining threads.
-                done_pb.finish_with_message("All games generated");
+                pb_mcts_iter.finish_with_message("MCTS iterations complete");
+                pb_game_done.finish_with_message("All games generated");
                 for _ in 0..(n_mcts_threads - 1) {
                     mcts_queue_tx.send(MctsJob::PoisonPill).unwrap();
                 }
@@ -317,4 +307,36 @@ mod tests {
             }
         }
     }
+}
+
+/// Initialize progress bars for monitoring.
+fn init_progress_bars(n_games: usize) -> (ProgressBar, ProgressBar, ProgressBar) {
+    let multi_pb = MultiProgress::new();
+
+    let pb_game_done = multi_pb.add(ProgressBar::new(n_games as u64));
+    pb_game_done.set_style(ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} games ({per_sec} games)")
+        .unwrap()
+        .progress_chars("#>-"));
+    multi_pb.add(pb_game_done.clone());
+
+    let pb_nn_eval = multi_pb.add(ProgressBar::new_spinner());
+    pb_nn_eval.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] NN evals: {pos} ({per_sec} pos)")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+    multi_pb.add(pb_nn_eval.clone());
+
+    let pb_mcts_iter = multi_pb.add(ProgressBar::new_spinner());
+    pb_mcts_iter.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] MCTS iterations: {pos} ({per_sec} it)")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+    multi_pb.add(pb_mcts_iter.clone());
+
+    (pb_game_done, pb_nn_eval, pb_mcts_iter)
 }

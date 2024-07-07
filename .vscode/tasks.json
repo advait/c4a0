@@ -1,0 +1,29 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Python Script",
+      "type": "shell",
+      "command": "rye",
+      "args": [
+        "run",
+        "python",
+        "src/c4a0/main.py",
+        "--device",
+        // "cpu",
+        "cuda",
+        "rust-test"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": [],
+      "options": {
+        "env": {
+          "PYTHONPATH": "${workspaceFolder}/src"
+        }
+      }
+    }
+  ]
+}
