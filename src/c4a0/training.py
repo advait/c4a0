@@ -16,9 +16,7 @@ from pytorch_lightning.callbacks import EarlyStopping
 import torch
 from torch.utils.data import DataLoader
 
-from c4a0.c4 import N_COLS, N_ROWS, Pos
-from c4a0.nn import ConnectFourNet, Policy
-from c4a0.self_play import GameID, Sample, generate_samples
+from c4a0.nn import ConnectFourNet
 from c4a0.tournament import (
     GenID,
     ModelPlayer,
@@ -28,6 +26,9 @@ from c4a0.tournament import (
     UniformPlayer,
     play_tournament,
 )
+
+import c4a0_rust  # type: ignore
+from c4a0_rust import N_COLS, N_ROWS  # type: ignore
 
 
 @dataclass
@@ -159,16 +160,13 @@ async def train_gen(
     # Self play
     if gen.training_data is None or gen.validation_data is None:
         logger.info("No cached samples found. Generating samples from self-play.")
-        model.eval()  # Switch batch normalization to eval mode for self-play
-        samples = await generate_samples(
-            model=model,
-            n_games=n_games,
-            mcts_iterations=mcts_iterations,
-            exploration_constant=exploration_constant,
-            max_coros_per_process=max_coros_per_process,
-            nn_max_batch_size=20000,
-            device=device,
-            n_processes=n_processes,
+        reqs = [(0, 0, 0)] * n_games
+        samples = c4a0_rust.gen_samples(
+            reqs,
+            batch_size,
+            mcts_iterations,
+            exploration_constant,
+            model.forward_numpy,
         )
         gen.training_data, gen.validation_data = PosDataModule.split_samples(samples)
         logger.info(f"Done generating {len(samples)} samples.")

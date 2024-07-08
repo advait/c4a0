@@ -18,7 +18,7 @@ use crate::{
 /// Evaluate a batch of positions with an NN forward pass.
 /// The ordering of the results corresponds to the ordering of the input positions.
 pub trait EvalPosT {
-    fn eval_pos(&self, pos: &Vec<Pos>) -> Vec<EvalPosResult>;
+    fn eval_pos(&self, player_id: PlayerID, pos: Vec<Pos>) -> Vec<EvalPosResult>;
 }
 
 /// The returned output from the forward pass of the NN.
@@ -26,6 +26,17 @@ pub trait EvalPosT {
 pub struct EvalPosResult {
     pub policy: Policy,  // Probability distribution over moves from the position.
     pub value: PosValue, // Lucrativeness [-1, 1] of the position.
+}
+
+/// ID of the Player's NN.
+pub type PlayerID = u64;
+
+/// Request to generate a game. Player IDs refer to the player's NNs.
+#[derive(Debug, Clone)]
+pub struct GameReq {
+    pub game_id: u64,
+    pub player0_id: PlayerID,
+    pub player1_id: PlayerID,
 }
 
 /// Generate training samples with self play and MCTS.
@@ -49,11 +60,12 @@ pub struct EvalPosResult {
 ///    completes, we are able to drain all [Sample]s from the `done_queue` and return.
 pub fn self_play<E: EvalPosT + Send + Sync>(
     eval_pos: E,
-    n_games: usize,
+    reqs: Vec<GameReq>,
     max_nn_batch_size: usize,
     n_mcts_iterations: usize,
     exploration_constant: f32,
 ) -> Vec<Sample> {
+    let n_games = reqs.len();
     let (pb_game_done, pb_nn_eval, pb_mcts_iter) = init_progress_bars(n_games);
     let eval_pos = Arc::new(eval_pos);
     let (nn_queue_tx, nn_queue_rx) = bounded::<MctsGame>(n_games);
@@ -62,8 +74,9 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
     let n_games_remaining = Arc::new(AtomicUsize::new(n_games));
 
     // Create initial games
-    for i in 0..n_games {
-        let game = MctsGame::new_with_id(i as u64, exploration_constant);
+    for req in reqs {
+        let game =
+            MctsGame::new_from_pos(Pos::default(), req.game_id, req.player0_id, req.player1_id);
         nn_queue_tx.send(game).unwrap();
     }
 
@@ -107,6 +120,7 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
                         &n_games_remaining,
                         n_mcts_iterations,
                         mcts_thread_count,
+                        exploration_constant,
                         pb_game_done.clone(),
                         pb_mcts_iter.clone(),
                     ) {}
@@ -161,9 +175,10 @@ fn nn_thread<E: EvalPosT>(
         }
     }
 
+    // TODO: Actually plumb real player IDs through here
     let positions: Vec<_> = position_set.into_iter().collect();
-    let all_evals = eval_pos.eval_pos(&positions);
     pb_nn_eval.inc(positions.len() as u64);
+    let all_evals = eval_pos.eval_pos(0, positions.clone());
     let eval_map: HashMap<_, _> = positions.into_iter().zip(all_evals).collect();
 
     for game in games.into_iter() {
@@ -187,6 +202,7 @@ fn mcts_thread(
     n_games_remaining: &Arc<AtomicUsize>,
     n_mcts_iterations: usize,
     n_mcts_threads: usize,
+    exploration_constant: f32,
     pb_game_done: ProgressBar,
     pb_mcts_iter: ProgressBar,
 ) -> bool {
@@ -194,11 +210,11 @@ fn mcts_thread(
         Ok(MctsJob::PoisonPill) => false,
         Ok(MctsJob::Job(mut game, nn_result)) => {
             pb_mcts_iter.inc(1);
-            game.on_received_policy(nn_result.policy, nn_result.value);
+            game.on_received_policy(nn_result.policy, nn_result.value, exploration_constant);
 
             if game.root_visit_count() >= n_mcts_iterations {
                 // We have reached the sufficient number of MCTS iterations to make a move.
-                game.make_random_move();
+                game.make_random_move(exploration_constant);
                 if game.root_pos().is_terminal_state().is_some() {
                     n_games_remaining.fetch_sub(1, Ordering::Relaxed);
                     for sample in game.to_training_samples() {
@@ -246,7 +262,7 @@ mod tests {
 
     struct UniformEvalPos {}
     impl EvalPosT for UniformEvalPos {
-        fn eval_pos(&self, pos: &Vec<Pos>) -> Vec<EvalPosResult> {
+        fn eval_pos(&self, _player_id: PlayerID, pos: Vec<Pos>) -> Vec<EvalPosResult> {
             assert_le!(pos.len(), MAX_NN_BATCH_SIZE);
             pos.into_iter()
                 .map(|_| EvalPosResult {
@@ -264,7 +280,13 @@ mod tests {
         let exploration_constant = 1.0;
         let samples = self_play(
             UniformEvalPos {},
-            n_games,
+            (0..n_games)
+                .map(|game_id| GameReq {
+                    game_id,
+                    player0_id: 0,
+                    player1_id: 0,
+                })
+                .collect(),
             MAX_NN_BATCH_SIZE,
             mcts_iterations,
             exploration_constant,
@@ -280,7 +302,7 @@ mod tests {
             assert_eq!(
                 game_samples
                     .iter()
-                    .filter(|Sample { pos, .. }| *pos == Pos::new())
+                    .filter(|Sample { pos, .. }| *pos == Pos::default())
                     .count(),
                 1,
                 "game {} should have a single starting position",

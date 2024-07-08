@@ -4,6 +4,7 @@ mod mcts;
 mod pybridge;
 mod self_play;
 
+use c4r::Pos;
 use pyo3::prelude::*;
 
 /// A Python module implemented in Rust. The name of this function must match
@@ -12,5 +13,7 @@ use pyo3::prelude::*;
 #[pymodule]
 fn c4a0_rust(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(pybridge::gen_samples, m)?)?;
+    m.add("N_COLS", Pos::N_COLS)?;
+    m.add("N_ROWS", Pos::N_ROWS)?;
     Ok(())
 }

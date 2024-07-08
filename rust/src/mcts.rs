@@ -30,36 +30,41 @@ pub struct Sample {
 /// can preserve any prior MCTS iterations that happened through that node.
 #[derive(Debug, Clone)]
 pub struct MctsGame {
-    pub game_id: u64,
+    // Game Metadata
+    game_id: u64,
+    player0_id: u64,
+    player1_id: u64,
+
+    // MCTS state
     nodes: Vec<Node>,
     root_id: NodeId,
     leaf_id: NodeId,
     moves: Vec<Move>,
-    exploration_constant: f32,
+}
+
+impl Default for MctsGame {
+    fn default() -> Self {
+        MctsGame::new_from_pos(Pos::default(), 0, 0, 0)
+    }
 }
 
 impl MctsGame {
     pub const UNIFORM_POLICY: Policy = [1.0 / Pos::N_COLS as f32; Pos::N_COLS];
 
-    /// New game with the given id and default start position.
-    /// `exploration_constant` is an MCTS parameter that guides how aggressively to explore vs.
-    /// exploit.
-    pub fn new_with_id(game_id: u64, exploration_constant: f32) -> MctsGame {
-        Self::new_from_pos(Pos::new(), game_id, exploration_constant)
-    }
-
     /// New game with the given id and start position.
     /// `exploration_constant` is an MCTS parameter that guides how aggressively to explore vs.
     /// exploit.
-    pub fn new_from_pos(pos: Pos, game_id: u64, exploration_constant: f32) -> MctsGame {
-        let root_node = Node::new(pos, None, 0.0);
+    pub fn new_from_pos(pos: Pos, game_id: u64, player0_id: u64, player1_id: u64) -> MctsGame {
+        let root_node = Node::new(pos, None, 1.0);
         MctsGame {
+            game_id,
+            player0_id,
+            player1_id,
+
             nodes: vec![root_node],
             root_id: 0,
             leaf_id: 0,
             moves: Vec::new(),
-            game_id,
-            exploration_constant,
         }
     }
 
@@ -93,7 +98,12 @@ impl MctsGame {
     /// 1. Expands the current leaf with the given policy
     /// 2. Backpropagates up the tree with the given value
     /// 3. selects a new leaf for the next MCTS iteration.
-    pub fn on_received_policy(&mut self, mut policy: Policy, nn_value: PosValue) {
+    pub fn on_received_policy(
+        &mut self,
+        mut policy: Policy,
+        nn_value: PosValue,
+        exploration_constant: f32,
+    ) {
         // Mask policy for illegal moves
         let leaf = self.get(self.leaf_id);
         let legal_moves = leaf.pos.legal_moves();
@@ -120,7 +130,7 @@ impl MctsGame {
         };
         self._backpropagate(self.leaf_id, value);
 
-        self._select_new_leaf();
+        self._select_new_leaf(exploration_constant);
     }
 
     /// Expands the the leaf by adding child nodes to it which then be eligible for exploration via
@@ -175,7 +185,7 @@ impl MctsGame {
     /// Select the next leaf node by traversing from the root node, repeatedly selecting the child
     /// with the highest [Node::uct_value] until we reach a node with no expanded children (leaf
     /// node).
-    fn _select_new_leaf(&mut self) {
+    fn _select_new_leaf(&mut self, exploration_constant: f32) {
         let mut cur_id = self.root_id;
 
         while let Some(children) = self.get(cur_id).children {
@@ -184,7 +194,7 @@ impl MctsGame {
                 .flatten()
                 .map(|&id| {
                     let child = self.get(id);
-                    let score = child.uct_value(self.exploration_constant, self);
+                    let score = child.uct_value(self, exploration_constant);
                     (id, score)
                 })
                 .max_by(|(_a_id, a_score), (_b_id, b_score)| {
@@ -201,25 +211,25 @@ impl MctsGame {
 
     /// Makes a move, updating the root node to be the child node corresponding to the move.
     /// Note that this method does not perform garbage collection for un-played sub-trees.
-    pub fn make_move(&mut self, m: Move) {
+    pub fn make_move(&mut self, m: Move, exploration_constant: f32) {
         let root = self.get(self.root_id);
         let children = root.children.expect("root node has no children");
         let child_id = children[m as usize].expect("attempted to make an invalid move");
         self.root_id = child_id;
         self.moves.push(m);
         // We must select a new leaf as the old leaf might not be in the subtree of the new root
-        self._select_new_leaf();
+        self._select_new_leaf(exploration_constant);
     }
 
     /// Makes a move probabalistically based on the root node's policy.
     /// Uses the game_id and ply as rng seeds for deterministic sampling.
-    pub fn make_random_move(&mut self) {
+    pub fn make_random_move(&mut self, exploration_constant: f32) {
         let seed = self.game_id * ((Pos::N_ROWS * Pos::N_COLS) + self.moves.len()) as u64;
         let mut rng = StdRng::seed_from_u64(seed);
         let policy = self.root_policy();
         let dist = WeightedIndex::new(policy).unwrap();
         let mov = dist.sample(&mut rng);
-        self.make_move(mov);
+        self.make_move(mov, exploration_constant);
     }
 
     /// The number of visits to the root node.
@@ -319,7 +329,7 @@ impl Node {
     }
 
     /// The UCT value of this node. Represents the lucrativeness of this node according to MCTS.
-    fn uct_value(&self, exploration_constant: f32, game: &MctsGame) -> PosValue {
+    fn uct_value(&self, game: &MctsGame, exploration_constant: f32) -> PosValue {
         self.exploitation_value() + exploration_constant * self.exploration_value(game)
     }
 
@@ -359,23 +369,23 @@ mod tests {
 
     /// Runs a batch with a single game and a constant evaluation function.
     fn run_mcts(pos: Pos, n_iterations: usize) -> Policy {
-        let mut game = MctsGame::new_from_pos(pos, 0, TEST_EXPLORATION_CONSTANT);
+        let mut game = MctsGame::new_from_pos(pos, 0, 0, 0);
         for _ in 0..n_iterations {
-            game.on_received_policy(MctsGame::UNIFORM_POLICY, 0.0)
+            game.on_received_policy(MctsGame::UNIFORM_POLICY, 0.0, TEST_EXPLORATION_CONSTANT)
         }
         game.root_policy()
     }
 
     #[test]
     fn mcts_prefers_center_column() {
-        let policy = run_mcts(Pos::new(), 1000);
+        let policy = run_mcts(Pos::default(), 1000);
         assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
         assert_gt!(policy[3], CONST_COL_WEIGHT);
     }
 
     #[test]
     fn mcts_depth_one() {
-        let policy = run_mcts(Pos::new(), 1 + Pos::N_COLS + Pos::N_COLS);
+        let policy = run_mcts(Pos::default(), 1 + Pos::N_COLS + Pos::N_COLS);
         assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
         policy.iter().for_each(|p| {
             assert_relative_eq!(*p, CONST_COL_WEIGHT);
@@ -385,7 +395,7 @@ mod tests {
     #[test]
     fn mcts_depth_two() {
         let policy = run_mcts(
-            Pos::new(),
+            Pos::default(),
             1 + Pos::N_COLS + (Pos::N_COLS * Pos::N_COLS) + (Pos::N_COLS * Pos::N_COLS),
         );
         assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
@@ -396,7 +406,7 @@ mod tests {
 
     #[test]
     fn mcts_depth_uneven() {
-        let policy = run_mcts(Pos::new(), 47);
+        let policy = run_mcts(Pos::default(), 47);
         assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
         policy.iter().for_each(|p| {
             assert_relative_ne!(*p, CONST_COL_WEIGHT, epsilon = 0.001);

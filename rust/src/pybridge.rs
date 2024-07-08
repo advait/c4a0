@@ -7,7 +7,7 @@ use pyo3::{prelude::*, types::PyList};
 use crate::{
     c4r::Pos,
     mcts::{Policy, Sample},
-    self_play::{self_play, EvalPosResult, EvalPosT},
+    self_play::{self_play, EvalPosResult, EvalPosT, GameReq, PlayerID},
 };
 
 /// Generate training samples with self-play. This is a python wrapper around [self_play].
@@ -20,7 +20,16 @@ pub fn gen_samples<'py>(
     exploration_constant: f32,
     py_eval_pos_cb: &Bound<'py, PyAny>,
 ) -> PyResult<PySamples> {
-    let reqs: Vec<(usize, usize, usize)> = reqs.extract().expect("error extracting reqs");
+    let reqs: Vec<(u64, u64, u64)> = reqs.extract().expect("error extracting reqs");
+    let reqs = reqs
+        .into_iter()
+        .map(|(game_id, player0_id, player1_id)| GameReq {
+            game_id,
+            player0_id,
+            player1_id,
+        })
+        .collect();
+
     let eval_pos = PyEvalPos {
         py_eval_pos_cb: py_eval_pos_cb.to_object(py),
     };
@@ -32,7 +41,7 @@ pub fn gen_samples<'py>(
         py.allow_threads(move || {
             self_play(
                 eval_pos,
-                reqs.len(),
+                reqs,
                 max_nn_batch_size,
                 n_mcts_iterations,
                 exploration_constant,
@@ -79,9 +88,10 @@ impl EvalPosT for PyEvalPos {
     /// This is intended to be a pytorch model that runs on the GPU. Because this is a python
     /// call we need to first re-acquire the GIL to call this function from a background thread
     /// before performing the callback.
-    fn eval_pos(&self, pos: &Vec<Pos>) -> Vec<EvalPosResult> {
+    fn eval_pos(&self, _player_id: PlayerID, pos: Vec<Pos>) -> Vec<EvalPosResult> {
         Python::with_gil(|py| {
-            let pos_batch = create_pos_batch(py, pos);
+            let batch_size = pos.len();
+            let pos_batch = create_pos_batch(py, &pos);
 
             let (policy, value): (PyReadonlyArray2<f32>, PyReadonlyArray1<f32>) = (&self
                 .py_eval_pos_cb
@@ -93,7 +103,7 @@ impl EvalPosT for PyEvalPos {
             let policy = policy.as_slice().expect("Failed to get policy slice");
             let value = value.as_slice().expect("Failed to get value slice");
 
-            (0..pos.len())
+            (0..batch_size)
                 .map(|i| EvalPosResult {
                     policy: policy_from_slice(&policy[i * Pos::N_COLS..(i + 1) * Pos::N_COLS]),
                     value: value[i],

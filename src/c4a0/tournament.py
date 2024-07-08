@@ -16,9 +16,8 @@ from tabulate import tabulate
 import torch
 from tqdm import tqdm
 
-from c4a0.c4 import N_COLS, Pos
-from c4a0.nn import ConnectFourNet, EvalPos, Policy, Value, create_batcher
-from c4a0.self_play import GameID, Sample, gen_game
+from c4a0.nn import ConnectFourNet
+from c4a0_rust import N_COLS  # type: ignore
 
 PlayerName = NewType("PlayerName", str)
 
@@ -31,11 +30,8 @@ class Player(abc.ABC):
     def __init__(self, name: str):
         self.name = PlayerName(name)
 
-    async def eval_pos(self, pos: Pos) -> Tuple[Policy, Value]:
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError
-
-    def close(self):
-        pass
 
 
 class ModelPlayer(Player):
@@ -45,29 +41,14 @@ class ModelPlayer(Player):
     model: ConnectFourNet
     device: torch.device
 
-    _end_signal: Optional[asyncio.Future] = None
-    _enqueue_pos: Optional[EvalPos] = None
-
     def __init__(self, gen_id: GenID, model: ConnectFourNet, device: torch.device):
         super().__init__(f"gen{gen_id}")
         self.gen_id = gen_id
         self.model = model
         self.model.to(device)
-        self.device = device
 
-    def close(self):
-        """Shuts down the background thread in preparation for serialization."""
-        if self._end_signal is not None:
-            self._end_signal.set_result(True)
-            self._end_signal = None
-            self._enqueue_pos = None
-
-    async def eval_pos(self, pos: Pos) -> Tuple[Policy, Value]:
-        if self._enqueue_pos is None:
-            self._end_signal, self._enqueue_pos = create_batcher(
-                self.model, self.device
-            )
-        return await self._enqueue_pos(pos)
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        return self.model.forward_numpy(x)
 
 
 class RandomPlayer(Player):
@@ -76,12 +57,11 @@ class RandomPlayer(Player):
     def __init__(self):
         super().__init__("random")
 
-    async def eval_pos(self, pos: Pos) -> Tuple[Policy, Value]:
-        policy_logits = np.random.rand(N_COLS)
-        policy_exp = np.exp(policy_logits)
-        policy = policy_exp / policy_exp.sum()
-        value = Value(np.random.rand() * 2 - 1)  # [-1, 1]
-        return policy, value
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        batch_size = x.shape[0]
+        policy_logits = np.random.rand(batch_size, N_COLS)
+        value = np.random.rand(batch_size) * 2 - 1  # [-1, 1]
+        return policy_logits, value
 
 
 class UniformPlayer(Player):
@@ -90,10 +70,11 @@ class UniformPlayer(Player):
     def __init__(self):
         super().__init__("uniform")
 
-    async def eval_pos(self, pos: Pos) -> Tuple[Policy, Value]:
-        policy = Policy(np.ones(N_COLS) / N_COLS)
-        value = Value(0.0)
-        return policy, value
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        batch_size = x.shape[0]
+        policy_logits = np.ones(batch_size, N_COLS)
+        value = np.zeros(batch_size)
+        return policy_logits, value
 
 
 @dataclass

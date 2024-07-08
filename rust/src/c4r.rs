@@ -27,6 +27,12 @@ pub struct Pos {
     value: u64,
 }
 
+impl Default for Pos {
+    fn default() -> Self {
+        Pos { mask: 0, value: 0 }
+    }
+}
+
 /// The column for a given move (0..[Pos::N_COLS])
 pub type Move = usize;
 
@@ -40,10 +46,6 @@ impl Pos {
     pub const BUF_CHANNEL_LEN: usize = Self::N_ROWS * Self::N_COLS;
     /// The required length (in # of f32s) of the numpy buffer
     pub const BUF_LEN: usize = Self::BUF_N_CHANNELS * Self::BUF_CHANNEL_LEN;
-
-    pub fn new() -> Pos {
-        Pos { mask: 0, value: 0 }
-    }
 
     /// Plays a move in the given column from the perspective of the [CellValue::Player].
     /// Returns a new position where the cell values are flipped.
@@ -284,7 +286,7 @@ impl ToString for Pos {
 
 impl From<&str> for Pos {
     fn from(s: &str) -> Self {
-        let mut pos = Pos::new();
+        let mut pos = Pos::default();
         for (row, line) in s.lines().rev().enumerate() {
             for (col, c) in line.chars().enumerate() {
                 let cell_value = match c {
@@ -320,7 +322,7 @@ mod tests {
 
     #[test]
     fn playing_moves_works() {
-        let mut pos = Pos::new();
+        let mut pos = Pos::default();
         for col in 0..Pos::N_COLS {
             for row in 0..Pos::N_ROWS {
                 pos = pos.test_move(col);
@@ -335,7 +337,7 @@ mod tests {
 
     #[test]
     fn row_win() {
-        let pos = Pos::new().test_moves(&[0, 0, 1, 1, 2, 2, 3]);
+        let pos = Pos::default().test_moves(&[0, 0, 1, 1, 2, 2, 3]);
 
         // Because the board is inverted, the last move results in the opponent winning
         assert_eq!(pos.is_terminal_state(), Some(TerminalState::OpponentWin));
@@ -343,13 +345,13 @@ mod tests {
 
     #[test]
     fn col_win() {
-        let pos = Pos::new().test_moves(&[6, 0, 6, 0, 6, 0, 6]);
+        let pos = Pos::default().test_moves(&[6, 0, 6, 0, 6, 0, 6]);
         assert_eq!(pos.is_terminal_state(), Some(TerminalState::OpponentWin));
     }
 
     #[test]
     fn draw() {
-        let pos = Pos::new().test_moves(&[
+        let pos = Pos::default().test_moves(&[
             // Fill first three rows with alternating moves
             0, 1, 2, 3, 4, 5, // First row
             0, 1, 2, 3, 4, 5, // Second row
@@ -368,7 +370,7 @@ mod tests {
 
     #[test]
     fn to_str() {
-        let pos = Pos::new().test_moves(&[
+        let pos = Pos::default().test_moves(&[
             0, 1, 2, 3, 4, 5, // First row
             0, 1, 2, 3, 4, 5, // Second row
             0, 1, 2, 3, 4, 5, // Third row
@@ -394,7 +396,7 @@ mod tests {
 
     #[test]
     fn legal_moves() {
-        let mut pos = Pos::new();
+        let mut pos = Pos::default();
         assert_legal_moves(&pos, "OOOOOOO");
 
         pos = pos.test_moves(&[
