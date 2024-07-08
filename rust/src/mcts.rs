@@ -376,6 +376,7 @@ pub struct GameResult {
 
 /// A training sample generated via self-play.
 #[derive(Debug, Clone)]
+#[pyclass]
 pub struct Sample {
     pub pos: Pos,
     pub policy: Policy,

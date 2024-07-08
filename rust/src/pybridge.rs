@@ -3,6 +3,8 @@ use numpy::{
     IntoPyArray, PyArray1, PyArray2, PyArray4, PyReadonlyArray1, PyReadonlyArray2,
 };
 use pyo3::{prelude::*, types::PyList};
+use rand::seq::SliceRandom;
+use rand::thread_rng;
 
 use crate::{
     c4r::Pos,
@@ -54,7 +56,7 @@ pub fn gen_samples<'py>(
 
 /// A batch of training samples.
 #[pyclass]
-pub struct PySamples {
+pub struct SampleBatch {
     player0_ids: Py<PyArray1<u64>>, // b
     player1_ids: Py<PyArray1<u64>>, // b
     pos: Py<PyArray4<f32>>,         // b, c, h, w
@@ -62,7 +64,20 @@ pub struct PySamples {
     value: Py<PyArray1<f32>>,       // b
 }
 
-impl PySamples {
+#[pymethods]
+impl SampleBatch {
+    #[staticmethod]
+    fn shuffle_results<'py>(_py: Python<'py>, results: Vec<GameResult>) -> Vec<Sample> {
+        let mut samples = results
+            .into_iter()
+            .flat_map(|r| r.samples)
+            .collect::<Vec<_>>();
+        let mut rng = thread_rng();
+        samples.shuffle(&mut rng);
+        samples
+    }
+
+    #[staticmethod]
     fn from_samples<'py>(py: Python<'py>, samples: Vec<Sample>) -> Self {
         Self {
             player0_ids: Array1::from_vec(vec![0; samples.len()])
