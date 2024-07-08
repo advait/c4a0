@@ -6,8 +6,8 @@ use pyo3::{prelude::*, types::PyList};
 
 use crate::{
     c4r::Pos,
-    mcts::{Policy, Sample},
-    self_play::{self_play, EvalPosResult, EvalPosT, GameReq, PlayerID},
+    mcts::{GameMetadata, GameResult, PlayerID, Policy, Sample},
+    self_play::{self_play, EvalPosResult, EvalPosT},
 };
 
 /// Generate training samples with self-play. This is a python wrapper around [self_play].
@@ -19,11 +19,11 @@ pub fn gen_samples<'py>(
     n_mcts_iterations: usize,
     exploration_constant: f32,
     py_eval_pos_cb: &Bound<'py, PyAny>,
-) -> PyResult<PySamples> {
+) -> PyResult<Vec<GameResult>> {
     let reqs: Vec<(u64, u64, u64)> = reqs.extract().expect("error extracting reqs");
     let reqs = reqs
         .into_iter()
-        .map(|(game_id, player0_id, player1_id)| GameReq {
+        .map(|(game_id, player0_id, player1_id)| GameMetadata {
             game_id,
             player0_id,
             player1_id,
@@ -34,7 +34,7 @@ pub fn gen_samples<'py>(
         py_eval_pos_cb: py_eval_pos_cb.to_object(py),
     };
 
-    let samples = {
+    let results = {
         // Start background processing threads while releasing the GIL with allow_threads.
         // This allows other python threads (e.g. pytorch) to continue while we generate training
         // samples. When we need to call the py_eval_pos callback, we will re-acquire the GIL.
@@ -49,7 +49,7 @@ pub fn gen_samples<'py>(
         })
     };
 
-    Ok(PySamples::from_samples(py, samples))
+    Ok(results)
 }
 
 /// A batch of training samples.
@@ -88,14 +88,14 @@ impl EvalPosT for PyEvalPos {
     /// This is intended to be a pytorch model that runs on the GPU. Because this is a python
     /// call we need to first re-acquire the GIL to call this function from a background thread
     /// before performing the callback.
-    fn eval_pos(&self, _player_id: PlayerID, pos: Vec<Pos>) -> Vec<EvalPosResult> {
+    fn eval_pos(&self, player_id: PlayerID, pos: Vec<Pos>) -> Vec<EvalPosResult> {
         Python::with_gil(|py| {
             let batch_size = pos.len();
             let pos_batch = create_pos_batch(py, &pos);
 
             let (policy, value): (PyReadonlyArray2<f32>, PyReadonlyArray1<f32>) = (&self
                 .py_eval_pos_cb
-                .call1(py, (pos_batch,))
+                .call_bound(py, (player_id, pos_batch), None)
                 .expect("Failed to call py_eval_pos_cb"))
                 .extract(py)
                 .expect("Failed to extract result");

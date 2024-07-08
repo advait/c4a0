@@ -1,3 +1,4 @@
+use pyo3::pyclass;
 use rand::{
     distributions::{Distribution, WeightedIndex},
     rngs::StdRng,
@@ -6,20 +7,22 @@ use rand::{
 
 use crate::c4r::{Move, Pos, TerminalState};
 
+/// ID of the Player's NN.
+pub type PlayerID = u64;
+
+/// Metadata about a game.
+#[derive(Debug, Clone, Default)]
+pub struct GameMetadata {
+    pub game_id: u64,
+    pub player0_id: PlayerID,
+    pub player1_id: PlayerID,
+}
+
 /// Probabilities for how lucrative each column is.
 pub type Policy = [f32; Pos::N_COLS];
 
 /// The lucrativeness value of a given position.
 pub type PosValue = f32;
-
-/// A training sample generated via self-play.
-#[derive(Debug, Clone)]
-pub struct Sample {
-    pub game_id: u64,
-    pub pos: Pos,
-    pub policy: Policy,
-    pub value: PosValue,
-}
 
 /// A single Monte Carlo Tree Search connect four game.
 /// We store the MCTS tree in Vec form where child pointers are indicated by NodeId (the index
@@ -30,12 +33,7 @@ pub struct Sample {
 /// can preserve any prior MCTS iterations that happened through that node.
 #[derive(Debug, Clone)]
 pub struct MctsGame {
-    // Game Metadata
-    game_id: u64,
-    player0_id: u64,
-    player1_id: u64,
-
-    // MCTS state
+    metadata: GameMetadata,
     nodes: Vec<Node>,
     root_id: NodeId,
     leaf_id: NodeId,
@@ -44,7 +42,7 @@ pub struct MctsGame {
 
 impl Default for MctsGame {
     fn default() -> Self {
-        MctsGame::new_from_pos(Pos::default(), 0, 0, 0)
+        MctsGame::new_from_pos(Pos::default(), GameMetadata::default())
     }
 }
 
@@ -54,13 +52,10 @@ impl MctsGame {
     /// New game with the given id and start position.
     /// `exploration_constant` is an MCTS parameter that guides how aggressively to explore vs.
     /// exploit.
-    pub fn new_from_pos(pos: Pos, game_id: u64, player0_id: u64, player1_id: u64) -> MctsGame {
+    pub fn new_from_pos(pos: Pos, metadata: GameMetadata) -> MctsGame {
         let root_node = Node::new(pos, None, 1.0);
         MctsGame {
-            game_id,
-            player0_id,
-            player1_id,
-
+            metadata,
             nodes: vec![root_node],
             root_id: 0,
             leaf_id: 0,
@@ -68,10 +63,12 @@ impl MctsGame {
         }
     }
 
+    /// Gets a [Node] with the given [NodeID].
     fn get(&self, id: NodeId) -> &Node {
         &self.nodes[id]
     }
 
+    /// Gets a &mut [Node] with the given [NodeID].
     fn get_mut(&mut self, id: NodeId) -> &mut Node {
         &mut self.nodes[id]
     }
@@ -91,6 +88,16 @@ impl MctsGame {
     /// Gets the leaf node position that needs to be evaluated by the NN.
     pub fn leaf_pos(&self) -> &Pos {
         &self.get(self.leaf_id).pos
+    }
+
+    /// Gets the [PlayerID] that is to play in the leaf position. The PlayerID corresponds to which
+    /// NN we need to call to evaluate the position.
+    pub fn leaf_player_id_to_play(&self) -> PlayerID {
+        if self.leaf_pos().ply() % 2 == 0 {
+            self.metadata.player0_id
+        } else {
+            self.metadata.player1_id
+        }
     }
 
     /// Called when we receive a new policy/value from the NN forward pass for this leaf node.
@@ -224,7 +231,7 @@ impl MctsGame {
     /// Makes a move probabalistically based on the root node's policy.
     /// Uses the game_id and ply as rng seeds for deterministic sampling.
     pub fn make_random_move(&mut self, exploration_constant: f32) {
-        let seed = self.game_id * ((Pos::N_ROWS * Pos::N_COLS) + self.moves.len()) as u64;
+        let seed = self.metadata.game_id * ((Pos::N_ROWS * Pos::N_COLS) + self.moves.len()) as u64;
         let mut rng = StdRng::seed_from_u64(seed);
         let policy = self.root_policy();
         let dist = WeightedIndex::new(policy).unwrap();
@@ -245,7 +252,7 @@ impl MctsGame {
     }
 
     /// Converts a finished game into a Vec of [Sample] for future NN training.
-    pub fn to_training_samples(&self) -> Vec<Sample> {
+    pub fn to_result(&self) -> GameResult {
         let final_value = self
             .root_pos()
             .is_terminal_state()
@@ -258,8 +265,7 @@ impl MctsGame {
 
         let mut cur = self.get(self.leaf_id);
         let mut cur_value = final_value;
-        let mut ret = vec![Sample {
-            game_id: self.game_id,
+        let mut samples = vec![Sample {
             pos: cur.pos.clone(),
             policy: cur.policy(&self),
             value: cur_value,
@@ -268,16 +274,18 @@ impl MctsGame {
             // Alternate values as the each consecutive position alternates player vs. opponent
             cur_value = -cur_value;
             cur = self.get(parent_id);
-            ret.push(Sample {
-                game_id: self.game_id,
+            samples.push(Sample {
                 pos: cur.pos.clone(),
                 policy: cur.policy(&self),
                 value: cur_value,
             });
         }
 
-        ret.reverse();
-        ret
+        samples.reverse();
+        GameResult {
+            metadata: self.metadata.clone(),
+            samples: samples,
+        }
     }
 }
 
@@ -358,6 +366,22 @@ impl Node {
     }
 }
 
+/// The finished result of a game.
+#[derive(Debug, Clone)]
+#[pyclass]
+pub struct GameResult {
+    pub metadata: GameMetadata,
+    pub samples: Vec<Sample>,
+}
+
+/// A training sample generated via self-play.
+#[derive(Debug, Clone)]
+pub struct Sample {
+    pub pos: Pos,
+    pub policy: Policy,
+    pub value: PosValue,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,7 +393,7 @@ mod tests {
 
     /// Runs a batch with a single game and a constant evaluation function.
     fn run_mcts(pos: Pos, n_iterations: usize) -> Policy {
-        let mut game = MctsGame::new_from_pos(pos, 0, 0, 0);
+        let mut game = MctsGame::new_from_pos(pos, GameMetadata::default());
         for _ in 0..n_iterations {
             game.on_received_policy(MctsGame::UNIFORM_POLICY, 0.0, TEST_EXPLORATION_CONSTANT)
         }

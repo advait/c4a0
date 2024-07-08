@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -7,12 +7,12 @@ use std::{
 };
 
 use crossbeam::thread;
-use crossbeam_channel::{bounded, unbounded, Receiver, RecvError, Sender};
+use crossbeam_channel::{bounded, Receiver, RecvError, Sender};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 use crate::{
     c4r::Pos,
-    mcts::{MctsGame, Policy, PosValue, Sample},
+    mcts::{GameMetadata, GameResult, MctsGame, PlayerID, Policy, PosValue},
 };
 
 /// Evaluate a batch of positions with an NN forward pass.
@@ -26,17 +26,6 @@ pub trait EvalPosT {
 pub struct EvalPosResult {
     pub policy: Policy,  // Probability distribution over moves from the position.
     pub value: PosValue, // Lucrativeness [-1, 1] of the position.
-}
-
-/// ID of the Player's NN.
-pub type PlayerID = u64;
-
-/// Request to generate a game. Player IDs refer to the player's NNs.
-#[derive(Debug, Clone)]
-pub struct GameReq {
-    pub game_id: u64,
-    pub player0_id: PlayerID,
-    pub player1_id: PlayerID,
 }
 
 /// Generate training samples with self play and MCTS.
@@ -60,23 +49,22 @@ pub struct GameReq {
 ///    completes, we are able to drain all [Sample]s from the `done_queue` and return.
 pub fn self_play<E: EvalPosT + Send + Sync>(
     eval_pos: E,
-    reqs: Vec<GameReq>,
+    reqs: Vec<GameMetadata>,
     max_nn_batch_size: usize,
     n_mcts_iterations: usize,
     exploration_constant: f32,
-) -> Vec<Sample> {
+) -> Vec<GameResult> {
     let n_games = reqs.len();
     let (pb_game_done, pb_nn_eval, pb_mcts_iter) = init_progress_bars(n_games);
     let eval_pos = Arc::new(eval_pos);
     let (nn_queue_tx, nn_queue_rx) = bounded::<MctsGame>(n_games);
     let (mcts_queue_tx, mcts_queue_rx) = bounded::<MctsJob>(n_games);
-    let (done_queue_tx, done_queue_rx) = unbounded::<Sample>();
+    let (done_queue_tx, done_queue_rx) = bounded::<GameResult>(n_games);
     let n_games_remaining = Arc::new(AtomicUsize::new(n_games));
 
     // Create initial games
     for req in reqs {
-        let game =
-            MctsGame::new_from_pos(Pos::default(), req.game_id, req.player0_id, req.player1_id);
+        let game = MctsGame::new_from_pos(Pos::default(), req);
         nn_queue_tx.send(game).unwrap();
     }
 
@@ -88,13 +76,17 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
         s.builder()
             .name("nn_thread".into())
             .spawn(move |_| {
-                while nn_thread(
+                let mut next_games = Vec::<MctsGame>::default();
+                while let Loop::Continue(remaining) = nn_thread(
+                    next_games,
                     &nn_queue_rx,
                     &mcts_queue,
                     max_nn_batch_size,
                     &eval_pos,
-                    pb_nn.clone(),
-                ) {}
+                    &pb_nn,
+                ) {
+                    next_games = remaining;
+                }
                 pb_nn.finish_with_message("NN batch inference complete");
             })
             .unwrap();
@@ -112,7 +104,7 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
             s.builder()
                 .name(format!("mcts_thread {}", i))
                 .spawn(move |_| {
-                    while mcts_thread(
+                    while let Loop::Continue(_) = mcts_thread(
                         &nn_queue_tx,
                         &mcts_queue_tx,
                         &mcts_queue_rx,
@@ -121,8 +113,8 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
                         n_mcts_iterations,
                         mcts_thread_count,
                         exploration_constant,
-                        pb_game_done.clone(),
-                        pb_mcts_iter.clone(),
+                        &pb_game_done,
+                        &pb_mcts_iter,
                     ) {}
                 })
                 .unwrap();
@@ -139,54 +131,89 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
     done_queue_rx.into_iter().collect()
 }
 
-/// Performs NN batch inference by reading from the `nn_queue_rx`. Performas a batch inference
-/// using `eval_pos` with up to `max_nn_batch_size` positions. Passes the resulting position
-/// evaluations to the `mcts_queue`.
-/// Returns whether the thread should continue looping.
+/// Indicates whether we should continue or break from the loop.
+enum Loop<T> {
+    Break,
+    Continue(T),
+}
+
+/// Performs NN batch inference by reading from the `nn_queue_rx`.
+/// Performas a batch inference using `eval_pos` with up to `max_nn_batch_size` positions for the
+/// player that has the most positions to evaluate.
+///
+/// After the batch inference returns its evaluation, we send the evaluated positions back to the
+/// MCTS threads via `mcts_queue`.
+///
+/// Returns whether the thread should continue looping, providing the remaining games that were
+/// not evaluated (i.e. belonging to other players) for the next iteration.
 fn nn_thread<E: EvalPosT>(
+    previous_games: Vec<MctsGame>,
     nn_queue: &Receiver<MctsGame>,
     mcts_queue: &Sender<MctsJob>,
     max_nn_batch_size: usize,
     eval_pos: &Arc<E>,
-    pb_nn_eval: ProgressBar,
-) -> bool {
+    pb_nn_eval: &ProgressBar,
+) -> Loop<Vec<MctsGame>> {
     // Read games from queue until we have max_nn_batch_size unique positions or queue is empty
-    let mut games = Vec::with_capacity(max_nn_batch_size);
-    let mut position_set = HashSet::<Pos>::with_capacity(max_nn_batch_size);
+    let mut games = previous_games;
+    let mut positions_for_players = BTreeMap::<PlayerID, HashSet<Pos>>::new();
 
-    // Block on reading the first game
-    match nn_queue.recv() {
-        Ok(game) => {
-            position_set.insert(game.leaf_pos().clone());
-            games.push(game);
-        }
-        Err(RecvError) => {
-            return false;
+    // Block on reading the first game if the `games` vec is empty
+    if games.is_empty() {
+        match nn_queue.recv() {
+            Ok(game) => {
+                let player_id = game.leaf_player_id_to_play();
+                let entry = positions_for_players.entry(player_id).or_default();
+                entry.insert(game.leaf_pos().clone());
+                games.push(game);
+            }
+            Err(RecvError) => {
+                return Loop::Break;
+            }
         }
     }
 
     // Optimistically pull additional games from the queue until we reach `max_nn_batch_size` unique
     // positions or the queue is empty.
     while let Ok(game) = nn_queue.try_recv() {
-        position_set.insert(game.leaf_pos().clone());
+        let player_id = game.leaf_player_id_to_play();
+        let entry = positions_for_players.entry(player_id).or_default();
+        entry.insert(game.leaf_pos().clone());
         games.push(game);
-        if position_set.len() >= max_nn_batch_size {
+
+        let most_positions = positions_for_players
+            .values()
+            .max_by_key(|positions| positions.len())
+            .expect("there should be at least one position");
+
+        if most_positions.len() >= max_nn_batch_size {
             break;
         }
     }
 
-    // TODO: Actually plumb real player IDs through here
+    // Select the player with the most positions to evaluate and evaluate
+    let (player_id, position_set) = positions_for_players
+        .into_iter()
+        .max_by_key(|(_, positions)| positions.len())
+        .expect("there should be at least one player");
     let positions: Vec<_> = position_set.into_iter().collect();
     pb_nn_eval.inc(positions.len() as u64);
-    let all_evals = eval_pos.eval_pos(0, positions.clone());
+    let all_evals = eval_pos.eval_pos(player_id, positions.clone());
     let eval_map: HashMap<_, _> = positions.into_iter().zip(all_evals).collect();
 
+    let mut remaining_games = Vec::<MctsGame>::default();
     for game in games.into_iter() {
+        if game.leaf_player_id_to_play() != player_id {
+            remaining_games.push(game);
+            continue;
+        }
+
         let pos = game.leaf_pos();
         let nn_result = eval_map[pos].clone();
         mcts_queue.send(MctsJob::Job(game, nn_result)).unwrap();
     }
-    true
+
+    Loop::Continue(remaining_games)
 }
 
 /// Performs MCTS iterations by reading from the `mcts_queue`.
@@ -198,16 +225,16 @@ fn mcts_thread(
     nn_queue: &Sender<MctsGame>,
     mcts_queue_tx: &Sender<MctsJob>,
     mcts_queue_rx: &Receiver<MctsJob>,
-    done_queue: &Sender<Sample>,
+    done_queue: &Sender<GameResult>,
     n_games_remaining: &Arc<AtomicUsize>,
     n_mcts_iterations: usize,
     n_mcts_threads: usize,
     exploration_constant: f32,
-    pb_game_done: ProgressBar,
-    pb_mcts_iter: ProgressBar,
-) -> bool {
+    pb_game_done: &ProgressBar,
+    pb_mcts_iter: &ProgressBar,
+) -> Loop<()> {
     match mcts_queue_rx.recv() {
-        Ok(MctsJob::PoisonPill) => false,
+        Ok(MctsJob::PoisonPill) => Loop::Break,
         Ok(MctsJob::Job(mut game, nn_result)) => {
             pb_mcts_iter.inc(1);
             game.on_received_policy(nn_result.policy, nn_result.value, exploration_constant);
@@ -217,9 +244,7 @@ fn mcts_thread(
                 game.make_random_move(exploration_constant);
                 if game.root_pos().is_terminal_state().is_some() {
                     n_games_remaining.fetch_sub(1, Ordering::Relaxed);
-                    for sample in game.to_training_samples() {
-                        done_queue.send(sample).unwrap();
-                    }
+                    done_queue.send(game.to_result()).unwrap();
                     pb_game_done.inc(1);
                 } else {
                     nn_queue.send(game).unwrap();
@@ -235,9 +260,9 @@ fn mcts_thread(
                 for _ in 0..(n_mcts_threads - 1) {
                     mcts_queue_tx.send(MctsJob::PoisonPill).unwrap();
                 }
-                false
+                Loop::Break
             } else {
-                true
+                Loop::Continue(())
             }
         }
         Err(RecvError) => {
@@ -278,10 +303,10 @@ mod tests {
         let n_games = 100;
         let mcts_iterations = 50;
         let exploration_constant = 1.0;
-        let samples = self_play(
+        let results = self_play(
             UniformEvalPos {},
             (0..n_games)
-                .map(|game_id| GameReq {
+                .map(|game_id| GameMetadata {
                     game_id,
                     player0_id: 0,
                     player1_id: 0,
@@ -292,32 +317,29 @@ mod tests {
             exploration_constant,
         );
 
-        for g in 0..n_games {
-            let game_samples = samples
-                .iter()
-                .filter(|Sample { game_id, .. }| *game_id == (g as u64))
-                .collect::<Vec<_>>();
-
-            assert_ge!(game_samples.len(), 7);
+        for result in results {
+            assert_ge!(result.samples.len(), 7);
             assert_eq!(
-                game_samples
+                result
+                    .samples
                     .iter()
-                    .filter(|Sample { pos, .. }| *pos == Pos::default())
+                    .filter(|sample| sample.pos == Pos::default())
                     .count(),
                 1,
-                "game {} should have a single starting position",
-                g
+                "game {:?} should have a single starting position",
+                result
             );
 
-            let terminal_positions = game_samples
+            let terminal_positions = result
+                .samples
                 .iter()
-                .filter(|Sample { pos, .. }| pos.is_terminal_state().is_some())
+                .filter(|sample| sample.pos.is_terminal_state().is_some())
                 .collect::<Vec<_>>();
             assert_eq!(
                 terminal_positions.len(),
                 1,
-                "game {} should have a single terminal position",
-                g
+                "game {:?} should have a single terminal position",
+                result
             );
             let terminal_value = terminal_positions[0].value;
             if terminal_value != -1.0 && terminal_value != 0.0 && terminal_value != 1.0 {
