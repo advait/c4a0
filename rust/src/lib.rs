@@ -6,9 +6,9 @@ mod self_play;
 mod types;
 
 use c4r::Pos;
-use pybridge::SampleBatch;
+use pybridge::{GenSamplesResult, SampleBatch};
 use pyo3::prelude::*;
-use types::{GameResult, Sample};
+use types::{GameMetadata, GameResult, Sample};
 
 /// A Python module implemented in Rust. The name of this function must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to
@@ -18,11 +18,13 @@ fn c4a0_rust(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("N_COLS", Pos::N_COLS)?;
     m.add("N_ROWS", Pos::N_ROWS)?;
 
+    m.add_class::<GameMetadata>()?;
+    m.add_class::<GenSamplesResult>()?;
     m.add_class::<GameResult>()?;
     m.add_class::<Sample>()?;
     m.add_class::<SampleBatch>()?;
 
-    m.add_function(wrap_pyfunction!(pybridge::gen_samples, m)?)?;
+    m.add_function(wrap_pyfunction!(pybridge::play_games, m)?)?;
 
     Ok(())
 }

@@ -21,7 +21,7 @@ from c4a0_rust import N_COLS  # type: ignore
 
 PlayerName = NewType("PlayerName", str)
 
-GenID = NewType("GenID", int)
+ModelID = NewType("ModelID", int)
 
 
 class Player(abc.ABC):
@@ -37,11 +37,11 @@ class Player(abc.ABC):
 class ModelPlayer(Player):
     """Player whose policy and value are determined by a ConnectFourNet."""
 
-    gen_id: GenID
+    gen_id: ModelID
     model: ConnectFourNet
     device: torch.device
 
-    def __init__(self, gen_id: GenID, model: ConnectFourNet, device: torch.device):
+    def __init__(self, gen_id: ModelID, model: ConnectFourNet, device: torch.device):
         super().__init__(f"gen{gen_id}")
         self.gen_id = gen_id
         self.model = model
@@ -76,6 +76,8 @@ class UniformPlayer(Player):
         value = np.zeros(batch_size)
         return policy_logits, value
 
+
+'''
 
 @dataclass
 class TournamentGame:
@@ -168,3 +170,5 @@ async def play_tournament(
         player.close()
 
     return tournament
+
+'''

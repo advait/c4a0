@@ -1,11 +1,13 @@
 /// Connect Four game logic
 use std::array::from_fn;
 
+use serde::{Deserialize, Serialize};
+
 /// Connect four position.
 /// Internally consists of a u64 mask (bitmask representing whether a piece exists at a given
 /// location) and a u64 value (bitmask representing the color of the given piece).
 /// Bit indexing is specified by [Pos::_idx_mask_unsafe].
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Pos {
     mask: u64,
     value: u64,

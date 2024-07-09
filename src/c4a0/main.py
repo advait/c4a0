@@ -11,7 +11,7 @@ from pydantic import BaseModel
 import torch
 
 from c4a0.nn import ConnectFourNet
-from c4a0.tournament import GenID, ModelPlayer, Player
+from c4a0.tournament import ModelID, ModelPlayer, Player
 from c4a0.training import TrainingState, train_gen
 from c4a0.utils import get_torch_device
 
@@ -55,8 +55,10 @@ class Tournament(BaseModel):
     async def run(self, args: "MainArgs"):
         state = TrainingState.load_training_state()
         models = [
-            (GenID(gen_id), state.get_model(GenID(gen_id))) for gen_id in self.gen_id
+            (ModelID(gen_id), state.get_model(ModelID(gen_id)))
+            for gen_id in self.gen_id
         ]
+
         players: List[Player] = [
             ModelPlayer(
                 gen_id,
@@ -92,17 +94,18 @@ class RustTest(BaseModel):
 
     async def run(self, args: "MainArgs"):
         model = ConnectFourNet().to(args.device)
-        reqs = [(0, 0, 0)] * self.n_games
-        results = c4a0_rust.gen_samples(
+        reqs = [c4a0_rust.GameMetadata(id, 0, 0) for id in range(self.n_games)]
+        results = c4a0_rust.play_games(
             reqs,
             self.batch_size,
             self.n_mcts_iterations,
             self.exploration_constant,
             lambda player_id, pos: model.forward_numpy(pos),
         )
-        print(f"{len(results)} results generated")
-        samples = c4a0_rust.SampleBatch.shuffle_results(results)
-        print(f"{len(samples)} samples generated")
+        print(
+            f"{len(results.results)} results generated with {results.n_samples()} games."
+        )
+        train, test = results.split_train_test(0.8, 1337)
 
 
 class MainArgs(BaseModel):
