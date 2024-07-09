@@ -8,8 +8,8 @@ use rand::thread_rng;
 
 use crate::{
     c4r::Pos,
-    mcts::{GameMetadata, GameResult, PlayerID, Policy, Sample},
-    self_play::{self_play, EvalPosResult, EvalPosT},
+    self_play::self_play,
+    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, PlayerID, Policy, Sample},
 };
 
 /// Generate training samples with self-play. This is a python wrapper around [self_play].

@@ -1,28 +1,13 @@
-use pyo3::pyclass;
 use rand::{
     distributions::{Distribution, WeightedIndex},
     rngs::StdRng,
     SeedableRng,
 };
 
-use crate::c4r::{Move, Pos, TerminalState};
-
-/// ID of the Player's NN.
-pub type PlayerID = u64;
-
-/// Metadata about a game.
-#[derive(Debug, Clone, Default)]
-pub struct GameMetadata {
-    pub game_id: u64,
-    pub player0_id: PlayerID,
-    pub player1_id: PlayerID,
-}
-
-/// Probabilities for how lucrative each column is.
-pub type Policy = [f32; Pos::N_COLS];
-
-/// The lucrativeness value of a given position.
-pub type PosValue = f32;
+use crate::{
+    c4r::{Move, Pos, TerminalState},
+    types::{GameMetadata, GameResult, PlayerID, Policy, PosValue, Sample},
+};
 
 /// A single Monte Carlo Tree Search connect four game.
 /// We store the MCTS tree in Vec form where child pointers are indicated by NodeId (the index
@@ -364,23 +349,6 @@ impl Node {
             MctsGame::UNIFORM_POLICY
         }
     }
-}
-
-/// The finished result of a game.
-#[derive(Debug, Clone)]
-#[pyclass]
-pub struct GameResult {
-    pub metadata: GameMetadata,
-    pub samples: Vec<Sample>,
-}
-
-/// A training sample generated via self-play.
-#[derive(Debug, Clone)]
-#[pyclass]
-pub struct Sample {
-    pub pos: Pos,
-    pub policy: Policy,
-    pub value: PosValue,
 }
 
 #[cfg(test)]

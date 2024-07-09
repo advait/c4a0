@@ -1,6 +1,15 @@
+/// Connect Four game logic
 use std::array::from_fn;
 
-/// Connect Four game logic
+/// Connect four position.
+/// Internally consists of a u64 mask (bitmask representing whether a piece exists at a given
+/// location) and a u64 value (bitmask representing the color of the given piece).
+/// Bit indexing is specified by [Pos::_idx_mask_unsafe].
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Pos {
+    mask: u64,
+    value: u64,
+}
 
 /// The oponnent/player token within a cell.
 #[derive(Debug, PartialEq, Eq)]
@@ -17,24 +26,14 @@ pub enum TerminalState {
     Draw,
 }
 
-/// Connect four position.
-/// Internally consists of a u64 mask (bitmask representing whether a piece exists at a given
-/// location) and a u64 value (bitmask representing the color of the given piece).
-/// Bit indexing is specified by [Pos::_idx_mask_unsafe].
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Pos {
-    mask: u64,
-    value: u64,
-}
+/// The column for a given move (0..[Pos::N_COLS])
+pub type Move = usize;
 
 impl Default for Pos {
     fn default() -> Self {
         Pos { mask: 0, value: 0 }
     }
 }
-
-/// The column for a given move (0..[Pos::N_COLS])
-pub type Move = usize;
 
 impl Pos {
     pub const N_ROWS: usize = 6;

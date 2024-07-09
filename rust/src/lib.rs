@@ -3,11 +3,12 @@ mod c4r;
 mod mcts;
 mod pybridge;
 mod self_play;
+mod types;
 
 use c4r::Pos;
-use mcts::{GameResult, Sample};
 use pybridge::SampleBatch;
 use pyo3::prelude::*;
+use types::{GameResult, Sample};
 
 /// A Python module implemented in Rust. The name of this function must match
 /// the `lib.name` setting in the `Cargo.toml`, else Python will not be able to

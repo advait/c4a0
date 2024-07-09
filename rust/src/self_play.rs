@@ -12,21 +12,9 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 
 use crate::{
     c4r::Pos,
-    mcts::{GameMetadata, GameResult, MctsGame, PlayerID, Policy, PosValue},
+    mcts::MctsGame,
+    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, PlayerID},
 };
-
-/// Evaluate a batch of positions with an NN forward pass.
-/// The ordering of the results corresponds to the ordering of the input positions.
-pub trait EvalPosT {
-    fn eval_pos(&self, player_id: PlayerID, pos: Vec<Pos>) -> Vec<EvalPosResult>;
-}
-
-/// The returned output from the forward pass of the NN.
-#[derive(Debug, Clone)]
-pub struct EvalPosResult {
-    pub policy: Policy,  // Probability distribution over moves from the position.
-    pub value: PosValue, // Lucrativeness [-1, 1] of the position.
-}
 
 /// Generate training samples with self play and MCTS.
 ///
