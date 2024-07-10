@@ -1,3 +1,9 @@
+use std::array;
+
+use numpy::{
+    ndarray::{Array0, Array3},
+    PyArray0, PyArray1, PyArray3,
+};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -69,4 +75,38 @@ pub struct Sample {
     pub pos: Pos,
     pub policy: Policy,
     pub value: PosValue,
+}
+
+#[pymethods]
+impl Sample {
+    /// Returns a new sample that is flipped horizontally.
+    pub fn flip_h(&self) -> Sample {
+        Sample {
+            pos: self.pos.flip_h(),
+            policy: array::from_fn(|col| self.policy[Pos::N_COLS - 1 - col]),
+            value: self.value,
+        }
+    }
+
+    /// [numpy] representation of the sample.
+    pub fn to_numpy<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> (
+        Bound<'py, PyArray3<f32>>,
+        Bound<'py, PyArray1<f32>>,
+        Bound<'py, PyArray0<f32>>,
+    ) {
+        let mut pos_buffer = vec![0.0; Pos::BUF_LEN];
+        self.pos.write_numpy_buffer(&mut pos_buffer);
+        let pos =
+            Array3::from_shape_vec([Pos::BUF_N_CHANNELS, Pos::N_ROWS, Pos::N_COLS], pos_buffer)
+                .unwrap();
+        let pos = PyArray3::from_array_bound(py, &pos);
+        let policy = PyArray1::from_slice_bound(py, &self.policy);
+        let value = Array0::from_elem([] /* shape */, self.value);
+        let value = PyArray0::from_array_bound(py, &value);
+
+        (pos, policy, value)
+    }
 }

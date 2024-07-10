@@ -6,7 +6,7 @@ mod self_play;
 mod types;
 
 use c4r::Pos;
-use pybridge::{GenSamplesResult, SampleBatch};
+use pybridge::PlayGamesResult;
 use pyo3::prelude::*;
 use types::{GameMetadata, GameResult, Sample};
 
@@ -19,10 +19,9 @@ fn c4a0_rust(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("N_ROWS", Pos::N_ROWS)?;
 
     m.add_class::<GameMetadata>()?;
-    m.add_class::<GenSamplesResult>()?;
+    m.add_class::<PlayGamesResult>()?;
     m.add_class::<GameResult>()?;
     m.add_class::<Sample>()?;
-    m.add_class::<SampleBatch>()?;
 
     m.add_function(wrap_pyfunction!(pybridge::play_games, m)?)?;
 

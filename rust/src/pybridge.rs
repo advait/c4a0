@@ -1,18 +1,14 @@
-use numpy::{
-    ndarray::{Array1, Array2, Array4},
-    IntoPyArray, PyArray1, PyArray2, PyArray4, PyReadonlyArray1, PyReadonlyArray2,
-};
+use numpy::{ndarray::Array4, IntoPyArray, PyArray4, PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::{
     prelude::*,
     types::{PyBytes, PyList},
 };
-use rand::{seq::SliceRandom, SeedableRng};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     c4r::Pos,
     self_play::self_play,
-    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, PlayerID, Policy, Sample},
+    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, PlayerID, Policy},
 };
 
 /// Play games via MCTS. This is a python wrapper around [self_play].
@@ -26,7 +22,7 @@ pub fn play_games<'py>(
     n_mcts_iterations: usize,
     exploration_constant: f32,
     py_eval_pos_cb: &Bound<'py, PyAny>,
-) -> PyResult<GenSamplesResult> {
+) -> PyResult<PlayGamesResult> {
     let reqs: Vec<GameMetadata> = reqs.extract().expect("error extracting reqs");
 
     let eval_pos = PyEvalPos {
@@ -48,19 +44,19 @@ pub fn play_games<'py>(
         })
     };
 
-    Ok(GenSamplesResult { results })
+    Ok(PlayGamesResult { results })
 }
 
 /// The result of [play_games].
 #[derive(Debug, Serialize, Deserialize)]
 #[pyclass]
-pub struct GenSamplesResult {
+pub struct PlayGamesResult {
     #[pyo3(get)]
     pub results: Vec<GameResult>,
 }
 
 #[pymethods]
-impl GenSamplesResult {
+impl PlayGamesResult {
     fn to_cbor(&self, py: Python) -> PyResult<PyObject> {
         let cbor = serde_cbor::to_vec(self).map_err(pyify_err)?;
         Ok(PyBytes::new_bound(py, &cbor).into())
@@ -81,62 +77,6 @@ impl GenSamplesResult {
         let cbor: &[u8] = state.extract(py)?;
         *self = Self::from_cbor(py, cbor)?;
         Ok(())
-    }
-
-    /// Returns the number of samples in the results.
-    fn n_samples(&self) -> usize {
-        self.results.iter().map(|r| r.samples.len()).sum()
-    }
-
-    /// Splits the training samples into a training and test set.
-    fn split_train_test(
-        &self,
-        py: Python,
-        train_frac: f32,
-        seed: u64,
-    ) -> PyResult<(SampleBatch, SampleBatch)> {
-        let mut samples = self
-            .results
-            .iter()
-            .flat_map(|r| r.samples.iter().map(|s| s.clone()))
-            .collect::<Vec<_>>();
-
-        let mut rng = rand::rngs::StdRng::seed_from_u64(seed);
-        samples.as_mut_slice().shuffle(&mut rng);
-
-        let n_test = (samples.len() as f32 * train_frac).round() as usize;
-        let (train, test) = samples.split_at(n_test);
-
-        Ok((
-            SampleBatch::from_samples(py, train.to_vec()),
-            SampleBatch::from_samples(py, test.to_vec()),
-        ))
-    }
-}
-
-/// Training samples in [numpy] batch form.
-#[pyclass]
-pub struct SampleBatch {
-    #[pyo3(get, set)]
-    pos: Py<PyArray4<f32>>, // b, c, h, w
-
-    #[pyo3(get, set)]
-    policy: Py<PyArray2<f32>>, // b, w
-
-    #[pyo3(get, set)]
-    value: Py<PyArray1<f32>>, // b
-}
-
-#[pymethods]
-impl SampleBatch {
-    #[staticmethod]
-    fn from_samples<'py>(py: Python<'py>, samples: Vec<Sample>) -> Self {
-        Self {
-            pos: create_pos_batch(py, &samples.iter().map(|s| s.pos.clone()).collect()).into(),
-            policy: create_policy_batch(py, &samples.iter().map(|s| s.policy.clone()).collect())
-                .into(),
-            value: create_value_batch(py, &samples.iter().map(|s| s.value).collect()).into(),
-        }
     }
 }
 
@@ -195,27 +135,6 @@ fn create_pos_batch<'py>(py: Python<'py>, positions: &Vec<Pos>) -> Bound<'py, Py
     )
     .expect("Failed to create Array4 from buffer")
     .into_pyarray_bound(py)
-}
-
-/// Creates a batch of policies in tensor format.
-fn create_policy_batch<'py>(py: Python<'py>, policies: &Vec<Policy>) -> Bound<'py, PyArray2<f32>> {
-    let mut buffer = vec![0.0; policies.len() * Pos::N_COLS];
-    for i in 0..policies.len() {
-        let policy = &policies[i];
-        let policy_buffer = &mut buffer[i * Pos::N_COLS..(i + 1) * Pos::N_COLS];
-        policy_buffer.copy_from_slice(policy);
-    }
-
-    Array2::from_shape_vec((policies.len(), Pos::N_COLS), buffer)
-        .expect("Failed to create Array2 from buffer")
-        .into_pyarray_bound(py)
-}
-
-/// Creates a batch of position values in tensor format.
-fn create_value_batch<'py>(py: Python<'py>, values: &Vec<f32>) -> Bound<'py, PyArray1<f32>> {
-    Array1::from_shape_vec((values.len(),), values.clone())
-        .expect("Failed to create Array1 from buffer")
-        .into_pyarray_bound(py)
 }
 
 /// Convert a slice of probabilities into a [Policy].
