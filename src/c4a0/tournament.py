@@ -83,7 +83,7 @@ class TournamentResult:
 
     model_ids: List[ModelID]
     date: datetime = field(default_factory=datetime.now)
-    games: Optional[List[c4a0_rust.PlayGamesResult]] = None
+    games: Optional[c4a0_rust.PlayGamesResult] = None
 
     def get_scores(self) -> List[Tuple[ModelID, float]]:
         scores: Dict[ModelID, float] = defaultdict(lambda: 0.0)

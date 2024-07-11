@@ -73,6 +73,25 @@ class TrainingState:
         self.models[next_id] = model
         return next_id
 
+    def get_all_games_from_source(
+        self, source_id: ModelID
+    ) -> c4a0_rust.PlayGamesResult:
+        """Gets training data from all generations with the given source_id."""
+        logger = logging.getLogger(__name__)
+        gens = [
+            gen
+            for gen in self.training_gens
+            if gen.source_id == source_id and gen.games is not None
+        ]
+
+        if len(gens) > 1:
+            logger.info(f"Training with {len(gens)} gens of data")
+
+        ret = gens[0].games
+        for gen in gens[1:]:
+            ret = ret + gen.games  # type: ignore
+        return ret
+
     def continue_training(
         self,
         n_games: int,
@@ -84,11 +103,20 @@ class TrainingState:
         logger = logging.getLogger(__name__)
 
         latest_gen = self.training_gens[-1]
-        if latest_gen.child_id is not None:
+        if latest_gen.finished():
             logger.info(
                 f"Finished training gen {latest_gen.child_id}. Starting new generation."
             )
-            next_gen = TrainingGen(source_id=latest_gen.child_id)
+
+            # Find the child_id from the last successful gen
+            source_id = latest_gen.child_id
+            for gen in reversed(self.training_gens):
+                if gen.succeeded():
+                    source_id = gen.child_id
+                    break
+            assert source_id is not None, "No successful generations found"
+
+            next_gen = TrainingGen(source_id=source_id)
             self.training_gens.append(next_gen)
             latest_gen = next_gen
 
@@ -112,6 +140,20 @@ class TrainingGen:
     date: datetime = datetime.now()
     games: Optional[c4a0_rust.PlayGamesResult] = None
     tournament: Optional[TournamentResult] = None
+
+    def succeeded(self) -> bool:
+        """
+        Returns whether the new model successfully outplays the old model by beating it.
+        55% of the time.
+        """
+        assert self.child_id is not None, "Can't check success without a child model"
+        assert self.tournament is not None, "Can't check success without a tournament"
+        n_games = len(self.tournament.games.results)  # type: ignore
+        scores = {id: score for id, score in self.tournament.get_scores()}
+        return scores[self.child_id] / n_games >= 0.55
+
+    def finished(self) -> bool:
+        return self.tournament is not None and self.child_id is not None
 
     def train(
         self,
@@ -146,11 +188,14 @@ class TrainingGen:
         else:
             logger.info(f"Loaded {len(self.games.results)} cached games")
 
-        # TODO: Include smaples from prior generations
+        # Include training samples from prior generations if those generations failed to
+        # outperform the source generation.
+        all_games = state.get_all_games_from_source(self.source_id)
+        logger.info(f"Total training samples: {len(all_games.results)}")
 
         # Training
         model = copy.deepcopy(state.get_model(self.source_id))
-        train, test = self.games.split_train_test(0.8, 1337)  # type: ignore
+        train, test = all_games.split_train_test(0.8, 1337)  # type: ignore
         data_module = SampleDataModule(train, test, batch_size)
         trainer = pl.Trainer(
             max_epochs=100,
@@ -186,8 +231,6 @@ class TrainingGen:
             lambda id: [p.name for p in players if p.model_id == id][0]
         )
         logger.info(f"Tournament results:\n{table}")
-        winning_gen = self.tournament.get_top_models()[0]
-        logger.info(f"Winning gen: {winning_gen} (used for training next gen)")
 
         state.save_training_state()
         return state

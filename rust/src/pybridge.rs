@@ -51,7 +51,7 @@ pub fn play_games<'py>(
 /// The result of [play_games].
 /// Note we explicitly spcify pyclass(module="c4a0_rust") as the module name is required in
 /// order for pickling to work.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[pyclass(module = "c4a0_rust")]
 pub struct PlayGamesResult {
     #[pyo3(get)]
@@ -86,6 +86,19 @@ impl PlayGamesResult {
         let cbor: &[u8] = state.extract(py)?;
         *self = Self::from_cbor(py, cbor)?;
         Ok(())
+    }
+
+    /// Combine two PlayGamesResult objects.
+    fn __add__<'py>(&mut self, py: Python<'py>, other: PyObject) -> PyResult<Self> {
+        let other = other.extract::<PlayGamesResult>(py)?;
+        Ok(PlayGamesResult {
+            results: self
+                .results
+                .iter()
+                .chain(other.results.iter())
+                .cloned()
+                .collect(),
+        })
     }
 
     /// Splits the results into training and test datasets.
