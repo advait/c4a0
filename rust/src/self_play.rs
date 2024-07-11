@@ -21,21 +21,21 @@ use crate::{
 ///
 /// We use a batched NN forward pass to expand a given node (to determine the initial policy values
 /// based on the NN's output policy). Because we want to batch these NN calls for performance, we
-/// partially compute many MCTS traversals simultaneously (via [mcts_thread]), pausing each until we
+/// partially compute many MCTS traversals simultaneously (via [MctsThread]), pausing each until we
 /// reach the node expansion phase. Then we are able to batch several NN calls simultaneously
-/// (via [nn_thread]). This process ping-pongs until the game reaches a terminal state after which
+/// (via [NNThread]). This process ping-pongs until the game reaches a terminal state after which
 /// it is added to `done_queue`.
 ///
-/// We use one [nn_thread] and (n-1) [mcts_thread]s (where n=core count).
+/// We use one [NNThread] and (n-1) [MctsThread]s (where n=core count).
 /// The thread termination mechanism is as follows:
-/// 1. [mcts_thread]s whether we have finished all games via `n_games_remaining` atomic. When the
-///    first thread detects all work is complete, it sends a [MctsJob::PoisonPill] to all remaining
-///    [mcts_thread]s, resulting in all of these threads completing.
-/// 2. When the last [mcts_thread] completes, it drops the last `nn_queue_tx`
+/// 1. [MctsThread] check whether we have finished all games via `n_games_remaining` atomic. When
+///    the first thread detects all work is complete, it sends a [MctsJob::PoisonPill] to all
+///    remaining [MctsThread]s, resulting in all of these threads completing.
+/// 2. When the last [MctsThread] completes, it drops the last `nn_queue_tx`
 ///    [crossbeam_channel::Sender], causing the `nn_queue_rx` [crossbeam_channel::Receiver] to
-///    close. This notifies the [nn_thread], allowing it to close.
-/// 3. The main thread uses a [WaitGroup] to block on all of the above threads. When the wg
-///    completes, we are able to drain all [Sample]s from the `done_queue` and return.
+///    close. This notifies the [NNThread], allowing it to close.
+/// 3. The main thread simply waits for all threads to complete and then returns the results
+///    from the `done_queue`.
 pub fn self_play<E: EvalPosT + Send + Sync>(
     eval_pos: E,
     reqs: Vec<GameMetadata>,
@@ -62,20 +62,20 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
         s.builder()
             .name("nn_thread".into())
             .spawn(move |_| {
-                let mut nn_thread = NNThread::new(
+                NNThread::new(
                     nn_queue_rx,
                     mcts_queue,
                     max_nn_batch_size,
                     eval_pos,
                     pb_nn_eval,
-                );
-                nn_thread.loop_until_close();
+                )
+                .loop_until_close()
             })
             .unwrap();
 
         // MCTS threads
-        let mcts_thread_count = usize::max(1, num_cpus::get() - 1);
-        for i in 0..mcts_thread_count {
+        let n_mcts_threads = usize::max(1, num_cpus::get() - 1);
+        for i in 0..n_mcts_threads {
             let nn_queue_tx = nn_queue_tx.clone();
             let mcts_queue_tx = mcts_queue_tx.clone();
             let mcts_queue_rx = mcts_queue_rx.clone();
@@ -86,18 +86,19 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
             s.builder()
                 .name(format!("mcts_thread {}", i))
                 .spawn(move |_| {
-                    while let Loop::Continue(_) = mcts_thread(
-                        &nn_queue_tx,
-                        &mcts_queue_tx,
-                        &mcts_queue_rx,
-                        &done_queue_tx,
-                        &n_games_remaining,
+                    MctsThread {
+                        nn_queue_tx,
+                        mcts_queue_tx,
+                        mcts_queue_rx,
+                        done_queue_tx,
+                        n_games_remaining,
                         n_mcts_iterations,
-                        mcts_thread_count,
+                        n_mcts_threads,
                         exploration_constant,
-                        &pb_game_done,
-                        &pb_mcts_iter,
-                    ) {}
+                        pb_game_done,
+                        pb_mcts_iter,
+                    }
+                    .loop_until_close()
                 })
                 .unwrap();
         }
@@ -111,12 +112,6 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
     .unwrap();
 
     done_queue_rx.into_iter().collect()
-}
-
-/// Indicates whether we should continue or break from the loop.
-enum Loop<T> {
-    Break,
-    Continue(T),
 }
 
 /// Performs NN batch inference by reading from the [NNThread::nn_queue].
@@ -236,58 +231,71 @@ impl<E: EvalPosT> NNThread<E> {
     }
 }
 
-/// Performs MCTS iterations by reading from the `mcts_queue`.
+/// Performs MCTS iterations by reading from the [Self::mcts_queue_rx].
 /// If we reach the requisite number of iterations, we probabalistically make a move with
 /// [MctsGame::make_move]. Then, if the game reaches a terminal position, pass the game to
-/// `done_queue`. Otherwise, we pass back to the nn via `nn_queue`.
-/// Returns whether the thread should continue looping.
-fn mcts_thread(
-    nn_queue: &Sender<MctsGame>,
-    mcts_queue_tx: &Sender<MctsJob>,
-    mcts_queue_rx: &Receiver<MctsJob>,
-    done_queue: &Sender<GameResult>,
-    n_games_remaining: &Arc<AtomicUsize>,
+/// [Self::done_queue]. Otherwise, we pass back to the nn via [Self::nn_queue].
+struct MctsThread {
+    nn_queue_tx: Sender<MctsGame>,
+    mcts_queue_tx: Sender<MctsJob>,
+    mcts_queue_rx: Receiver<MctsJob>,
+    done_queue_tx: Sender<GameResult>,
+    n_games_remaining: Arc<AtomicUsize>,
     n_mcts_iterations: usize,
     n_mcts_threads: usize,
     exploration_constant: f32,
-    pb_game_done: &ProgressBar,
-    pb_mcts_iter: &ProgressBar,
-) -> Loop<()> {
-    match mcts_queue_rx.recv() {
-        Ok(MctsJob::PoisonPill) => Loop::Break,
-        Ok(MctsJob::Job(mut game, nn_result)) => {
-            pb_mcts_iter.inc(1);
-            game.on_received_policy(nn_result.policy, nn_result.value, exploration_constant);
+    pb_game_done: ProgressBar,
+    pb_mcts_iter: ProgressBar,
+}
 
-            if game.root_visit_count() >= n_mcts_iterations {
-                // We have reached the sufficient number of MCTS iterations to make a move.
-                game.make_random_move(exploration_constant);
-                if game.root_pos().is_terminal_state().is_some() {
-                    n_games_remaining.fetch_sub(1, Ordering::Relaxed);
-                    done_queue.send(game.to_result()).unwrap();
-                    pb_game_done.inc(1);
+impl MctsThread {
+    /// Main [MctsThread] logic. Returns [Loop] whether we should continue or break from the loop.
+    fn loop_once(&mut self) -> Loop {
+        match self.mcts_queue_rx.recv() {
+            Ok(MctsJob::PoisonPill) => Loop::Break,
+            Ok(MctsJob::Job(mut game, nn_result)) => {
+                self.pb_mcts_iter.inc(1);
+                game.on_received_policy(
+                    nn_result.policy,
+                    nn_result.value,
+                    self.exploration_constant,
+                );
+
+                if game.root_visit_count() >= self.n_mcts_iterations {
+                    // We have reached the sufficient number of MCTS iterations to make a move.
+                    game.make_random_move(self.exploration_constant);
+                    if game.root_pos().is_terminal_state().is_some() {
+                        self.n_games_remaining.fetch_sub(1, Ordering::Relaxed);
+                        self.done_queue_tx.send(game.to_result()).unwrap();
+                        self.pb_game_done.inc(1);
+                    } else {
+                        self.nn_queue_tx.send(game).unwrap();
+                    }
                 } else {
-                    nn_queue.send(game).unwrap();
+                    self.nn_queue_tx.send(game).unwrap();
                 }
-            } else {
-                nn_queue.send(game).unwrap();
-            }
 
-            if n_games_remaining.load(Ordering::Relaxed) == 0 {
-                // We wrote the last game. Send poison pills to remaining threads.
-                pb_mcts_iter.finish_with_message("MCTS iterations complete");
-                pb_game_done.finish_with_message("All games generated");
-                for _ in 0..(n_mcts_threads - 1) {
-                    mcts_queue_tx.send(MctsJob::PoisonPill).unwrap();
+                if self.n_games_remaining.load(Ordering::Relaxed) == 0 {
+                    // We wrote the last game. Send poison pills to remaining threads.
+                    self.pb_mcts_iter
+                        .finish_with_message("MCTS iterations complete");
+                    self.pb_game_done.finish_with_message("All games generated");
+                    for _ in 0..(self.n_mcts_threads - 1) {
+                        self.mcts_queue_tx.send(MctsJob::PoisonPill).unwrap();
+                    }
+                    Loop::Break
+                } else {
+                    Loop::Continue
                 }
-                Loop::Break
-            } else {
-                Loop::Continue(())
+            }
+            Err(RecvError) => {
+                panic!("mcts_thread: mcts_queue unexpectedly closed")
             }
         }
-        Err(RecvError) => {
-            panic!("mcts_thread: mcts_queue unexpectedly closed")
-        }
+    }
+
+    fn loop_until_close(&mut self) {
+        while let Loop::Continue = self.loop_once() {}
     }
 }
 
@@ -295,6 +303,12 @@ fn mcts_thread(
 enum MctsJob {
     Job(MctsGame, EvalPosResult),
     PoisonPill,
+}
+
+/// Indicates whether we should continue or break from the loop.
+enum Loop {
+    Break,
+    Continue,
 }
 
 /// Initialize progress bars for monitoring.
