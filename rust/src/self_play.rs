@@ -14,7 +14,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use crate::{
     c4r::Pos,
     mcts::MctsGame,
-    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, PlayerID},
+    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, ModelID},
 };
 
 /// Generate training samples with self play and MCTS.
@@ -116,7 +116,7 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
 
 /// Performs NN batch inference by reading from the [NNThread::nn_queue].
 /// Performs a batch inference of [Pos]s using [NNThread::eval_pos] with up to
-/// [NNThread::max_nn_batch_size] positions for the [PlayerID] that has the most positions to
+/// [NNThread::max_nn_batch_size] positions for the [ModelID] that has the most positions to
 /// evaluate.
 ///
 /// After the batch inference returns its evaluation, we send the evaluated positions back to the
@@ -176,7 +176,7 @@ impl<E: EvalPosT> NNThread<E> {
     }
 
     /// Main [NNThread] logic. Optimistically drain items from the queue, call [NNThread::eval_pos]
-    /// for the [PlayerID] with the most queued positions, send the evaluated positions back to the
+    /// for the [ModelID] with the most queued positions, send the evaluated positions back to the
     /// [NNThread::mcts_queue], and update [NNThread::pending_games] with all games that were not
     /// processed in this tick.
     fn loop_once(&mut self) {
@@ -186,33 +186,33 @@ impl<E: EvalPosT> NNThread<E> {
             return;
         }
 
-        let mut player_pos = BTreeMap::<PlayerID, HashSet<Pos>>::new();
+        let mut model_pos = BTreeMap::<ModelID, HashSet<Pos>>::new();
         for game in self.pending_games.iter() {
-            let player_id = game.leaf_player_id_to_play();
-            let entry = player_pos.entry(player_id).or_default();
+            let model_id = game.leaf_model_id_to_play();
+            let entry = model_pos.entry(model_id).or_default();
             entry.insert(game.leaf_pos().clone());
         }
 
-        // Select the player with the most positions and evaluate
-        let player_id = player_pos
+        // Select the model with the most positions and evaluate
+        let model_id = model_pos
             .iter()
             .max_by_key(|(_, positions)| positions.len())
-            .map(|(player_id, _)| *player_id)
+            .map(|(model_id, _)| *model_id)
             .unwrap();
-        let pos = player_pos[&player_id]
+        let pos = model_pos[&model_id]
             .iter()
             .take(self.max_nn_batch_size)
             .cloned()
             .collect::<Vec<_>>();
         self.pb_nn_eval.inc(pos.len() as u64);
-        let evals = self.eval_pos.eval_pos(player_id, pos.clone());
+        let evals = self.eval_pos.eval_pos(model_id, pos.clone());
         let eval_map = pos.into_iter().zip(evals).collect::<HashMap<_, _>>();
 
         let mut games = Vec::<MctsGame>::default();
         mem::swap(&mut self.pending_games, &mut games);
         for game in games.into_iter() {
             let pos = game.leaf_pos();
-            if game.leaf_player_id_to_play() != player_id || !eval_map.contains_key(pos) {
+            if game.leaf_model_id_to_play() != model_id || !eval_map.contains_key(pos) {
                 self.pending_games.push(game);
                 continue;
             }
@@ -353,7 +353,7 @@ mod tests {
 
     struct UniformEvalPos {}
     impl EvalPosT for UniformEvalPos {
-        fn eval_pos(&self, _player_id: PlayerID, pos: Vec<Pos>) -> Vec<EvalPosResult> {
+        fn eval_pos(&self, _model_id: ModelID, pos: Vec<Pos>) -> Vec<EvalPosResult> {
             assert_le!(pos.len(), MAX_NN_BATCH_SIZE);
             pos.into_iter()
                 .map(|_| EvalPosResult {

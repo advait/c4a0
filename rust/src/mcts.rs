@@ -9,7 +9,7 @@ use rand::{
 
 use crate::{
     c4r::{Move, Pos, TerminalState},
-    types::{GameMetadata, GameResult, PlayerID, Policy, PosValue, Sample},
+    types::{GameMetadata, GameResult, ModelID, Policy, PosValue, Sample},
 };
 
 /// A single Monte Carlo Tree Search connect four game.
@@ -78,9 +78,9 @@ impl MctsGame {
         &self.get(self.leaf_id).pos
     }
 
-    /// Gets the [PlayerID] that is to play in the leaf position. The PlayerID corresponds to which
+    /// Gets the [ModelID] that is to play in the leaf position. The [ModelID] corresponds to which
     /// NN we need to call to evaluate the position.
-    pub fn leaf_player_id_to_play(&self) -> PlayerID {
+    pub fn leaf_model_id_to_play(&self) -> ModelID {
         if self.leaf_pos().ply() % 2 == 0 {
             self.metadata.player0_id
         } else {

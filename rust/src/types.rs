@@ -15,13 +15,13 @@ pub type Policy = [f32; Pos::N_COLS];
 /// The lucrativeness value of a given position.
 pub type PosValue = f32;
 
-/// ID of the Player's NN.
-pub type PlayerID = u64;
+/// ID of the Model's NN.
+pub type ModelID = u64;
 
 /// Evaluate a batch of positions with an NN forward pass.
 /// The ordering of the results corresponds to the ordering of the input positions.
 pub trait EvalPosT {
-    fn eval_pos(&self, player_id: PlayerID, pos: Vec<Pos>) -> Vec<EvalPosResult>;
+    fn eval_pos(&self, model_id: ModelID, pos: Vec<Pos>) -> Vec<EvalPosResult>;
 }
 
 /// The returned output from the forward pass of the NN.
@@ -39,16 +39,16 @@ pub struct GameMetadata {
     pub game_id: u64,
 
     #[pyo3(get)]
-    pub player0_id: PlayerID,
+    pub player0_id: ModelID,
 
     #[pyo3(get)]
-    pub player1_id: PlayerID,
+    pub player1_id: ModelID,
 }
 
 #[pymethods]
 impl GameMetadata {
     #[new]
-    fn new(game_id: u64, player0_id: PlayerID, player1_id: PlayerID) -> Self {
+    fn new(game_id: u64, player0_id: ModelID, player1_id: ModelID) -> Self {
         GameMetadata {
             game_id,
             player0_id,

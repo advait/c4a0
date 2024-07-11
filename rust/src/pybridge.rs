@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     c4r::Pos,
     self_play::self_play,
-    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, PlayerID, Policy, Sample},
+    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, ModelID, Policy, Sample},
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
@@ -117,14 +117,14 @@ impl EvalPosT for PyEvalPos {
     /// This is intended to be a pytorch model that runs on the GPU. Because this is a python
     /// call we need to first re-acquire the GIL to call this function from a background thread
     /// before performing the callback.
-    fn eval_pos(&self, player_id: PlayerID, pos: Vec<Pos>) -> Vec<EvalPosResult> {
+    fn eval_pos(&self, model_id: ModelID, pos: Vec<Pos>) -> Vec<EvalPosResult> {
         Python::with_gil(|py| {
             let batch_size = pos.len();
             let pos_batch = create_pos_batch(py, &pos);
 
             let (policy, value): (PyReadonlyArray2<f32>, PyReadonlyArray1<f32>) = (&self
                 .py_eval_pos_cb
-                .call_bound(py, ((player_id), pos_batch), None)
+                .call_bound(py, ((model_id), pos_batch), None)
                 .expect("Failed to call py_eval_pos_cb"))
                 .extract(py)
                 .expect("Failed to extract result");
