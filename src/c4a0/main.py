@@ -10,7 +10,7 @@ from pydantic import BaseModel
 import torch
 
 from c4a0.tournament import ModelID, ModelPlayer, Player
-from c4a0.training import TrainingState, train_gen
+from c4a0.training import TrainingState
 from c4a0.utils import get_torch_device
 
 
@@ -24,8 +24,9 @@ class Train(BaseModel):
     """batch size for training"""
 
     async def run(self, args: "MainArgs"):
+        state = TrainingState.load_training_state()
         while True:
-            await train_gen(
+            state.continue_training(
                 n_games=self.n_games,
                 mcts_iterations=args.mcts_iterations,
                 exploration_constant=args.exploration_constant,

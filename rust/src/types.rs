@@ -68,6 +68,25 @@ pub struct GameResult {
     pub samples: Vec<Sample>,
 }
 
+#[pymethods]
+impl GameResult {
+    /// Returns the score of the game from the perspective of Player 0.
+    /// If Player 0 wins, 1.0. If Player 0 loses, 0.0. If it's a draw, 0.5.
+    fn player0_score(&self) -> f32 {
+        let terminal = self
+            .samples
+            .iter()
+            .flat_map(|s| s.pos.is_terminal_state())
+            .next()
+            .expect("GameResult has no terminal state");
+        match terminal {
+            crate::c4r::TerminalState::PlayerWin => 1.0,
+            crate::c4r::TerminalState::OpponentWin => 0.0,
+            crate::c4r::TerminalState::Draw => 0.5,
+        }
+    }
+}
+
 /// A training sample generated via self-play.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[pyclass]
