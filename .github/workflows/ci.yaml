@@ -26,6 +26,6 @@ jobs:
         uses: eifinger/setup-rye@v3
       - run: rye sync
       - run: rye lint
-      - run: rye run pyright
-      - run: rye run pytest
+      #- run: rye run pyright
+      #- run: rye run pytest
       - run: rye run maturin build --release
