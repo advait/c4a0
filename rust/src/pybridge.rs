@@ -8,8 +8,9 @@ use serde::{Deserialize, Serialize};
 use crate::{
     c4r::Pos,
     self_play::self_play,
-    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, PlayerID, Policy},
+    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, PlayerID, Policy, Sample},
 };
+use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
 /// Play games via MCTS. This is a python wrapper around [self_play].
 /// `reqs` is a list of [GameMetadata] that describes the games to play.
@@ -48,8 +49,10 @@ pub fn play_games<'py>(
 }
 
 /// The result of [play_games].
+/// Note we explicitly spcify pyclass(module="c4a0_rust") as the module name is required in
+/// order for pickling to work.
 #[derive(Debug, Serialize, Deserialize)]
-#[pyclass]
+#[pyclass(module = "c4a0_rust")]
 pub struct PlayGamesResult {
     #[pyo3(get)]
     pub results: Vec<GameResult>,
@@ -57,6 +60,12 @@ pub struct PlayGamesResult {
 
 #[pymethods]
 impl PlayGamesResult {
+    /// Empty constructor is required for unpickling.
+    #[new]
+    fn new() -> Self {
+        PlayGamesResult { results: vec![] }
+    }
+
     fn to_cbor(&self, py: Python) -> PyResult<PyObject> {
         let cbor = serde_cbor::to_vec(self).map_err(pyify_err)?;
         Ok(PyBytes::new_bound(py, &cbor).into())
@@ -77,6 +86,24 @@ impl PlayGamesResult {
         let cbor: &[u8] = state.extract(py)?;
         *self = Self::from_cbor(py, cbor)?;
         Ok(())
+    }
+
+    /// Splits the results into training and test datasets.
+    /// Ensures that whole games end up in either the training set or test set.
+    /// Expects `train_frac` to be in [0, 1].
+    fn split_train_test(
+        &mut self,
+        train_frac: f32,
+        seed: u64,
+    ) -> PyResult<(Vec<Sample>, Vec<Sample>)> {
+        let mut rng = StdRng::seed_from_u64(seed);
+        self.results.shuffle(&mut rng);
+        let n_train = (self.results.len() as f32 * train_frac).round() as usize;
+        let (train, test) = self.results.split_at(n_train);
+        Ok((
+            train.into_iter().flat_map(|r| r.samples.clone()).collect(),
+            test.into_iter().flat_map(|r| r.samples.clone()).collect(),
+        ))
     }
 }
 

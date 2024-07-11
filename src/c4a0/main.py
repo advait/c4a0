@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import multiprocessing as mp
 from typing import List, Literal
 import warnings
 
@@ -10,12 +9,9 @@ import clipstick
 from pydantic import BaseModel
 import torch
 
-from c4a0.nn import ConnectFourNet
 from c4a0.tournament import ModelID, ModelPlayer, Player
 from c4a0.training import TrainingState, train_gen
 from c4a0.utils import get_torch_device
-
-import c4a0_rust  # type: ignore
 
 
 class Train(BaseModel):
@@ -24,18 +20,13 @@ class Train(BaseModel):
     n_games: int = 2000
     """number of games per generation"""
 
-    batch_size: int = 100
+    batch_size: int = 2000
     """batch size for training"""
-
-    max_coros_per_process: int = 1000
-    """max concurrent self-play games per coroutine"""
 
     async def run(self, args: "MainArgs"):
         while True:
             await train_gen(
                 n_games=self.n_games,
-                n_processes=args.n_processes,
-                max_coros_per_process=self.max_coros_per_process,
                 mcts_iterations=args.mcts_iterations,
                 exploration_constant=args.exploration_constant,
                 batch_size=self.batch_size,
@@ -77,44 +68,10 @@ class Tournament(BaseModel):
         # print(result.scores_table())
 
 
-class RustTest(BaseModel):
-    """Tests rust integration"""
-
-    n_games: int = 2000
-    """number of games per generation"""
-
-    batch_size: int = 1000
-    """batch size for training"""
-
-    n_mcts_iterations: int = 150
-    """number of MCTS iterations per move"""
-
-    exploration_constant: float = 1.4
-    """MCTS exploration constant"""
-
-    async def run(self, args: "MainArgs"):
-        model = ConnectFourNet().to(args.device)
-        reqs = [c4a0_rust.GameMetadata(id, 0, 0) for id in range(self.n_games)]
-        results = c4a0_rust.play_games(
-            reqs,
-            self.batch_size,
-            self.n_mcts_iterations,
-            self.exploration_constant,
-            lambda player_id, pos: model.forward_numpy(pos),
-        )
-        print(
-            f"{len(results.results)} results generated with {results.n_samples()} games."
-        )
-        train, test = results.split_train_test(0.8, 1337)
-
-
 class MainArgs(BaseModel):
     """c4a0: self-improving connect four AI."""
 
-    sub_command: Train | Tournament | RustTest
-
-    n_processes: int = mp.cpu_count() - 1
-    """number of processes to use for self-play/tournament"""
+    sub_command: Train | Tournament
 
     mcts_iterations: int = 150
     """number of MCTS iterations per move"""

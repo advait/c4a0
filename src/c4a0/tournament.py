@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import itertools
 import logging
-from typing import Dict, List, NewType, Optional, Tuple
+from typing import Dict, List, NewType, Tuple
 import numpy as np
 
 from tabulate import tabulate
@@ -17,7 +17,7 @@ import torch
 from tqdm import tqdm
 
 from c4a0.nn import ConnectFourNet
-from c4a0_rust import N_COLS  # type: ignore
+from c4a0_rust import N_COLS, Sample  # type: ignore
 
 PlayerName = NewType("PlayerName", str)
 
@@ -77,8 +77,6 @@ class UniformPlayer(Player):
         return policy_logits, value
 
 
-'''
-
 @dataclass
 class TournamentGame:
     """Represents a single game between two players."""
@@ -116,7 +114,7 @@ class TournamentResult:
             tablefmt="github",
         )
 
-    def get_top_models(self) -> List[GenID]:
+    def get_top_models(self) -> List[ModelID]:
         """Returns the top models from the tournament in descending order of performance."""
         return [
             player.gen_id
@@ -146,6 +144,7 @@ async def play_tournament(
     mcts_pbar = tqdm(total=approx_mcts_iters, desc="mcts iterations", unit="it")
 
     async def play_game(p0: Player, p1: Player):
+        return
         samples = await gen_game(
             game_id=GameID(0),
             eval_pos0=p0.eval_pos,
@@ -166,9 +165,4 @@ async def play_tournament(
     coros = [play_game(p0, p1) for p0, p1 in pairings for _ in range(games_per_match)]
     await asyncio.gather(*coros)
 
-    for player in players:
-        player.close()
-
     return tournament
-
-'''

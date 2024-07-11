@@ -17,11 +17,12 @@ use types::{GameMetadata, GameResult, Sample};
 fn c4a0_rust(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("N_COLS", Pos::N_COLS)?;
     m.add("N_ROWS", Pos::N_ROWS)?;
+    m.add("BUF_N_CHANNELS", Pos::BUF_N_CHANNELS)?;
 
     m.add_class::<GameMetadata>()?;
-    m.add_class::<PlayGamesResult>()?;
     m.add_class::<GameResult>()?;
     m.add_class::<Sample>()?;
+    m.add_class::<PlayGamesResult>()?;
 
     m.add_function(wrap_pyfunction!(pybridge::play_games, m)?)?;
 

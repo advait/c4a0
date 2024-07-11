@@ -96,9 +96,8 @@ class ConnectFourNet(pl.LightningModule):
 
     def step(self, batch, log_prefix):
         # Forward pass
-        game_ids, inputs, policy_targets, value_targets = batch
-        policy_logprob, value_pred = self.forward(inputs)
-        value_pred = rearrange(value_pred, "b 1 -> b")
+        pos, policy_targets, value_targets = batch
+        policy_logprob, value_pred = self.forward(pos)
         policy_logprob_targets = torch.log(policy_targets + self.EPS)
 
         # Losses
