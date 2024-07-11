@@ -1,3 +1,6 @@
+use std::array;
+
+use more_asserts::debug_assert_gt;
 use rand::{
     distributions::{Distribution, WeightedIndex},
     rngs::StdRng,
@@ -92,36 +95,41 @@ impl MctsGame {
     /// 3. selects a new leaf for the next MCTS iteration.
     pub fn on_received_policy(
         &mut self,
-        mut policy: Policy,
+        mut policy_logprobs: Policy,
         nn_value: PosValue,
         exploration_constant: f32,
     ) {
-        // Mask policy for illegal moves
+        if let Some(terminal) = self.leaf_pos().is_terminal_state() {
+            // If this is a terminal state, the received policy is irrelevant. We backpropagate
+            // the objective terminal value and select a new leaf.
+            let value = match terminal {
+                TerminalState::PlayerWin => 1.0,
+                TerminalState::OpponentWin => -1.0,
+                TerminalState::Draw => 0.0,
+            };
+            self._backpropagate(value);
+            self._select_new_leaf(exploration_constant);
+            return;
+        }
+
         let leaf = self.get(self.leaf_id);
         let legal_moves = leaf.pos.legal_moves();
+        debug_assert_gt!(
+            { legal_moves.iter().filter(|&&m| m).count() },
+            0,
+            "no legal moves in leaf node"
+        );
+
+        // Mask policy for illegal moves and softmax
         for mov in 0..Pos::N_COLS {
             if !legal_moves[mov] {
-                policy[mov] = 0.0;
+                policy_logprobs[mov] = f32::NEG_INFINITY;
             }
         }
-        let p_sum = policy.iter().sum::<f32>();
-        if p_sum == 0.0 {
-            policy = Self::UNIFORM_POLICY;
-        } else {
-            policy = policy.map(|p| p / p_sum);
-        }
+        let policy_probs = softmax(policy_logprobs);
 
-        self._expand_leaf(self.leaf_id, policy);
-
-        let leaf = self.get(self.leaf_id);
-        let value = match leaf.pos.is_terminal_state() {
-            Some(TerminalState::PlayerWin) => 1.0,
-            Some(TerminalState::OpponentWin) => -1.0,
-            Some(TerminalState::Draw) => 0.0,
-            None => nn_value,
-        };
-        self._backpropagate(self.leaf_id, value);
-
+        self._expand_leaf(policy_probs);
+        self._backpropagate(nn_value);
         self._select_new_leaf(exploration_constant);
     }
 
@@ -129,8 +137,8 @@ impl MctsGame {
     /// subsequent MCTS iterations. Each child node's [Node::initial_policy_value] is determined by
     /// the provided policy.
     /// Noop for terminal nodes.
-    fn _expand_leaf(&mut self, leaf_id: NodeId, policy: Policy) {
-        let leaf = self.get_mut(leaf_id);
+    fn _expand_leaf(&mut self, policy_probs: Policy) {
+        let leaf = self.get_mut(self.leaf_id);
         if leaf.is_terminal() {
             return;
         }
@@ -138,16 +146,16 @@ impl MctsGame {
         let children: [Option<NodeId>; Pos::N_COLS] = std::array::from_fn(|m| {
             if legal_moves[m] {
                 let child_pos = {
-                    let leaf = self.get(leaf_id);
+                    let leaf = self.get(self.leaf_id);
                     leaf.pos.make_move(m).unwrap()
                 };
-                let child = Node::new(child_pos, Some(leaf_id), policy[m]);
+                let child = Node::new(child_pos, Some(self.leaf_id), policy_probs[m]);
                 Some(self.add_node(child))
             } else {
                 None
             }
         });
-        let leaf = self.get_mut(leaf_id);
+        let leaf = self.get_mut(self.leaf_id);
         leaf.children = Some(children);
     }
 
@@ -159,8 +167,8 @@ impl MctsGame {
     /// effectively invalidating the policy for these nodes. This should not be a problem as we only
     /// expose a [MctsGame::root_policy] method (which will be valid), preventing callers from
     /// accessing policies for the root node's parent ancestors (which will be invalid).
-    fn _backpropagate(&mut self, leaf_id: NodeId, mut value: PosValue) {
-        let mut pos = self.get_mut(leaf_id);
+    fn _backpropagate(&mut self, mut value: PosValue) {
+        let mut pos = self.get_mut(self.leaf_id);
         loop {
             pos.visit_count += 1;
             pos.exploitation_value_sum += value;
@@ -351,6 +359,27 @@ impl Node {
     }
 }
 
+/// Softmax function for a policy.
+fn softmax(policy_logprobs: Policy) -> Policy {
+    let max = policy_logprobs
+        .iter()
+        .cloned()
+        .fold(f32::NEG_INFINITY, f32::max);
+    if max.is_infinite() {
+        // If the policy is all negative infinity, we fall back to uniform policy.
+        // This can happen if the NN dramatically underflows.
+        // We panic as this is an issue that should be fixed in the NN.
+        panic!("softmax: policy is all negative infinity, debug NN on why this is happening.");
+    }
+    let exps = policy_logprobs
+        .iter()
+        // Subtract max value to avoid overflow
+        .map(|p| (p - max).exp())
+        .collect::<Vec<_>>();
+    let sum = exps.iter().sum::<f32>();
+    array::from_fn(|i| exps[i] / sum)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -447,6 +476,16 @@ mod tests {
         assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
         policy.iter().for_each(|p| {
             assert_relative_eq!(*p, CONST_COL_WEIGHT, epsilon = 0.02);
+        });
+    }
+
+    #[test]
+    fn softmax1() {
+        // TODO: Switch to property testing
+        let policy = softmax([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
+        policy.iter().for_each(|p| {
+            assert_relative_eq!(*p, 1.0 / 7.0);
         });
     }
 }
