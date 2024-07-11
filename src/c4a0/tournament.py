@@ -3,187 +3,138 @@ Round-robin tournament to determine which model is the best.
 """
 
 import abc
-import asyncio
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 import itertools
 import logging
-from typing import Dict, List, NewType, Optional, Tuple
+from typing import Callable, Dict, List, NewType, Optional, Tuple
 import numpy as np
 
 from tabulate import tabulate
 import torch
-from tqdm import tqdm
 
-from c4a0.c4 import N_COLS, Pos
-from c4a0.nn import ConnectFourNet, EvalPos, Policy, Value, create_batcher
-from c4a0.self_play import GameID, Sample, gen_game
+from c4a0.nn import ConnectFourNet
+import c4a0_rust  # type: ignore
+from c4a0_rust import N_COLS  # type: ignore
 
 PlayerName = NewType("PlayerName", str)
 
-GenID = NewType("GenID", int)
+ModelID = NewType("ModelID", int)
 
 
 class Player(abc.ABC):
     name: PlayerName
+    model_id: ModelID
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, model_id: ModelID):
         self.name = PlayerName(name)
+        self.model_id = model_id
 
-    async def eval_pos(self, pos: Pos) -> Tuple[Policy, Value]:
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         raise NotImplementedError
-
-    def close(self):
-        pass
 
 
 class ModelPlayer(Player):
     """Player whose policy and value are determined by a ConnectFourNet."""
 
-    gen_id: GenID
     model: ConnectFourNet
     device: torch.device
 
-    _end_signal: Optional[asyncio.Future] = None
-    _enqueue_pos: Optional[EvalPos] = None
-
-    def __init__(self, gen_id: GenID, model: ConnectFourNet, device: torch.device):
-        super().__init__(f"gen{gen_id}")
-        self.gen_id = gen_id
+    def __init__(self, model_id: ModelID, model: ConnectFourNet, device: torch.device):
+        super().__init__(f"gen{model_id}", model_id)
+        self.model_id = model_id
         self.model = model
         self.model.to(device)
-        self.device = device
 
-    def close(self):
-        """Shuts down the background thread in preparation for serialization."""
-        if self._end_signal is not None:
-            self._end_signal.set_result(True)
-            self._end_signal = None
-            self._enqueue_pos = None
-
-    async def eval_pos(self, pos: Pos) -> Tuple[Policy, Value]:
-        if self._enqueue_pos is None:
-            self._end_signal, self._enqueue_pos = create_batcher(
-                self.model, self.device
-            )
-        return await self._enqueue_pos(pos)
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        return self.model.forward_numpy(x)
 
 
 class RandomPlayer(Player):
     """Player that provides a random policy and value."""
 
-    def __init__(self):
-        super().__init__("random")
+    def __init__(self, model_id: ModelID):
+        super().__init__("random", model_id)
 
-    async def eval_pos(self, pos: Pos) -> Tuple[Policy, Value]:
-        policy_logits = np.random.rand(N_COLS)
-        policy_exp = np.exp(policy_logits)
-        policy = policy_exp / policy_exp.sum()
-        value = Value(np.random.rand() * 2 - 1)  # [-1, 1]
-        return policy, value
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        batch_size = x.shape[0]
+        policy_logits = torch.rand(batch_size, N_COLS).numpy()
+        value = (torch.rand(batch_size) * 2 - 1).numpy()  # [-1, 1]
+        return policy_logits, value
 
 
 class UniformPlayer(Player):
     """Player that provides a uniform policy and 0 value."""
 
-    def __init__(self):
-        super().__init__("uniform")
+    def __init__(self, model_id: ModelID):
+        super().__init__("uniform", model_id)
 
-    async def eval_pos(self, pos: Pos) -> Tuple[Policy, Value]:
-        policy = Policy(np.ones(N_COLS) / N_COLS)
-        value = Value(0.0)
-        return policy, value
-
-
-@dataclass
-class TournamentGame:
-    """Represents a single game between two players."""
-
-    p0: Player
-    p1: Player
-    score: float  # From the perspective of p0 (either 0, 0.5, or 1)
-    samples: List[Sample]
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        batch_size = x.shape[0]
+        policy_logits = torch.ones(batch_size, N_COLS).numpy()
+        value = torch.zeros(batch_size).numpy()
+        return policy_logits, value
 
 
 @dataclass
 class TournamentResult:
     """Represents the results from a tournamnet."""
 
-    players: Dict[PlayerName, Player]
-    games_per_match: int
-    exploitation_constant: float
-    mcts_iterations: int
-    games: List[TournamentGame] = field(default_factory=list)
+    model_ids: List[ModelID]
     date: datetime = field(default_factory=datetime.now)
+    games: Optional[c4a0_rust.PlayGamesResult] = None
 
-    def get_scores(self) -> List[Tuple[Player, float]]:
-        scores: Dict[PlayerName, float] = defaultdict(lambda: 0.0)
-        for game in self.games:
-            scores[game.p0.name] += game.score
-            scores[game.p1.name] += 1 - game.score
-        ret = [(self.players[name], score) for name, score in scores.items()]
+    def get_scores(self) -> List[Tuple[ModelID, float]]:
+        scores: Dict[ModelID, float] = defaultdict(lambda: 0.0)
+        for result in self.games.results:  # type: ignore
+            player0_score = result.player0_score()
+            scores[result.metadata.player0_id] += player0_score
+            scores[result.metadata.player1_id] += 1 - player0_score
+
+        ret = list(scores.items())
         ret.sort(key=lambda x: x[1], reverse=True)
         return ret
 
-    def scores_table(self) -> str:
+    def scores_table(self, get_name: Callable[[int], str]) -> str:
         return tabulate(
-            [(player.name, score) for player, score in self.get_scores()],
+            [(get_name(id), score) for id, score in self.get_scores()],
             headers=["Player", "Score"],
             tablefmt="github",
         )
 
-    def get_top_models(self) -> List[GenID]:
+    def get_top_models(self) -> List[ModelID]:
         """Returns the top models from the tournament in descending order of performance."""
-        return [
-            player.gen_id
-            for player, _ in self.get_scores()
-            if isinstance(player, ModelPlayer)
-        ]
+        return [model_id for model_id, _ in self.get_scores()]
 
 
-async def play_tournament(
+def play_tournament(
     players: List[Player],
     games_per_match: int,
-    exploration_constant: float,
+    batch_size: int,
     mcts_iterations: int,
+    exploration_constant: float,
 ) -> TournamentResult:
     """Players a round-robin tournament, returning the total score of each player."""
     logger = logging.getLogger(__name__)
+    assert games_per_match % 2 == 0, "games_per_match must be even"
+
+    gen_id_to_player = {player.model_id: player for player in players}
     tournament = TournamentResult(
-        players={p.name: p for p in players},
-        games_per_match=games_per_match,
-        exploitation_constant=exploration_constant,
-        mcts_iterations=mcts_iterations,
+        model_ids=[player.model_id for player in players],
     )
+    player_ids = [player.model_id for player in players]
+    pairings = list(itertools.permutations(player_ids, 2)) * int(games_per_match / 2)
+    reqs = [c4a0_rust.GameMetadata(id, p0, p1) for id, (p0, p1) in enumerate(pairings)]
 
-    pairings = list(itertools.permutations(players, 2))
     logger.info(f"Beginning tournament with {len(players)} players")
-    approx_mcts_iters = len(pairings) * games_per_match * 21 * mcts_iterations
-    mcts_pbar = tqdm(total=approx_mcts_iters, desc="mcts iterations", unit="it")
-
-    async def play_game(p0: Player, p1: Player):
-        samples = await gen_game(
-            game_id=GameID(0),
-            eval_pos0=p0.eval_pos,
-            eval_pos1=p1.eval_pos,
-            exploration_constant=exploration_constant,
-            mcts_iterations=mcts_iterations,
-            submit_mcts_iter=lambda: mcts_pbar.update(1),
-        )
-        game_id, pos, policy, value = samples[0]
-        game = TournamentGame(
-            p0=p0,
-            p1=p1,
-            score=(value + 1) / 2,
-            samples=samples,
-        )
-        tournament.games.append(game)
-
-    coros = [play_game(p0, p1) for p0, p1 in pairings for _ in range(games_per_match)]
-    await asyncio.gather(*coros)
-
-    for player in players:
-        player.close()
+    tournament.games = c4a0_rust.play_games(
+        reqs,
+        batch_size,
+        mcts_iterations,
+        exploration_constant,
+        lambda player_id, pos: gen_id_to_player[player_id].forward_numpy(pos),
+    )
+    logger.info(f"Finished tournament with {len(tournament.games.results)} games")  # type: ignore
 
     return tournament

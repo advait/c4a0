@@ -17,3 +17,5 @@ num_cpus = "1.16.0"
 rand = "0.8.5"
 indicatif = "0.17.8"
 numpy = "0.21.0"
+serde = {version = "1.0.204", features = ["derive"]}
+serde_cbor = "0.11.2"

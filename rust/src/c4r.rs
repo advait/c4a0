@@ -1,6 +1,17 @@
+use core::fmt;
 use std::array::from_fn;
 
-/// Connect Four game logic
+use serde::{Deserialize, Serialize};
+
+/// Connect four position.
+/// Internally consists of a u64 mask (bitmask representing whether a piece exists at a given
+/// location) and a u64 value (bitmask representing the color of the given piece).
+/// Bit indexing is specified by [Pos::_idx_mask_unsafe].
+#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Pos {
+    mask: u64,
+    value: u64,
+}
 
 /// The oponnent/player token within a cell.
 #[derive(Debug, PartialEq, Eq)]
@@ -17,18 +28,14 @@ pub enum TerminalState {
     Draw,
 }
 
-/// Connect four position.
-/// Internally consists of a u64 mask (bitmask representing whether a piece exists at a given
-/// location) and a u64 value (bitmask representing the color of the given piece).
-/// Bit indexing is specified by [Pos::_idx_mask_unsafe].
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub struct Pos {
-    mask: u64,
-    value: u64,
-}
-
 /// The column for a given move (0..[Pos::N_COLS])
 pub type Move = usize;
+
+impl Default for Pos {
+    fn default() -> Self {
+        Pos { mask: 0, value: 0 }
+    }
+}
 
 impl Pos {
     pub const N_ROWS: usize = 6;
@@ -40,10 +47,6 @@ impl Pos {
     pub const BUF_CHANNEL_LEN: usize = Self::N_ROWS * Self::N_COLS;
     /// The required length (in # of f32s) of the numpy buffer
     pub const BUF_LEN: usize = Self::BUF_N_CHANNELS * Self::BUF_CHANNEL_LEN;
-
-    pub fn new() -> Pos {
-        Pos { mask: 0, value: 0 }
-    }
 
     /// Plays a move in the given column from the perspective of the [CellValue::Player].
     /// Returns a new position where the cell values are flipped.
@@ -57,7 +60,9 @@ impl Pos {
         for row in 0..Self::N_ROWS {
             let idx = Self::_idx_mask_unsafe(row, col);
             if (idx & self.mask) == 0 {
-                return Some(Self::_set_piece_unsafe(&self, row, col, CellValue::Player)._invert());
+                let mut ret = self.clone();
+                ret._set_piece_unsafe(row, col, CellValue::Player);
+                return Some(ret._invert());
             }
         }
         None
@@ -88,20 +93,18 @@ impl Pos {
         u64::count_ones(self.mask).try_into().unwrap()
     }
 
-    /// Sets the given piece without any bounds or collision checking.
-    fn _set_piece_unsafe(&self, row: usize, col: usize, piece: CellValue) -> Pos {
-        let mut p = self.clone();
+    /// Mutably sets the given piece without any bounds or collision checking.
+    fn _set_piece_unsafe(&mut self, row: usize, col: usize, piece: CellValue) {
         let idx_mask = Self::_idx_mask_unsafe(row, col);
-        p.mask |= idx_mask;
+        self.mask |= idx_mask;
         match piece {
             CellValue::Opponent => {
-                p.value &= !idx_mask;
+                self.value &= !idx_mask;
             }
             CellValue::Player => {
-                p.value |= idx_mask;
+                self.value |= idx_mask;
             }
         };
-        p
     }
 
     /// Returns a single bit for the given row and column.
@@ -113,6 +116,7 @@ impl Pos {
     /// Inverts the colors of this position.
     fn _invert(mut self) -> Pos {
         self.value = !self.value;
+        self.value &= self.mask;
         self
     }
 
@@ -242,6 +246,19 @@ impl Pos {
         from_fn(|col| self.get(top_row, col).is_none())
     }
 
+    /// Returns a new [Pos] that is horizonitally flipped.
+    pub fn flip_h(&self) -> Pos {
+        let mut ret = Pos::default();
+        (0..Pos::N_ROWS).for_each(|row| {
+            (0..Pos::N_COLS).for_each(|col| {
+                if let Some(piece) = self.get(row, col) {
+                    ret._set_piece_unsafe(row, Pos::N_COLS - 1 - col, piece);
+                }
+            })
+        });
+        ret
+    }
+
     /// Writes the position to a buffer intended to be interpreted as a [numpy] array.
     /// The final array is of shape (2, 6, 7) where the first dim represents player/opponent,
     /// the second dim represents rows, and the final dim represents columns. The data is written
@@ -284,7 +301,7 @@ impl ToString for Pos {
 
 impl From<&str> for Pos {
     fn from(s: &str) -> Self {
-        let mut pos = Pos::new();
+        let mut pos = Pos::default();
         for (row, line) in s.lines().rev().enumerate() {
             for (col, c) in line.chars().enumerate() {
                 let cell_value = match c {
@@ -292,10 +309,22 @@ impl From<&str> for Pos {
                     '🔵' => CellValue::Opponent,
                     _ => continue,
                 };
-                pos = pos._set_piece_unsafe(row, col, cell_value);
+                pos._set_piece_unsafe(row, col, cell_value);
             }
         }
         pos
+    }
+}
+
+impl fmt::Debug for Pos {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}\nmask:  {:064b}\nvalue: {:064b}",
+            self.to_string(),
+            self.mask,
+            self.value
+        )
     }
 }
 
@@ -320,7 +349,7 @@ mod tests {
 
     #[test]
     fn playing_moves_works() {
-        let mut pos = Pos::new();
+        let mut pos = Pos::default();
         for col in 0..Pos::N_COLS {
             for row in 0..Pos::N_ROWS {
                 pos = pos.test_move(col);
@@ -335,7 +364,7 @@ mod tests {
 
     #[test]
     fn row_win() {
-        let pos = Pos::new().test_moves(&[0, 0, 1, 1, 2, 2, 3]);
+        let pos = Pos::default().test_moves(&[0, 0, 1, 1, 2, 2, 3]);
 
         // Because the board is inverted, the last move results in the opponent winning
         assert_eq!(pos.is_terminal_state(), Some(TerminalState::OpponentWin));
@@ -343,13 +372,13 @@ mod tests {
 
     #[test]
     fn col_win() {
-        let pos = Pos::new().test_moves(&[6, 0, 6, 0, 6, 0, 6]);
+        let pos = Pos::default().test_moves(&[6, 0, 6, 0, 6, 0, 6]);
         assert_eq!(pos.is_terminal_state(), Some(TerminalState::OpponentWin));
     }
 
     #[test]
     fn draw() {
-        let pos = Pos::new().test_moves(&[
+        let pos = Pos::default().test_moves(&[
             // Fill first three rows with alternating moves
             0, 1, 2, 3, 4, 5, // First row
             0, 1, 2, 3, 4, 5, // Second row
@@ -368,7 +397,7 @@ mod tests {
 
     #[test]
     fn to_str() {
-        let pos = Pos::new().test_moves(&[
+        let pos = Pos::default().test_moves(&[
             0, 1, 2, 3, 4, 5, // First row
             0, 1, 2, 3, 4, 5, // Second row
             0, 1, 2, 3, 4, 5, // Third row
@@ -394,7 +423,7 @@ mod tests {
 
     #[test]
     fn legal_moves() {
-        let mut pos = Pos::new();
+        let mut pos = Pos::default();
         assert_legal_moves(&pos, "OOOOOOO");
 
         pos = pos.test_moves(&[
@@ -444,5 +473,24 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn flip_h() {
+        let pos = Pos::default();
+        let pos = pos.test_move(3);
+        let pos = pos.test_move(0);
+        let pos = pos.test_move(1);
+        let flipped = pos.flip_h();
+        assert_ne!(flipped, pos);
+        assert_eq!(pos, flipped.flip_h());
+    }
+
+    #[test]
+    fn flip_h_symmetrical() {
+        let pos = Pos::default().test_move(3).test_move(3).test_move(3);
+        let flipped = pos.flip_h();
+        assert_eq!(pos, flipped);
+        assert_eq!(pos, flipped.flip_h());
     }
 }

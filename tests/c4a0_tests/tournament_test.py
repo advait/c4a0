@@ -7,7 +7,7 @@ from c4a0.tournament import (
     ModelPlayer,
     RandomPlayer,
     UniformPlayer,
-    GenID,
+    ModelID,
 )
 
 
@@ -16,7 +16,7 @@ async def test_tournament():
     model = ConnectFourNet()
     model.eval()  # Disable batch normalization
     model_player = ModelPlayer(
-        gen_id=GenID(0),
+        model_id=ModelID(0),
         model=model,
         device=torch.device("cpu"),
     )

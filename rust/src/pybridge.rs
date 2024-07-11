@@ -1,56 +1,43 @@
-use numpy::{
-    ndarray::{Array1, Array2, Array4},
-    IntoPyArray, PyArray1, PyArray2, PyArray4, PyReadonlyArray1, PyReadonlyArray2,
+use numpy::{ndarray::Array4, IntoPyArray, PyArray4, PyReadonlyArray1, PyReadonlyArray2};
+use pyo3::{
+    prelude::*,
+    types::{PyBytes, PyList},
 };
-use pyo3::{prelude::*, types::PyList};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     c4r::Pos,
-    mcts::Policy,
-    self_play::{self_play, EvalPosResult, EvalPosT},
+    self_play::self_play,
+    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, ModelID, Policy, Sample},
 };
+use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
-/// A batch of training samples.
-#[pyclass]
-pub struct PySamples {
-    player0_ids: Py<PyArray1<u64>>, // b
-    player1_ids: Py<PyArray1<u64>>, // b
-    pos: Py<PyArray4<f32>>,         // b, c, h, w
-    policy: Py<PyArray2<f32>>,      // b, w
-    value: Py<PyArray1<f32>>,       // b
-}
-
-#[pymethods]
-impl PySamples {}
-
-/// Generate training samples with self-play. This is a python wrapper around [self_play].
+/// Play games via MCTS. This is a python wrapper around [self_play].
+/// `reqs` is a list of [GameMetadata] that describes the games to play.
+/// The `py_eval_pos_cb` callback is expected to be a pytorch model that runs on the GPU.
 #[pyfunction]
-pub fn gen_samples<'py>(
+pub fn play_games<'py>(
     py: Python<'py>,
     reqs: &Bound<'py, PyList>,
     max_nn_batch_size: usize,
     n_mcts_iterations: usize,
     exploration_constant: f32,
     py_eval_pos_cb: &Bound<'py, PyAny>,
-) -> PyResult<PySamples> {
-    if !py_eval_pos_cb.is_callable() {
-        panic!("py_eval_pos_cb must be callable");
-    }
+) -> PyResult<PlayGamesResult> {
+    let reqs: Vec<GameMetadata> = reqs.extract().expect("error extracting reqs");
 
-    let reqs: Vec<(usize, usize, usize)> = reqs.extract().expect("error extracting reqs");
-    let batcher = PyEvalPos {
+    let eval_pos = PyEvalPos {
         py_eval_pos_cb: py_eval_pos_cb.to_object(py),
     };
 
-    let samples = {
-        let batcher = batcher.clone();
+    let results = {
         // Start background processing threads while releasing the GIL with allow_threads.
         // This allows other python threads (e.g. pytorch) to continue while we generate training
         // samples. When we need to call the py_eval_pos callback, we will re-acquire the GIL.
         py.allow_threads(move || {
             self_play(
-                batcher,
-                reqs.len(),
+                eval_pos,
+                reqs,
                 max_nn_batch_size,
                 n_mcts_iterations,
                 exploration_constant,
@@ -58,94 +45,84 @@ pub fn gen_samples<'py>(
         })
     };
 
-    let ret = PySamples {
-        player0_ids: Array1::from_vec(vec![0; samples.len()])
-            .into_pyarray_bound(py)
-            .into(),
-        player1_ids: Array1::from_vec(vec![1; samples.len()])
-            .into_pyarray_bound(py)
-            .into(),
-        pos: batcher
-            .create_pos_batch(py, &samples.iter().map(|s| s.pos.clone()).collect())
-            .into(),
-        policy: batcher
-            .create_policy_batch(py, &samples.iter().map(|s| s.policy.clone()).collect())
-            .into(),
-        value: batcher
-            .create_value_batch(py, &samples.iter().map(|s| s.value).collect())
-            .into(),
-    };
-
-    Ok(ret)
+    Ok(PlayGamesResult { results })
 }
 
-#[derive(Clone)]
+/// The result of [play_games].
+/// Note we explicitly spcify pyclass(module="c4a0_rust") as the module name is required in
+/// order for pickling to work.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[pyclass(module = "c4a0_rust")]
+pub struct PlayGamesResult {
+    #[pyo3(get)]
+    pub results: Vec<GameResult>,
+}
+
+#[pymethods]
+impl PlayGamesResult {
+    /// Empty constructor is required for unpickling.
+    #[new]
+    fn new() -> Self {
+        PlayGamesResult { results: vec![] }
+    }
+
+    fn to_cbor(&self, py: Python) -> PyResult<PyObject> {
+        let cbor = serde_cbor::to_vec(self).map_err(pyify_err)?;
+        Ok(PyBytes::new_bound(py, &cbor).into())
+    }
+
+    #[staticmethod]
+    fn from_cbor(_py: Python, cbor: &[u8]) -> PyResult<Self> {
+        serde_cbor::from_slice(cbor).map_err(pyify_err)
+    }
+
+    /// Used for pickling serialization.
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        self.to_cbor(py)
+    }
+
+    /// Used for pickling deserialization.
+    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+        let cbor: &[u8] = state.extract(py)?;
+        *self = Self::from_cbor(py, cbor)?;
+        Ok(())
+    }
+
+    /// Combine two PlayGamesResult objects.
+    fn __add__<'py>(&mut self, py: Python<'py>, other: PyObject) -> PyResult<Self> {
+        let other = other.extract::<PlayGamesResult>(py)?;
+        Ok(PlayGamesResult {
+            results: self
+                .results
+                .iter()
+                .chain(other.results.iter())
+                .cloned()
+                .collect(),
+        })
+    }
+
+    /// Splits the results into training and test datasets.
+    /// Ensures that whole games end up in either the training set or test set.
+    /// Expects `train_frac` to be in [0, 1].
+    fn split_train_test(
+        &mut self,
+        train_frac: f32,
+        seed: u64,
+    ) -> PyResult<(Vec<Sample>, Vec<Sample>)> {
+        let mut rng = StdRng::seed_from_u64(seed);
+        self.results.shuffle(&mut rng);
+        let n_train = (self.results.len() as f32 * train_frac).round() as usize;
+        let (train, test) = self.results.split_at(n_train);
+        Ok((
+            train.into_iter().flat_map(|r| r.samples.clone()).collect(),
+            test.into_iter().flat_map(|r| r.samples.clone()).collect(),
+        ))
+    }
+}
+
+/// [EvalPosT] implementation that calls the `py_eval_pos_cb` python callback.
 struct PyEvalPos {
     py_eval_pos_cb: PyObject,
-}
-
-impl PyEvalPos {
-    /// Creates a batch of positions in tensor format.
-    fn create_pos_batch<'py>(
-        &self,
-        py: Python<'py>,
-        positions: &Vec<Pos>,
-    ) -> Bound<'py, PyArray4<f32>> {
-        let mut buffer = vec![0.0; positions.len() * Pos::BUF_LEN];
-        for i in 0..positions.len() {
-            let pos = &positions[i];
-            let pos_buffer = &mut buffer[i * Pos::BUF_LEN..(i + 1) * Pos::BUF_LEN];
-            pos.write_numpy_buffer(pos_buffer);
-        }
-
-        Array4::from_shape_vec(
-            (
-                positions.len(),
-                Pos::BUF_N_CHANNELS,
-                Pos::N_ROWS,
-                Pos::N_COLS,
-            ),
-            buffer,
-        )
-        .expect("Failed to create Array4 from buffer")
-        .into_pyarray_bound(py)
-    }
-
-    /// Creates a batch of policies in tensor format.
-    fn create_policy_batch<'py>(
-        &self,
-        py: Python<'py>,
-        policies: &Vec<Policy>,
-    ) -> Bound<'py, PyArray2<f32>> {
-        let mut buffer = vec![0.0; policies.len() * Pos::N_COLS];
-        for i in 0..policies.len() {
-            let policy = &policies[i];
-            let policy_buffer = &mut buffer[i * Pos::N_COLS..(i + 1) * Pos::N_COLS];
-            policy_buffer.copy_from_slice(policy);
-        }
-
-        Array2::from_shape_vec((policies.len(), Pos::N_COLS), buffer)
-            .expect("Failed to create Array2 from buffer")
-            .into_pyarray_bound(py)
-    }
-
-    /// Creates a batch of position values in tensor format.
-    fn create_value_batch<'py>(
-        &self,
-        py: Python<'py>,
-        values: &Vec<f32>,
-    ) -> Bound<'py, PyArray1<f32>> {
-        Array1::from_shape_vec((values.len(),), values.clone())
-            .expect("Failed to create Array1 from buffer")
-            .into_pyarray_bound(py)
-    }
-
-    fn policy_from_slice(&self, policy: &[f32]) -> Policy {
-        debug_assert_eq!(policy.len(), Pos::N_COLS);
-        let mut ret = Policy::default();
-        ret.copy_from_slice(policy);
-        ret
-    }
 }
 
 impl EvalPosT for PyEvalPos {
@@ -153,13 +130,14 @@ impl EvalPosT for PyEvalPos {
     /// This is intended to be a pytorch model that runs on the GPU. Because this is a python
     /// call we need to first re-acquire the GIL to call this function from a background thread
     /// before performing the callback.
-    fn eval_pos(&self, pos: &Vec<Pos>) -> Vec<EvalPosResult> {
+    fn eval_pos(&self, model_id: ModelID, pos: Vec<Pos>) -> Vec<EvalPosResult> {
         Python::with_gil(|py| {
-            let pos_batch = self.create_pos_batch(py, pos);
+            let batch_size = pos.len();
+            let pos_batch = create_pos_batch(py, &pos);
 
             let (policy, value): (PyReadonlyArray2<f32>, PyReadonlyArray1<f32>) = (&self
                 .py_eval_pos_cb
-                .call1(py, (pos_batch,))
+                .call_bound(py, ((model_id), pos_batch), None)
                 .expect("Failed to call py_eval_pos_cb"))
                 .extract(py)
                 .expect("Failed to extract result");
@@ -167,12 +145,50 @@ impl EvalPosT for PyEvalPos {
             let policy = policy.as_slice().expect("Failed to get policy slice");
             let value = value.as_slice().expect("Failed to get value slice");
 
-            (0..pos.len())
+            (0..batch_size)
                 .map(|i| EvalPosResult {
-                    policy: self.policy_from_slice(&policy[i * Pos::N_COLS..(i + 1) * Pos::N_COLS]),
+                    policy: policy_from_slice(&policy[i * Pos::N_COLS..(i + 1) * Pos::N_COLS]),
                     value: value[i],
                 })
                 .collect()
         })
     }
+}
+
+/// Creates a batch of positions in tensor format.
+fn create_pos_batch<'py>(py: Python<'py>, positions: &Vec<Pos>) -> Bound<'py, PyArray4<f32>> {
+    let mut buffer = vec![0.0; positions.len() * Pos::BUF_LEN];
+    for i in 0..positions.len() {
+        let pos = &positions[i];
+        let pos_buffer = &mut buffer[i * Pos::BUF_LEN..(i + 1) * Pos::BUF_LEN];
+        pos.write_numpy_buffer(pos_buffer);
+    }
+
+    Array4::from_shape_vec(
+        (
+            positions.len(),
+            Pos::BUF_N_CHANNELS,
+            Pos::N_ROWS,
+            Pos::N_COLS,
+        ),
+        buffer,
+    )
+    .expect("Failed to create Array4 from buffer")
+    .into_pyarray_bound(py)
+}
+
+/// Convert a slice of probabilities into a [Policy].
+fn policy_from_slice(policy: &[f32]) -> Policy {
+    debug_assert_eq!(policy.len(), Pos::N_COLS);
+    let mut ret = Policy::default();
+    ret.copy_from_slice(policy);
+    ret
+}
+
+/// Convert a Rust error into a Python exception.
+fn pyify_err<T>(e: T) -> PyErr
+where
+    T: std::fmt::Debug,
+{
+    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("{:?}", e))
 }
