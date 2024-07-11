@@ -472,10 +472,10 @@ mod tests {
             .join("\n")
             .as_str(),
         );
-        let policy = run_mcts(pos, 100_000);
+        let policy = run_mcts(pos, 300_000);
         assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
-        policy.iter().for_each(|p| {
-            assert_relative_eq!(*p, CONST_COL_WEIGHT, epsilon = 0.02);
+        policy.iter().for_each(|&p| {
+            assert_relative_eq!(p, CONST_COL_WEIGHT, epsilon = 0.01);
         });
     }
 
