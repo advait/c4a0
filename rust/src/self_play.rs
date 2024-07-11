@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
+    mem,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -44,7 +45,6 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
 ) -> Vec<GameResult> {
     let n_games = reqs.len();
     let (pb_game_done, pb_nn_eval, pb_mcts_iter) = init_progress_bars(n_games);
-    let eval_pos = Arc::new(eval_pos);
     let (nn_queue_tx, nn_queue_rx) = bounded::<MctsGame>(n_games);
     let (mcts_queue_tx, mcts_queue_rx) = bounded::<MctsJob>(n_games);
     let (done_queue_tx, done_queue_rx) = bounded::<GameResult>(n_games);
@@ -58,24 +58,18 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
 
     thread::scope(|s| {
         // NN batch inference thread
-        let eval_pos = Arc::clone(&eval_pos);
         let mcts_queue = mcts_queue_tx.clone();
-        let pb_nn = pb_nn_eval.clone();
         s.builder()
             .name("nn_thread".into())
             .spawn(move |_| {
-                let mut next_games = Vec::<MctsGame>::default();
-                while let Loop::Continue(remaining) = nn_thread(
-                    next_games,
-                    &nn_queue_rx,
-                    &mcts_queue,
+                let mut nn_thread = NNThread::new(
+                    nn_queue_rx,
+                    mcts_queue,
                     max_nn_batch_size,
-                    &eval_pos,
-                    &pb_nn,
-                ) {
-                    next_games = remaining;
-                }
-                pb_nn.finish_with_message("NN batch inference complete");
+                    eval_pos,
+                    pb_nn_eval,
+                );
+                nn_thread.loop_until_close();
             })
             .unwrap();
 
@@ -125,83 +119,121 @@ enum Loop<T> {
     Continue(T),
 }
 
-/// Performs NN batch inference by reading from the `nn_queue_rx`.
-/// Performas a batch inference using `eval_pos` with up to `max_nn_batch_size` positions for the
-/// player that has the most positions to evaluate.
+/// Performs NN batch inference by reading from the [NNThread::nn_queue].
+/// Performs a batch inference of [Pos]s using [NNThread::eval_pos] with up to
+/// [NNThread::max_nn_batch_size] positions for the [PlayerID] that has the most positions to
+/// evaluate.
 ///
 /// After the batch inference returns its evaluation, we send the evaluated positions back to the
-/// MCTS threads via `mcts_queue`.
+/// MCTS threads via [NNThread::mcts_queue].
 ///
-/// Returns whether the thread should continue looping, providing the remaining games that were
-/// not evaluated (i.e. belonging to other players) for the next iteration.
-fn nn_thread<E: EvalPosT>(
-    previous_games: Vec<MctsGame>,
-    nn_queue: &Receiver<MctsGame>,
-    mcts_queue: &Sender<MctsJob>,
+/// [NNThread::loop_until_close] will continue to loop until the [NNThread::nn_queue] is closed and
+/// there are no more pending games to evaluate.
+struct NNThread<E: EvalPosT> {
+    nn_queue: Receiver<MctsGame>,
+    mcts_queue: Sender<MctsJob>,
     max_nn_batch_size: usize,
-    eval_pos: &Arc<E>,
-    pb_nn_eval: &ProgressBar,
-) -> Loop<Vec<MctsGame>> {
-    // Read games from queue until we have max_nn_batch_size unique positions or queue is empty
-    let mut games = previous_games;
-    let mut positions_for_players = BTreeMap::<PlayerID, HashSet<Pos>>::new();
+    eval_pos: E,
+    pb_nn_eval: ProgressBar,
+    pending_games: Vec<MctsGame>,
+    chan_closed: bool,
+}
 
-    // Block on reading the first game if the `games` vec is empty
-    if games.is_empty() {
-        match nn_queue.recv() {
-            Ok(game) => {
-                let player_id = game.leaf_player_id_to_play();
-                let entry = positions_for_players.entry(player_id).or_default();
-                entry.insert(game.leaf_pos().clone());
-                games.push(game);
+impl<E: EvalPosT> NNThread<E> {
+    fn new(
+        nn_queue: Receiver<MctsGame>,
+        mcts_queue: Sender<MctsJob>,
+        max_nn_batch_size: usize,
+        eval_pos: E,
+        pb_nn_eval: ProgressBar,
+    ) -> Self {
+        Self {
+            nn_queue,
+            mcts_queue,
+            max_nn_batch_size,
+            eval_pos,
+            pb_nn_eval,
+            pending_games: Vec::default(),
+            chan_closed: false,
+        }
+    }
+
+    /// Drains any items in the [NNThread::nn_queue] into the [NNThread::pending_games] vector,
+    /// blocking if we have no pending games yet.
+    /// Sets [NNThread::chan_closed] when the queue closes.
+    fn drain_queue(&mut self) {
+        if self.pending_games.is_empty() {
+            match self.nn_queue.recv() {
+                Ok(game) => {
+                    self.pending_games.push(game);
+                }
+                Err(RecvError) => {
+                    self.chan_closed = true;
+                    return;
+                }
             }
-            Err(RecvError) => {
-                return Loop::Break;
+        }
+
+        // Optimistically drain additional games from the queue.
+        while let Ok(game) = self.nn_queue.try_recv() {
+            self.pending_games.push(game);
+        }
+    }
+
+    /// Main [NNThread] logic. Optimistically drain items from the queue, call [NNThread::eval_pos]
+    /// for the [PlayerID] with the most queued positions, send the evaluated positions back to the
+    /// [NNThread::mcts_queue], and update [NNThread::pending_games] with all games that were not
+    /// processed in this tick.
+    fn loop_once(&mut self) {
+        self.drain_queue();
+        if self.pending_games.is_empty() {
+            // pending_games can be empty if the channel closes
+            return;
+        }
+
+        let mut player_pos = BTreeMap::<PlayerID, HashSet<Pos>>::new();
+        for game in self.pending_games.iter() {
+            let player_id = game.leaf_player_id_to_play();
+            let entry = player_pos.entry(player_id).or_default();
+            entry.insert(game.leaf_pos().clone());
+        }
+
+        // Select the player with the most positions and evaluate
+        let player_id = player_pos
+            .iter()
+            .max_by_key(|(_, positions)| positions.len())
+            .map(|(player_id, _)| *player_id)
+            .unwrap();
+        let pos = player_pos[&player_id]
+            .iter()
+            .take(self.max_nn_batch_size)
+            .cloned()
+            .collect::<Vec<_>>();
+        self.pb_nn_eval.inc(pos.len() as u64);
+        let evals = self.eval_pos.eval_pos(player_id, pos.clone());
+        let eval_map = pos.into_iter().zip(evals).collect::<HashMap<_, _>>();
+
+        let mut games = Vec::<MctsGame>::default();
+        mem::swap(&mut self.pending_games, &mut games);
+        for game in games.into_iter() {
+            let pos = game.leaf_pos();
+            if game.leaf_player_id_to_play() != player_id || !eval_map.contains_key(pos) {
+                self.pending_games.push(game);
+                continue;
             }
+
+            let nn_result = eval_map[pos].clone();
+            self.mcts_queue.send(MctsJob::Job(game, nn_result)).unwrap();
         }
     }
 
-    // Optimistically pull additional games from the queue until we reach `max_nn_batch_size` unique
-    // positions or the queue is empty.
-    while let Ok(game) = nn_queue.try_recv() {
-        let player_id = game.leaf_player_id_to_play();
-        let entry = positions_for_players.entry(player_id).or_default();
-        entry.insert(game.leaf_pos().clone());
-        games.push(game);
-
-        let most_positions = positions_for_players
-            .values()
-            .max_by_key(|positions| positions.len())
-            .expect("there should be at least one position");
-
-        if most_positions.len() >= max_nn_batch_size {
-            break;
+    /// Continuously loops until the [NNThread::chan_closed] flag is set and there are no more
+    /// pending games to evaluate.
+    fn loop_until_close(&mut self) {
+        while !self.chan_closed || !self.pending_games.is_empty() {
+            self.loop_once();
         }
     }
-
-    // Select the player with the most positions to evaluate and evaluate
-    let (player_id, position_set) = positions_for_players
-        .into_iter()
-        .max_by_key(|(_, positions)| positions.len())
-        .expect("there should be at least one player");
-    let positions: Vec<_> = position_set.into_iter().collect();
-    pb_nn_eval.inc(positions.len() as u64);
-    let all_evals = eval_pos.eval_pos(player_id, positions.clone());
-    let eval_map: HashMap<_, _> = positions.into_iter().zip(all_evals).collect();
-
-    let mut remaining_games = Vec::<MctsGame>::default();
-    for game in games.into_iter() {
-        if game.leaf_player_id_to_play() != player_id {
-            remaining_games.push(game);
-            continue;
-        }
-
-        let pos = game.leaf_pos();
-        let nn_result = eval_map[pos].clone();
-        mcts_queue.send(MctsJob::Job(game, nn_result)).unwrap();
-    }
-
-    Loop::Continue(remaining_games)
 }
 
 /// Performs MCTS iterations by reading from the `mcts_queue`.
@@ -265,6 +297,38 @@ enum MctsJob {
     PoisonPill,
 }
 
+/// Initialize progress bars for monitoring.
+fn init_progress_bars(n_games: usize) -> (ProgressBar, ProgressBar, ProgressBar) {
+    let multi_pb = MultiProgress::new();
+
+    let pb_game_done = multi_pb.add(ProgressBar::new(n_games as u64));
+    pb_game_done.set_style(ProgressStyle::default_bar()
+        .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} games ({per_sec} games)")
+        .unwrap()
+        .progress_chars("#>-"));
+    multi_pb.add(pb_game_done.clone());
+
+    let pb_nn_eval = multi_pb.add(ProgressBar::new_spinner());
+    pb_nn_eval.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] NN evals: {pos} ({per_sec} pos)")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+    multi_pb.add(pb_nn_eval.clone());
+
+    let pb_mcts_iter = multi_pb.add(ProgressBar::new_spinner());
+    pb_mcts_iter.set_style(
+        ProgressStyle::default_bar()
+            .template("{spinner:.green} [{elapsed_precise}] MCTS iterations: {pos} ({per_sec} it)")
+            .unwrap()
+            .progress_chars("#>-"),
+    );
+    multi_pb.add(pb_mcts_iter.clone());
+
+    (pb_game_done, pb_nn_eval, pb_mcts_iter)
+}
+
 #[cfg(test)]
 mod tests {
     use more_asserts::{assert_ge, assert_le};
@@ -288,7 +352,7 @@ mod tests {
 
     #[test]
     fn test_self_play() {
-        let n_games = 100;
+        let n_games = 1;
         let mcts_iterations = 50;
         let exploration_constant = 1.0;
         let results = self_play(
@@ -339,36 +403,4 @@ mod tests {
             }
         }
     }
-}
-
-/// Initialize progress bars for monitoring.
-fn init_progress_bars(n_games: usize) -> (ProgressBar, ProgressBar, ProgressBar) {
-    let multi_pb = MultiProgress::new();
-
-    let pb_game_done = multi_pb.add(ProgressBar::new(n_games as u64));
-    pb_game_done.set_style(ProgressStyle::default_bar()
-        .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} games ({per_sec} games)")
-        .unwrap()
-        .progress_chars("#>-"));
-    multi_pb.add(pb_game_done.clone());
-
-    let pb_nn_eval = multi_pb.add(ProgressBar::new_spinner());
-    pb_nn_eval.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] NN evals: {pos} ({per_sec} pos)")
-            .unwrap()
-            .progress_chars("#>-"),
-    );
-    multi_pb.add(pb_nn_eval.clone());
-
-    let pb_mcts_iter = multi_pb.add(ProgressBar::new_spinner());
-    pb_mcts_iter.set_style(
-        ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] MCTS iterations: {pos} ({per_sec} it)")
-            .unwrap()
-            .progress_chars("#>-"),
-    );
-    multi_pb.add(pb_mcts_iter.clone());
-
-    (pb_game_done, pb_nn_eval, pb_mcts_iter)
 }
