@@ -1,3 +1,4 @@
+use core::panic;
 use std::array;
 
 use numpy::{
@@ -73,17 +74,27 @@ impl GameResult {
     /// Returns the score of the game from the perspective of Player 0.
     /// If Player 0 wins, 1.0. If Player 0 loses, 0.0. If it's a draw, 0.5.
     fn player0_score(&self) -> f32 {
-        let terminal = self
-            .samples
-            .iter()
-            .flat_map(|s| s.pos.is_terminal_state())
-            .next()
-            .expect("GameResult has no terminal state");
-        match terminal {
-            crate::c4r::TerminalState::PlayerWin => 1.0,
-            crate::c4r::TerminalState::OpponentWin => 0.0,
-            crate::c4r::TerminalState::Draw => 0.5,
+        for sample in self.samples.iter() {
+            if let Some(terminal) = sample.pos.is_terminal_state() {
+                let score = match terminal {
+                    crate::c4r::TerminalState::PlayerWin => 1.0,
+                    crate::c4r::TerminalState::OpponentWin => 0.0,
+                    crate::c4r::TerminalState::Draw => 0.5,
+                };
+
+                // When we play positions, we flip the pieces so that the "player to play" is
+                // activte. This means the terminal state is from the perspective of the player
+                // who is about to player. For odd ply positions, the player to play is player 1
+                // so we must flip the score.
+                return if sample.pos.ply() % 2 == 1 {
+                    1.0 - score
+                } else {
+                    score
+                };
+            }
         }
+
+        panic!("player0_score called on an unfinished game");
     }
 }
 
