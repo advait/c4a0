@@ -167,6 +167,7 @@ def train_single_gen(
         exploration_constant=exploration_constant,
         self_play_batch_size=self_play_batch_size,
         training_batch_size=training_batch_size,
+        parent=parent.created_at,
     )
     gen.save(base_dir, games, model)
     return gen

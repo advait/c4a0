@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import logging
 from typing import Literal
 import warnings
 
@@ -66,10 +65,6 @@ def main():
     warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
     args = clipstick.parse(MainArgs)
-    logging.basicConfig(
-        level=args.log_level, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
-
     args.sub_command.run(args)
 
 
