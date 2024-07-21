@@ -3,237 +3,205 @@ Generation-based network training, alternating between self-play and training.
 """
 
 import copy
-from dataclasses import dataclass
 from datetime import datetime
-from glob import glob
-import logging
 import os
 import pickle
-from typing import Dict, List, NewType, Optional, Tuple
+from typing import List, NewType, Optional, Tuple
 
+from loguru import logger
+from pydantic import BaseModel
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping
 import torch
 from torch.utils.data import DataLoader
 
 from c4a0.nn import ConnectFourNet
-from c4a0.tournament import (
-    ModelID,
-    ModelPlayer,
-    Player,
-    TournamentResult,
-    play_tournament,
-)
 
 import c4a0_rust  # type: ignore
-from c4a0_rust import BUF_N_CHANNELS, N_COLS, N_ROWS, Sample  # type: ignore
+from c4a0_rust import PlayGamesResult, BUF_N_CHANNELS, N_COLS, N_ROWS, Sample  # type: ignore
 
 
-@dataclass
-class TrainingState:
-    """The full historical state of the training process."""
+class TrainingGen(BaseModel):
+    """
+    Represents a single generation of training.
+    """
 
-    models: Dict[ModelID, ConnectFourNet]
-    training_gens: List["TrainingGen"]
-
-    def get_next_gen_id(self) -> ModelID:
-        return ModelID(max(self.models.keys()) + 1)  # type: ignore
+    created_at: datetime
+    n_mcts_iterations: int
+    exploration_constant: float
+    self_play_batch_size: int
+    training_batch_size: int
+    parent: Optional[datetime] = None
 
     @staticmethod
-    def load_training_state() -> "TrainingState":
-        logger = logging.getLogger(__name__)
-        if not os.path.exists("training"):
-            os.mkdir("training")
-        files = sorted(glob("training/*.pkl"), reverse=True)
-        if len(files) > 0:
-            with open(files[0], "rb") as f:
-                return pickle.load(f)
-        logger.info("No historical training state found. Initializing a new one.")
-        initial_model_id = 2
-        new_state = TrainingState(
-            models={ModelID(initial_model_id): ConnectFourNet()},
-            training_gens=[TrainingGen(source_id=ModelID(initial_model_id))],
-        )
-        return new_state
+    def _gen_folder(created_at: datetime, base_dir: str) -> str:
+        return os.path.join(base_dir, created_at.isoformat())
 
-    def save_training_state(self):
-        for model in self.models.values():
-            model.cpu()  # Relocate models to cpu before pickling
-        now_date = datetime.now().strftime("%Y-%m-%d-%H-%M")
-        with open(
-            os.path.join("training", f"training_state_{now_date}.pkl"), "wb"
-        ) as f:
-            pickle.dump(self, f)
+    def gen_folder(self, base_dir: str) -> str:
+        return TrainingGen._gen_folder(self.created_at, base_dir)
 
-    def get_model(self, model_id: ModelID) -> ConnectFourNet:
-        return self.models[model_id]
-
-    def register_new_model(self, model: ConnectFourNet) -> ModelID:
-        next_id = ModelID(max(self.models.keys()) + 1)
-        self.models[next_id] = model
-        return next_id
-
-    def get_all_games_from_source(
-        self, source_id: ModelID
-    ) -> c4a0_rust.PlayGamesResult:
-        """Gets training data from all generations with the given source_id."""
-        logger = logging.getLogger(__name__)
-        gens = [
-            gen
-            for gen in self.training_gens
-            if gen.source_id == source_id and gen.games is not None
-        ]
-
-        if len(gens) > 1:
-            logger.info(f"Training with {len(gens)} gens of data")
-
-        ret = gens[0].games
-        for gen in gens[1:]:
-            ret = ret + gen.games  # type: ignore
-        return ret
-
-    def continue_training(
+    def save(
         self,
-        n_games: int,
-        mcts_iterations: int,
-        exploration_constant: float,
-        batch_size: int,
-        device: torch.device,
+        base_dir: str,
+        games: Optional[PlayGamesResult],
+        model: ConnectFourNet,
     ):
-        logger = logging.getLogger(__name__)
+        gen_dir = self.gen_folder(base_dir)
+        os.makedirs(gen_dir, exist_ok=True)
 
-        latest_gen = self.training_gens[-1]
-        if latest_gen.finished():
-            logger.info(
-                f"Finished training gen {latest_gen.child_id}. Starting new generation."
-            )
+        metadata_path = os.path.join(gen_dir, "metadata.json")
+        with open(metadata_path, "w") as f:
+            f.write(self.model_dump_json())
 
-            # Find the child_id from the last successful gen
-            source_id = latest_gen.child_id
-            for gen in reversed(self.training_gens):
-                if gen.succeeded():
-                    source_id = gen.child_id
-                    break
-            assert source_id is not None, "No successful generations found"
+        play_result_path = os.path.join(gen_dir, "games.pkl")
+        with open(play_result_path, "wb") as f:
+            pickle.dump(games, f)
 
-            next_gen = TrainingGen(source_id=source_id)
-            self.training_gens.append(next_gen)
-            latest_gen = next_gen
+        model_path = os.path.join(gen_dir, "model.pkl")
+        with open(model_path, "wb") as f:
+            pickle.dump(model, f)
 
-        latest_gen.train(
-            self, n_games, mcts_iterations, exploration_constant, batch_size, device
-        )
+    @staticmethod
+    def load(base_dir: str, created_at: datetime) -> "TrainingGen":
+        gen_folder = TrainingGen._gen_folder(created_at, base_dir)
+        with open(os.path.join(gen_folder, "metadata.json"), "r") as f:
+            return TrainingGen.model_validate_json(f.read())
 
-
-@dataclass
-class TrainingGen:
-    """
-    State of a single training generation.
-
-    We begin with the source_gen model and then use self play to generate training_samples.
-    Then we train a new model called child_gen. Then we play a tournament with the last five
-    models. The winning model is used as the source_gen for the next generation.
-    """
-
-    source_id: ModelID
-    child_id: Optional[ModelID] = None
-    date: datetime = datetime.now()
-    games: Optional[c4a0_rust.PlayGamesResult] = None
-    tournament: Optional[TournamentResult] = None
-
-    def succeeded(self) -> bool:
-        """
-        Returns whether the new model successfully outplays the old model by beating it.
-        55% of the time.
-        """
-        assert self.child_id is not None, "Can't check success without a child model"
-        assert self.tournament is not None, "Can't check success without a tournament"
-        n_games = len(self.tournament.games.results)  # type: ignore
-        scores = {id: score for id, score in self.tournament.get_scores()}
-        return scores[self.child_id] / n_games >= 0.55
-
-    def finished(self) -> bool:
-        return self.tournament is not None and self.child_id is not None
-
-    def train(
-        self,
-        state: TrainingState,
-        n_games: int,
-        mcts_iterations: int,
-        exploration_constant,
-        batch_size: int,
-        device: torch.device,
-    ) -> TrainingState:
-        """Trains a new model generation. See TrainingGen docstring."""
-        logger = logging.getLogger(__name__)
-        assert self.child_id is None, "Cant re-train an already trained generation"
-
-        logger.info(f"Training new gen from gen {self.source_id}")
-
-        # Self play
-        if self.games is None:
-            logger.info("No cached samples found. Generating samples from self-play.")
-            model = state.get_model(self.source_id)
-            model.to(device)
-            reqs = [c4a0_rust.GameMetadata(id, 0, 0) for id in range(n_games)]
-            self.games = c4a0_rust.play_games(
-                reqs,
-                batch_size,
-                mcts_iterations,
-                exploration_constant,
-                lambda player_id, pos: model.forward_numpy(pos),
-            )
-            state.save_training_state()
-            logger.info(f"Done generating {len(self.games.results)} games")  # type: ignore
-        else:
-            logger.info(f"Loaded {len(self.games.results)} cached games")
-
-        # Include training samples from prior generations if those generations failed to
-        # outperform the source generation.
-        all_games = state.get_all_games_from_source(self.source_id)
-        logger.info(f"Total training samples: {len(all_games.results)}")
-
-        # Training
-        model = copy.deepcopy(state.get_model(self.source_id))
-        train, test = all_games.split_train_test(0.8, 1337)  # type: ignore
-        data_module = SampleDataModule(train, test, batch_size)
-        trainer = pl.Trainer(
-            max_epochs=100,
-            accelerator="auto",
-            devices="auto",
-            callbacks=[
-                EarlyStopping(monitor="val_loss", patience=10, mode="min"),
+    @staticmethod
+    def load_latest(base_dir: str) -> "TrainingGen":
+        timestamps = sorted(
+            [
+                datetime.fromisoformat(f)
+                for f in os.listdir(base_dir)
+                if os.path.isdir(os.path.join(base_dir, f))
             ],
+            reverse=True,
         )
-        logger.info("Beginning training")
-        model.train()  # Switch batch normalization to train mode for training bn params
-        trainer.fit(model, data_module)
-        self.child_id = state.register_new_model(model)
-        logger.info(f"Finished training gen {self.child_id} from gen {self.source_id}")
+        if not timestamps:
+            raise FileNotFoundError("No existing generations")
+        return TrainingGen.load(base_dir, timestamps[0])
 
-        # Play tournament with parent and child
-        players: List[Player] = [
-            ModelPlayer(model_id=id, model=state.get_model(id), device=device)
-            for id in [self.source_id, self.child_id]
-        ]
-        logger.info(
-            f"Playing tournament with {len(players)} players: {', '.join(p.name for p in players)}"
-        )
-        model.eval()  # Switch batch normalization to eval mode for tournament
-        self.tournament = play_tournament(
-            players=players,
-            games_per_match=100,
-            batch_size=batch_size,
-            mcts_iterations=mcts_iterations,
+    @staticmethod
+    def load_latest_with_default(
+        base_dir: str,
+        n_mcts_iterations: int,
+        exploration_constant: float,
+        self_play_batch_size: int,
+        training_batch_size: int,
+    ):
+        try:
+            return TrainingGen.load_latest(base_dir)
+        except FileNotFoundError:
+            logger.info("No existing generations found, initializing root")
+            gen = TrainingGen(
+                created_at=datetime.now(),
+                n_mcts_iterations=n_mcts_iterations,
+                exploration_constant=exploration_constant,
+                self_play_batch_size=self_play_batch_size,
+                training_batch_size=training_batch_size,
+            )
+            gen.save(base_dir, None, ConnectFourNet())
+            return gen
+
+    def get_games(self, base_dir: str) -> Optional[PlayGamesResult]:
+        gen_folder = self.gen_folder(base_dir)
+        with open(os.path.join(gen_folder, "games.pkl"), "rb") as f:
+            return pickle.load(f)
+
+    def get_model(self, base_dir: str) -> ConnectFourNet:
+        gen_folder = self.gen_folder(base_dir)
+        with open(os.path.join(gen_folder, "model.pkl"), "rb") as f:
+            return pickle.load(f)
+
+
+def train_single_gen(
+    base_dir: str,
+    device: torch.device,
+    parent: TrainingGen,
+    n_self_play_games: int,
+    n_mcts_iterations: int,
+    exploration_constant: float,
+    self_play_batch_size: int,
+    training_batch_size: int,
+) -> TrainingGen:
+    """
+    Trains a new generation from the given parent.
+    First generate games using c4a0_rust.play_games.
+    Then train a new model based on the parent model using the generated samples.
+    Finally, save the resulting games and model in the training directory.
+    """
+    logger.info("Beginning new generation from", parent=parent.created_at)
+
+    # Self play
+    model = parent.get_model(base_dir)
+    model.to(device)
+    reqs = [c4a0_rust.GameMetadata(id, 0, 0) for id in range(n_self_play_games)]  # type: ignore
+    games = c4a0_rust.play_games(  # type: ignore
+        reqs,
+        self_play_batch_size,
+        n_mcts_iterations,
+        exploration_constant,
+        lambda player_id, pos: model.forward_numpy(pos),
+    )
+
+    # Training
+    logger.info("Beginning training")
+    model = copy.deepcopy(model)
+    train, test = games.split_train_test(0.8, 1337)  # type: ignore
+    data_module = SampleDataModule(train, test, training_batch_size)
+    trainer = pl.Trainer(
+        max_epochs=100,
+        accelerator="auto",
+        devices="auto",
+        callbacks=[
+            EarlyStopping(monitor="val_loss", patience=10, mode="min"),
+        ],
+    )
+    model.train()  # Switch batch normalization to train mode for training bn params
+    trainer.fit(model, data_module)
+    logger.info("Finished training")
+
+    gen = TrainingGen(
+        created_at=datetime.now(),
+        n_mcts_iterations=n_mcts_iterations,
+        exploration_constant=exploration_constant,
+        self_play_batch_size=self_play_batch_size,
+        training_batch_size=training_batch_size,
+        parent=parent.created_at,
+    )
+    gen.save(base_dir, games, model)
+    return gen
+
+
+def training_loop(
+    base_dir: str,
+    device: torch.device,
+    n_self_play_games: int,
+    n_mcts_iterations: int,
+    exploration_constant: float,
+    self_play_batch_size: int,
+    training_batch_size: int,
+):
+    """Main training loop. Sequentially trains generation after generation."""
+    gen = TrainingGen.load_latest_with_default(
+        base_dir=base_dir,
+        n_mcts_iterations=n_mcts_iterations,
+        exploration_constant=exploration_constant,
+        self_play_batch_size=self_play_batch_size,
+        training_batch_size=training_batch_size,
+    )
+
+    while True:
+        gen = train_single_gen(
+            base_dir=base_dir,
+            device=device,
+            parent=gen,
+            n_self_play_games=n_self_play_games,
+            n_mcts_iterations=n_mcts_iterations,
             exploration_constant=exploration_constant,
+            self_play_batch_size=self_play_batch_size,
+            training_batch_size=training_batch_size,
         )
-        table = self.tournament.scores_table(
-            lambda id: [p.name for p in players if p.model_id == id][0]
-        )
-        logger.info(f"Tournament results:\n{table}")
-
-        state.save_training_state()
-        return state
 
 
 SampleTensor = NewType(

@@ -7,10 +7,10 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 import itertools
-import logging
 from typing import Callable, Dict, List, NewType, Optional, Tuple
 import numpy as np
 
+from loguru import logger
 from tabulate import tabulate
 import torch
 
@@ -116,7 +116,6 @@ def play_tournament(
     exploration_constant: float,
 ) -> TournamentResult:
     """Players a round-robin tournament, returning the total score of each player."""
-    logger = logging.getLogger(__name__)
     assert games_per_match % 2 == 0, "games_per_match must be even"
 
     gen_id_to_player = {player.model_id: player for player in players}
