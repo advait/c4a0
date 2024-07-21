@@ -14,6 +14,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping
 import torch
 from torch.utils.data import DataLoader
+from pytorch_lightning.loggers import WandbLogger
 
 from c4a0.nn import ConnectFourNet
 
@@ -66,6 +67,18 @@ class TrainingGen(BaseModel):
         gen_folder = TrainingGen._gen_folder(created_at, base_dir)
         with open(os.path.join(gen_folder, "metadata.json"), "r") as f:
             return TrainingGen.model_validate_json(f.read())
+
+    @staticmethod
+    def load_all(base_dir: str) -> List["TrainingGen"]:
+        timestamps = sorted(
+            [
+                datetime.fromisoformat(f)
+                for f in os.listdir(base_dir)
+                if os.path.isdir(os.path.join(base_dir, f))
+            ],
+            reverse=True,
+        )
+        return [TrainingGen.load(base_dir, t) for t in timestamps]
 
     @staticmethod
     def load_latest(base_dir: str) -> "TrainingGen":
@@ -132,6 +145,9 @@ def train_single_gen(
     """
     logger.info("Beginning new generation from", parent=parent.created_at)
 
+    wandb_logger = WandbLogger(project="c4a0")
+    # TODO: add experiment metadata
+
     # Self play
     model = parent.get_model(base_dir)
     model.to(device)
@@ -156,6 +172,7 @@ def train_single_gen(
         callbacks=[
             EarlyStopping(monitor="val_loss", patience=10, mode="min"),
         ],
+        logger=wandb_logger,
     )
     model.train()  # Switch batch normalization to train mode for training bn params
     trainer.fit(model, data_module)
