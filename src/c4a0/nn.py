@@ -1,5 +1,7 @@
 from typing import Tuple
+
 import numpy as np
+from pydantic import BaseModel
 import torch
 import torch.nn as nn
 import torchmetrics
@@ -9,29 +11,34 @@ from einops import rearrange
 from c4a0_rust import N_COLS, N_ROWS  # type: ignore
 
 
+class ModelConfig(BaseModel):
+    n_residual_blocks: int
+    conv_filter_size: int
+    n_policy_layers: int
+    n_value_layers: int
+    learning_rate: float
+    l2_reg: float
+
+
 class ConnectFourNet(pl.LightningModule):
     EPS = 1e-8  # Epsilon small constant to avoid log(0)
 
-    def __init__(
-        self,
-        n_residual_blocks: int = 3,
-        conv_filter_size: int = 64,
-        n_policy_layers: int = 3,
-        n_value_layers: int = 3,
-        learning_rate: float = 1e-3,
-        l2_reg: float = 1e-4,
-    ):
+    def __init__(self, config: ModelConfig):
         super().__init__()
-        self.learning_rate = learning_rate
-        self.l2_reg = l2_reg
+        self.learning_rate = config.learning_rate
+        self.l2_reg = config.l2_reg
 
         self.conv = nn.Sequential(
-            nn.Conv2d(2, conv_filter_size, kernel_size=3, padding=1),
-            *[ResidualBlock(conv_filter_size) for i in range(n_residual_blocks)],
+            nn.Conv2d(2, config.conv_filter_size, kernel_size=3, padding=1),
+            *[
+                ResidualBlock(config.conv_filter_size)
+                for i in range(config.n_residual_blocks)
+            ],
         )
 
         fc_size = self._calculate_conv_output_size()
 
+        # Policy head
         self.fc_policy = nn.Sequential(
             *[
                 nn.Sequential(
@@ -39,12 +46,13 @@ class ConnectFourNet(pl.LightningModule):
                     nn.BatchNorm1d(fc_size),
                     nn.ReLU(),
                 )
-                for _ in range(n_policy_layers - 1)
+                for _ in range(config.n_policy_layers - 1)
             ],
             nn.Linear(fc_size, N_COLS),
             nn.LogSoftmax(dim=1),
         )
 
+        # Value head
         self.fc_value = nn.Sequential(
             *[
                 nn.Sequential(
@@ -52,7 +60,7 @@ class ConnectFourNet(pl.LightningModule):
                     nn.BatchNorm1d(fc_size),
                     nn.ReLU(),
                 )
-                for _ in range(n_value_layers - 1)
+                for _ in range(config.n_value_layers - 1)
             ],
             nn.Linear(fc_size, 1),
             nn.Tanh(),
@@ -62,7 +70,7 @@ class ConnectFourNet(pl.LightningModule):
         self.policy_kl_div = torchmetrics.KLDivergence(log_prob=True)
         self.value_mse = torchmetrics.MeanSquaredError()
 
-        self.save_hyperparameters()
+        self.save_hyperparameters(config.model_dump())
 
     def forward(self, x):
         x = self.conv(x)
