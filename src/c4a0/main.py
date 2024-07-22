@@ -7,6 +7,7 @@ import clipstick
 from pydantic import BaseModel
 import torch
 
+from c4a0.sweep import sweep
 from c4a0.training import training_loop
 from c4a0.utils import get_torch_device
 
@@ -25,7 +26,7 @@ class Train(BaseModel):
 
     def run(self, args: "MainArgs"):
         training_loop(
-            base_dir="training",
+            base_dir=args.training_base_dir,
             device=torch.device(args.device),
             n_self_play_games=self.n_self_play_games,
             n_mcts_iterations=args.n_mcts_iterations,
@@ -35,17 +36,17 @@ class Train(BaseModel):
         )
 
 
-class Tournament(BaseModel):
-    """Runs a tournament between multiple models."""
+class Sweep(BaseModel):
+    """Performs a hyperparameter sweep."""
 
     def run(self, args: "MainArgs"):
-        pass
+        sweep(args.training_base_dir)
 
 
 class MainArgs(BaseModel):
     """c4a0: self-improving connect four AI."""
 
-    sub_command: Train | Tournament
+    sub_command: Train | Sweep
 
     n_mcts_iterations: int = 150
     """number of MCTS iterations per move"""
@@ -58,6 +59,9 @@ class MainArgs(BaseModel):
 
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     """log level"""
+
+    training_base_dir: str = "training"
+    """base directory for training data"""
 
 
 def main():
