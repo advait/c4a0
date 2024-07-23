@@ -46,12 +46,14 @@ certifi==2024.6.2
     # via httpcore
     # via httpx
     # via requests
+    # via sentry-sdk
 cffi==1.16.0
     # via argon2-cffi-bindings
 charset-normalizer==3.3.2
     # via requests
-clipstick==0.6.1
-    # via c4a0
+click==8.1.7
+    # via typer
+    # via wandb
 comm==0.2.2
     # via ipykernel
 contourpy==1.2.1
@@ -64,6 +66,8 @@ decorator==5.1.1
     # via ipython
 defusedxml==0.7.1
     # via nbconvert
+docker-pycreds==0.4.0
+    # via wandb
 einops==0.8.0
     # via c4a0
 executing==2.0.1
@@ -82,6 +86,10 @@ frozenlist==1.4.1
 fsspec==2024.6.0
     # via pytorch-lightning
     # via torch
+gitdb==4.0.11
+    # via gitpython
+gitpython==3.1.43
+    # via wandb
 grpcio==1.64.1
     # via tensorboard
 h11==0.14.0
@@ -225,6 +233,7 @@ pillow==10.3.0
     # via matplotlib
 platformdirs==4.2.2
     # via jupyter-core
+    # via wandb
 prometheus-client==0.20.0
     # via jupyter-server
 prompt-toolkit==3.0.47
@@ -232,8 +241,10 @@ prompt-toolkit==3.0.47
 protobuf==4.25.3
     # via tensorboard
     # via tensorboardx
+    # via wandb
 psutil==5.9.8
     # via ipykernel
+    # via wandb
 ptyprocess==0.7.0
     # via pexpect
     # via terminado
@@ -243,7 +254,6 @@ pycparser==2.22
     # via cffi
 pydantic==2.7.3
     # via c4a0
-    # via clipstick
 pydantic-core==2.18.4
     # via pydantic
 pygments==2.18.0
@@ -263,6 +273,7 @@ pytorch-lightning==2.2.5
 pyyaml==6.0.1
     # via jupyter-events
     # via pytorch-lightning
+    # via wandb
 pyzmq==26.0.3
     # via ipykernel
     # via jupyter-client
@@ -273,6 +284,7 @@ referencing==0.35.1
     # via jupyter-events
 requests==2.32.3
     # via jupyterlab-server
+    # via wandb
 rfc3339-validator==0.1.4
     # via jsonschema
     # via jupyter-events
@@ -280,22 +292,32 @@ rfc3986-validator==0.1.1
     # via jsonschema
     # via jupyter-events
 rich==13.7.1
-    # via clipstick
+    # via typer
 rpds-py==0.18.1
     # via jsonschema
     # via referencing
 send2trash==1.8.3
     # via jupyter-server
+sentry-sdk==2.10.0
+    # via wandb
+setproctitle==1.3.3
+    # via wandb
 setuptools==70.0.0
     # via jupyterlab
     # via lightning-utilities
     # via tensorboard
+    # via wandb
+shellingham==1.5.4
+    # via typer
 six==1.16.0
     # via asttokens
     # via bleach
+    # via docker-pycreds
     # via python-dateutil
     # via rfc3339-validator
     # via tensorboard
+smmap==5.0.1
+    # via gitdb
 sniffio==1.3.1
     # via anyio
     # via httpx
@@ -346,6 +368,8 @@ traitlets==5.14.3
     # via nbclient
     # via nbconvert
     # via nbformat
+typer==0.12.3
+    # via c4a0
 types-python-dateutil==2.9.0.20240316
     # via arrow
 typing-extensions==4.12.2
@@ -355,10 +379,14 @@ typing-extensions==4.12.2
     # via pydantic-core
     # via pytorch-lightning
     # via torch
+    # via typer
 uri-template==1.3.0
     # via jsonschema
 urllib3==2.2.1
     # via requests
+    # via sentry-sdk
+wandb==0.17.5
+    # via c4a0
 wcwidth==0.2.13
     # via prompt-toolkit
 webcolors==24.6.0

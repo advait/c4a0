@@ -1,8 +1,9 @@
 from typing import Tuple
+
 import numpy as np
+from pydantic import BaseModel
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torchmetrics
 import pytorch_lightning as pl
 from einops import rearrange
@@ -10,58 +11,72 @@ from einops import rearrange
 from c4a0_rust import N_COLS, N_ROWS  # type: ignore
 
 
+class ModelConfig(BaseModel):
+    n_residual_blocks: int
+    conv_filter_size: int
+    n_policy_layers: int
+    n_value_layers: int
+    learning_rate: float
+    l2_reg: float
+
+
 class ConnectFourNet(pl.LightningModule):
     EPS = 1e-8  # Epsilon small constant to avoid log(0)
 
-    def __init__(self):
-        super(ConnectFourNet, self).__init__()
+    def __init__(self, config: ModelConfig):
+        super().__init__()
+        self.learning_rate = config.learning_rate
+        self.l2_reg = config.l2_reg
 
-        # Shared conv blocks
-        self.conv1 = nn.Conv2d(2, 16, kernel_size=4)
-        self.bn1 = nn.BatchNorm2d(16)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(32)
-        self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
-        self.bn3 = nn.BatchNorm2d(64)
+        self.conv = nn.Sequential(
+            nn.Conv2d(2, config.conv_filter_size, kernel_size=3, padding=1),
+            *[
+                ResidualBlock(config.conv_filter_size)
+                for i in range(config.n_residual_blocks)
+            ],
+        )
 
         fc_size = self._calculate_conv_output_size()
 
         # Policy head
-        self.fc_policy1 = nn.Linear(fc_size, fc_size)
-        self.bn_policy1 = nn.BatchNorm1d(fc_size)
-        self.fc_policy2 = nn.Linear(fc_size, fc_size)
-        self.bn_policy2 = nn.BatchNorm1d(fc_size)
-        self.fc_policy3 = nn.Linear(fc_size, N_COLS)
+        self.fc_policy = nn.Sequential(
+            *[
+                nn.Sequential(
+                    nn.Linear(fc_size, fc_size),
+                    nn.BatchNorm1d(fc_size),
+                    nn.ReLU(),
+                )
+                for _ in range(config.n_policy_layers - 1)
+            ],
+            nn.Linear(fc_size, N_COLS),
+            nn.LogSoftmax(dim=1),
+        )
 
         # Value head
-        self.fc_value1 = nn.Linear(fc_size, fc_size)
-        self.bn_value1 = nn.BatchNorm1d(fc_size)
-        self.fc_value2 = nn.Linear(fc_size, fc_size)
-        self.bn_value2 = nn.BatchNorm1d(fc_size)
-        self.fc_value3 = nn.Linear(fc_size, 1)
+        self.fc_value = nn.Sequential(
+            *[
+                nn.Sequential(
+                    nn.Linear(fc_size, fc_size),
+                    nn.BatchNorm1d(fc_size),
+                    nn.ReLU(),
+                )
+                for _ in range(config.n_value_layers - 1)
+            ],
+            nn.Linear(fc_size, 1),
+            nn.Tanh(),
+        )
 
         # Metrics
         self.policy_kl_div = torchmetrics.KLDivergence(log_prob=True)
         self.value_mse = torchmetrics.MeanSquaredError()
 
+        self.save_hyperparameters(config.model_dump())
+
     def forward(self, x):
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = F.relu(self.bn2(self.conv2(x)))
-        x = F.relu(self.bn3(self.conv3(x)))
-
+        x = self.conv(x)
         x = rearrange(x, "b c h w -> b (c h w)")
-
-        x_p = F.relu(self.bn_policy1(self.fc_policy1(x)))
-        x_p = F.relu(self.bn_policy2(self.fc_policy2(x_p)))
-        x_p = self.fc_policy3(x_p)
-        policy_logprobs = F.log_softmax(x_p, dim=1)
-
-        x_v = F.relu(self.bn_value1(self.fc_value1(x)))
-        x_v = F.relu(self.bn_value2(self.fc_value2(x_v)))
-        x_v = self.fc_value3(x_v)
-        x_v = F.tanh(x_v)
-        value = x_v.squeeze(1)
-
+        policy_logprobs = self.fc_policy(x)
+        value = self.fc_value(x).squeeze(1)
         return policy_logprobs, value
 
     def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
@@ -77,15 +92,17 @@ class ConnectFourNet(pl.LightningModule):
         return policy, value
 
     def _calculate_conv_output_size(self):
-        """Helper function to calculate the output size of the last convolutional layer."""
+        """Helper function to calculate the output size of the convolutional block."""
         # Apply the convolutional layers to a dummy input
         dummy_input = torch.zeros(1, 2, N_ROWS, N_COLS)
         with torch.no_grad():
-            dummy_output = self.conv3(self.conv2(self.conv1(dummy_input)))
-        return int(torch.numel(dummy_output) / dummy_output.shape[0])
+            dummy_output = self.conv(dummy_input)
+        return int(torch.numel(dummy_output))
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=0.001)
+        optimizer = torch.optim.Adam(
+            self.parameters(), lr=self.learning_rate, weight_decay=self.l2_reg
+        )
         return optimizer
 
     def training_step(self, batch, batch_idx):
@@ -103,9 +120,23 @@ class ConnectFourNet(pl.LightningModule):
         # Losses
         policy_loss = self.policy_kl_div(policy_logprob_targets, policy_logprob)
         value_loss = self.value_mse(value_pred, value_targets)
-        loss = 6 * policy_loss + value_loss
+        loss = policy_loss + value_loss
 
         self.log(f"{log_prefix}_loss", loss, prog_bar=True)
         self.log(f"{log_prefix}_policy_kl_div", policy_loss)
         self.log(f"{log_prefix}_value_mse", value_loss)
         return loss
+
+
+class ResidualBlock(pl.LightningModule):
+    def __init__(self, n_channels: int, kernel_size=3, padding=1) -> None:
+        super().__init__()
+        self.block = nn.Sequential(
+            nn.Conv2d(n_channels, n_channels, kernel_size=kernel_size, padding=padding),
+            nn.Conv2d(n_channels, n_channels, kernel_size=kernel_size, padding=padding),
+            nn.BatchNorm2d(n_channels),
+            nn.ReLU(),
+        )
+
+    def forward(self, x):
+        return x + self.block(x)

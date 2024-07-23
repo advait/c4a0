@@ -14,8 +14,9 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping
 import torch
 from torch.utils.data import DataLoader
+from pytorch_lightning.loggers import WandbLogger
 
-from c4a0.nn import ConnectFourNet
+from c4a0.nn import ConnectFourNet, ModelConfig
 
 import c4a0_rust  # type: ignore
 from c4a0_rust import PlayGamesResult, BUF_N_CHANNELS, N_COLS, N_ROWS, Sample  # type: ignore
@@ -68,6 +69,18 @@ class TrainingGen(BaseModel):
             return TrainingGen.model_validate_json(f.read())
 
     @staticmethod
+    def load_all(base_dir: str) -> List["TrainingGen"]:
+        timestamps = sorted(
+            [
+                datetime.fromisoformat(f)
+                for f in os.listdir(base_dir)
+                if os.path.isdir(os.path.join(base_dir, f))
+            ],
+            reverse=True,
+        )
+        return [TrainingGen.load(base_dir, t) for t in timestamps]
+
+    @staticmethod
     def load_latest(base_dir: str) -> "TrainingGen":
         timestamps = sorted(
             [
@@ -88,6 +101,7 @@ class TrainingGen(BaseModel):
         exploration_constant: float,
         self_play_batch_size: int,
         training_batch_size: int,
+        model_config: ModelConfig,
     ):
         try:
             return TrainingGen.load_latest(base_dir)
@@ -100,7 +114,8 @@ class TrainingGen(BaseModel):
                 self_play_batch_size=self_play_batch_size,
                 training_batch_size=training_batch_size,
             )
-            gen.save(base_dir, None, ConnectFourNet())
+            model = ConnectFourNet(model_config)
+            gen.save(base_dir, None, model)
             return gen
 
     def get_games(self, base_dir: str) -> Optional[PlayGamesResult]:
@@ -130,7 +145,10 @@ def train_single_gen(
     Then train a new model based on the parent model using the generated samples.
     Finally, save the resulting games and model in the training directory.
     """
-    logger.info("Beginning new generation from", parent=parent.created_at)
+    logger.info(f"Beginning new generation from {parent.created_at}")
+
+    wandb_logger = WandbLogger(project="c4a0")
+    # TODO: add experiment metadata
 
     # Self play
     model = parent.get_model(base_dir)
@@ -156,6 +174,7 @@ def train_single_gen(
         callbacks=[
             EarlyStopping(monitor="val_loss", patience=10, mode="min"),
         ],
+        logger=wandb_logger,
     )
     model.train()  # Switch batch normalization to train mode for training bn params
     trainer.fit(model, data_module)
@@ -181,6 +200,7 @@ def training_loop(
     exploration_constant: float,
     self_play_batch_size: int,
     training_batch_size: int,
+    model_config: ModelConfig,
 ):
     """Main training loop. Sequentially trains generation after generation."""
     gen = TrainingGen.load_latest_with_default(
@@ -189,6 +209,7 @@ def training_loop(
         exploration_constant=exploration_constant,
         self_play_batch_size=self_play_batch_size,
         training_batch_size=training_batch_size,
+        model_config=model_config,
     )
 
     while True:
