@@ -1,0 +1,12 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 40e16b9b688b505df9abaa47b5f4776d343e4b7b1e64b74d269df92d58f2cfb2 # shrinks to policy = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+cc 19bd609bfb408cf67e793e846d64293283bb382e095250405f5ddaecc76bd3bf # shrinks to policy_log = [0.0, 0.0, -6.872888e19, 0.0, 0.0, 0.0, 0.0]
+cc d17aeb3793210e7443418e6a8b852d22c01eddc1225c6d644bcf0c117c2e1c98 # shrinks to policy = [0.9286058, 0.0, 0.0033046294, 0.06687763, 0.0, 0.0, 0.001211846]
+cc b4b48a3dbc95e9b50dd37dcd6a6a89ddd75347d26bc888ac92e4086e0481a8e3 # shrinks to policy = [0.4780801, 2.5148089e-5, 2.5148089e-5, 0.52179414, 2.5148089e-5, 2.5148089e-5, 2.5148089e-5]
+cc db28139dac7e220d26e3b4a97b97792ff1efc2f86afd17a6a4d3ef0040701844 # shrinks to policy = [0.0, 0.933416, 0.00035163847, 0.0009350313, 0.0, 0.06520966, 8.7709726e-5]
+cc 19b63b05c1a9a12558899ca40e18023e4be6da5c0be577fc65589720bd59a4d9 # shrinks to policy = [0.0, 0.106206864, 0.0, 0.0, 0.148644, 0.7410872, 0.004062006]
