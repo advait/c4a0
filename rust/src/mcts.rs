@@ -390,7 +390,14 @@ pub fn apply_temperature(policy: &Policy, temperature: f32) -> Policy {
     if temperature == 1.0 || policy.iter().all(|&p| p == policy[0]) {
         // Temp 1.0 or uniform policy is noop
         return policy.clone();
+    } else if temperature == 0.0 {
+        // Temp 0.0 is argmax
+        let max = policy.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let ret = policy.map(|p| if p == max { 1.0 } else { 0.0 });
+        let sum = ret.iter().sum::<f32>();
+        return ret.map(|p| p / sum); // Potentially multiple argmaxes
     }
+
     let policy_log = policy.map(|p| p.ln() / temperature);
     let policy_log_sum_exp = policy_log.map(|p| p.exp()).iter().sum::<f32>().ln();
     policy_log.map(|p| (p - policy_log_sum_exp).exp().clamp(0.0, 1.0))
@@ -504,26 +511,40 @@ mod tests {
     proptest! {
         /// Softmax policies should sum up to one.
         #[test]
-        fn test_softmax_sum_1(policy in policy_strategy()) {
+        fn softmax_sum_1(policy in policy_strategy()) {
             assert_policy_sum_1(&policy);
         }
 
         /// Temperature of 1.0 should not affect the policy.
         #[test]
-        fn test_temperature_1(policy in policy_strategy()) {
+        fn temperature_1(policy in policy_strategy()) {
             let policy_with_temp = apply_temperature(&policy, 1.0);
             assert_policy_eq(&policy, &policy_with_temp, 1e-5);
         }
 
         /// Temperature of 2.0 should change the policy.
         #[test]
-        fn test_temperature_2(policy in policy_strategy()) {
+        fn temperature_2(policy in policy_strategy()) {
             let policy_with_temp = apply_temperature(&policy, 2.0);
             assert_policy_sum_1(&policy_with_temp);
             // If policy is nonuniform and there are at least two non-zero probabilities, the
             // policy with temperature should be different from the original policy
             if policy.iter().filter(|&&p| p != CONST_COL_WEIGHT && p > 0.0).count() >= 2 {
                 assert_policy_ne(&policy, &policy_with_temp, Node::EPS);
+            }
+        }
+
+        /// Temperature of 0.0 should be argmax.
+        #[test]
+        fn temperature_0(policy in policy_strategy()) {
+            let policy_with_temp = apply_temperature(&policy, 0.0);
+            let max = policy_with_temp.iter().fold(f32::NEG_INFINITY, |a, &b| f32::max(a, b));
+            let max_count = policy_with_temp.iter().filter(|&&p| p == max).count() as f32;
+            assert_policy_sum_1(&policy_with_temp);
+            for p in policy_with_temp {
+                if p == max {
+                    assert_eq!(1.0 / max_count, p);
+                }
             }
         }
     }
