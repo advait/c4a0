@@ -387,6 +387,10 @@ fn softmax(policy_logprobs: Policy) -> Policy {
 /// Applies temperature scaling to a policy.
 /// Expects the policy to be in [0-1] (non-log) space.
 pub fn apply_temperature(policy: &Policy, temperature: f32) -> Policy {
+    if temperature == 1.0 || policy.iter().all(|&p| p == policy[0]) {
+        // Temp 1.0 or uniform policy is noop
+        return policy.clone();
+    }
     let policy_log = policy.map(|p| p.ln() / temperature);
     let policy_log_sum_exp = policy_log.map(|p| p.exp()).iter().sum::<f32>().ln();
     policy_log.map(|p| (p - policy_log_sum_exp).exp().clamp(0.0, 1.0))
