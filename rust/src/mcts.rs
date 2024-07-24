@@ -223,10 +223,14 @@ impl MctsGame {
 
     /// Makes a move probabalistically based on the root node's policy.
     /// Uses the game_id and ply as rng seeds for deterministic sampling.
-    pub fn make_random_move(&mut self, exploration_constant: f32) {
+    /// The temperature parameter scales the policy probabilities, with values > 1.0 making the
+    /// sampled distribution more uniform and values < 1.0 making the sampled distribution favor
+    /// the most lucrative moves.
+    pub fn make_random_move(&mut self, exploration_constant: f32, temperature: f32) {
         let seed = self.metadata.game_id * ((Pos::N_ROWS * Pos::N_COLS) + self.moves.len()) as u64;
         let mut rng = StdRng::seed_from_u64(seed);
         let policy = self.root_policy();
+        let policy = apply_temperature(&policy, temperature);
         let dist = WeightedIndex::new(policy).unwrap();
         let mov = dist.sample(&mut rng);
         self.make_move(mov, exploration_constant);
@@ -380,13 +384,27 @@ fn softmax(policy_logprobs: Policy) -> Policy {
     array::from_fn(|i| exps[i] / sum)
 }
 
+/// Applies temperature scaling to a policy.
+/// Expects the policy to be in [0-1] (non-log) space.
+pub fn apply_temperature(policy: &Policy, temperature: f32) -> Policy {
+    if temperature == 1.0 || policy.iter().all(|&p| p == policy[0]) {
+        // Temp 1.0 or uniform policy is noop
+        return policy.clone();
+    }
+    let policy_log = policy.map(|p| p.ln() / temperature);
+    let policy_log_sum_exp = policy_log.map(|p| p.exp()).iter().sum::<f32>().ln();
+    policy_log.map(|p| (p - policy_log_sum_exp).exp().clamp(0.0, 1.0))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use approx::{assert_relative_eq, assert_relative_ne};
+    use approx::assert_relative_eq;
     use more_asserts::assert_gt;
+    use proptest::prelude::*;
 
     const CONST_COL_WEIGHT: f32 = 1.0 / (Pos::N_COLS as f32);
+    const CONST_POLICY: Policy = [CONST_COL_WEIGHT; Pos::N_COLS];
     const TEST_EXPLORATION_CONSTANT: f32 = 1.0;
 
     /// Runs a batch with a single game and a constant evaluation function.
@@ -401,17 +419,14 @@ mod tests {
     #[test]
     fn mcts_prefers_center_column() {
         let policy = run_mcts(Pos::default(), 1000);
-        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
+        assert_policy_sum_1(&policy);
         assert_gt!(policy[3], CONST_COL_WEIGHT);
     }
 
     #[test]
     fn mcts_depth_one() {
         let policy = run_mcts(Pos::default(), 1 + Pos::N_COLS + Pos::N_COLS);
-        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
-        policy.iter().for_each(|p| {
-            assert_relative_eq!(*p, CONST_COL_WEIGHT);
-        });
+        assert_policy_eq(&policy, &CONST_POLICY, Node::EPS);
     }
 
     #[test]
@@ -420,19 +435,13 @@ mod tests {
             Pos::default(),
             1 + Pos::N_COLS + (Pos::N_COLS * Pos::N_COLS) + (Pos::N_COLS * Pos::N_COLS),
         );
-        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
-        policy.iter().for_each(|p| {
-            assert_relative_eq!(*p, CONST_COL_WEIGHT);
-        });
+        assert_policy_eq(&policy, &CONST_POLICY, Node::EPS);
     }
 
     #[test]
     fn mcts_depth_uneven() {
         let policy = run_mcts(Pos::default(), 47);
-        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
-        policy.iter().for_each(|p| {
-            assert_relative_ne!(*p, CONST_COL_WEIGHT, epsilon = 0.001);
-        });
+        assert_policy_ne(&policy, &CONST_POLICY, Node::EPS);
     }
 
     /// From a winning position, mcts should end up with a policy that prefers the winning move.
@@ -473,19 +482,76 @@ mod tests {
             .as_str(),
         );
         let policy = run_mcts(pos, 300_000);
-        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
+        assert_policy_sum_1(&policy);
         policy.iter().for_each(|&p| {
             assert_relative_eq!(p, CONST_COL_WEIGHT, epsilon = 0.01);
         });
     }
 
-    #[test]
-    fn softmax1() {
-        // TODO: Switch to property testing
-        let policy = softmax([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
-        assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
-        policy.iter().for_each(|p| {
-            assert_relative_eq!(*p, 1.0 / 7.0);
-        });
+    /// Strategy for generating a policy with at least one non-zero value.
+    fn policy_strategy() -> impl Strategy<Value = Policy> {
+        let min = 0.0f32;
+        let max = 10.0f32;
+        let positive_strategy = min..max;
+        let neg_inf_strategy = Just(f32::NEG_INFINITY);
+        prop::array::uniform7(prop_oneof![positive_strategy, neg_inf_strategy])
+            .prop_filter("all neg infinity not allowed", |policy_logits| {
+                !policy_logits.iter().all(|&p| p == f32::NEG_INFINITY)
+            })
+            .prop_map(|policy_log| softmax(policy_log))
+    }
+
+    proptest! {
+        /// Softmax policies should sum up to one.
+        #[test]
+        fn test_softmax_sum_1(policy in policy_strategy()) {
+            assert_policy_sum_1(&policy);
+        }
+
+        /// Temperature of 1.0 should not affect the policy.
+        #[test]
+        fn test_temperature_1(policy in policy_strategy()) {
+            let policy_with_temp = apply_temperature(&policy, 1.0);
+            assert_policy_eq(&policy, &policy_with_temp, 1e-5);
+        }
+
+        /// Temperature of 2.0 should change the policy.
+        #[test]
+        fn test_temperature_2(policy in policy_strategy()) {
+            let policy_with_temp = apply_temperature(&policy, 2.0);
+            assert_policy_sum_1(&policy_with_temp);
+            // If policy is nonuniform and there are at least two non-zero probabilities, the
+            // policy with temperature should be different from the original policy
+            if policy.iter().filter(|&&p| p != CONST_COL_WEIGHT && p > 0.0).count() >= 2 {
+                assert_policy_ne(&policy, &policy_with_temp, Node::EPS);
+            }
+        }
+    }
+
+    fn assert_policy_sum_1(policy: &Policy) {
+        let sum = policy.iter().sum::<f32>();
+        if (sum - 1.0).abs() > 1e-5 {
+            panic!("policy sum {:?} is not 1.0: {:?}", sum, policy);
+        }
+    }
+
+    fn assert_policy_eq(p1: &Policy, p2: &Policy, epsilon: f32) {
+        let eq = p1
+            .iter()
+            .zip(p2.iter())
+            .all(|(a, b)| (a - b).abs() < epsilon);
+        if !eq {
+            panic!("policies are not equal: {:?} {:?}", p1, p2);
+        }
+    }
+
+    fn assert_policy_ne(p1: &Policy, p2: &Policy, epsilon: f32) {
+        let ne = p1
+            .iter()
+            .zip(p2.iter())
+            .any(|(a, b)| (a - b).abs() > epsilon);
+        if !ne {
+            panic!("policies are equal: {:?} {:?}", p1, p2);
+        }
     }
 }

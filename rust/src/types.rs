@@ -139,4 +139,9 @@ impl Sample {
 
         (pos, policy, value)
     }
+
+    /// String representation of the position.
+    pub fn pos_str(&self) -> String {
+        self.pos.to_string()
+    }
 }

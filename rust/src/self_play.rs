@@ -95,6 +95,7 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
                         n_mcts_iterations,
                         n_mcts_threads,
                         exploration_constant,
+                        temperature: 1.0,
                         pb_game_done,
                         pb_mcts_iter,
                     }
@@ -244,6 +245,7 @@ struct MctsThread {
     n_mcts_iterations: usize,
     n_mcts_threads: usize,
     exploration_constant: f32,
+    temperature: f32,
     pb_game_done: ProgressBar,
     pb_mcts_iter: ProgressBar,
 }
@@ -263,7 +265,7 @@ impl MctsThread {
 
                 if game.root_visit_count() >= self.n_mcts_iterations {
                     // We have reached the sufficient number of MCTS iterations to make a move.
-                    game.make_random_move(self.exploration_constant);
+                    game.make_random_move(self.exploration_constant, self.temperature);
                     if game.root_pos().is_terminal_state().is_some() {
                         self.n_games_remaining.fetch_sub(1, Ordering::Relaxed);
                         self.done_queue_tx.send(game.to_result()).unwrap();
