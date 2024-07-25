@@ -331,6 +331,7 @@ impl fmt::Debug for Pos {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     // Test helpers for Pos
     impl Pos {
@@ -476,21 +477,47 @@ mod tests {
     }
 
     #[test]
-    fn flip_h() {
-        let pos = Pos::default();
-        let pos = pos.test_move(3);
-        let pos = pos.test_move(0);
-        let pos = pos.test_move(1);
-        let flipped = pos.flip_h();
-        assert_ne!(flipped, pos);
-        assert_eq!(pos, flipped.flip_h());
-    }
-
-    #[test]
     fn flip_h_symmetrical() {
         let pos = Pos::default().test_move(3).test_move(3).test_move(3);
         let flipped = pos.flip_h();
         assert_eq!(pos, flipped);
         assert_eq!(pos, flipped.flip_h());
+    }
+
+    prop_compose! {
+        /// Strategy to generate random connect four positions. We start with a Vec of random
+        /// columns to play in and play them in order. If any moves are invalid, we ignore them.
+        /// This allows proptest's shrinking to undo moves to find the smallest failing case.
+        fn random_pos()(moves in prop::collection::vec(0..Pos::N_COLS, 0..500)) -> Pos {
+            let mut pos = Pos::default();
+
+            for &mov in &moves {
+                if pos.is_terminal_state().is_some() {
+                    break
+                }
+
+                if pos.legal_moves()[mov] {
+                    pos = pos.test_move(mov);
+                }
+            }
+
+            pos
+        }
+    }
+
+    proptest! {
+        /// Double flipping the position should result in the same position.
+        #[test]
+        fn flip_h(pos in random_pos()) {
+            let flipped = pos.flip_h();
+            assert_eq!(pos, flipped.flip_h());
+        }
+
+        /// Converting a position to a string and back should result in the same position.
+        #[test]
+        fn to_from_string(pos in random_pos()) {
+            let s = pos.to_string();
+            assert_eq!(Pos::from(s.as_str()), pos);
+        }
     }
 }
