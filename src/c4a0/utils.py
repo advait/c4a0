@@ -4,7 +4,6 @@ from typing import Generic, Optional, TypeVar
 
 import torch
 import pytorch_lightning as pl
-from pytorch_lightning import LightningModule
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.trainer.trainer import Trainer
 
@@ -30,7 +29,7 @@ def get_torch_device() -> torch.device:
     return torch.device("cpu")
 
 
-M = TypeVar("M", bound=LightningModule)
+M = TypeVar("M", bound=pl.LightningModule)
 
 
 class BestModelCheckpoint(Callback, Generic[M]):

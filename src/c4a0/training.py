@@ -29,6 +29,7 @@ class TrainingGen(BaseModel):
     """
 
     created_at: datetime
+    gen_n: int
     n_mcts_iterations: int
     exploration_constant: float
     self_play_batch_size: int
@@ -53,7 +54,7 @@ class TrainingGen(BaseModel):
 
         metadata_path = os.path.join(gen_dir, "metadata.json")
         with open(metadata_path, "w") as f:
-            f.write(self.model_dump_json())
+            f.write(self.model_dump_json(indent=2))
 
         play_result_path = os.path.join(gen_dir, "games.pkl")
         with open(play_result_path, "wb") as f:
@@ -110,6 +111,7 @@ class TrainingGen(BaseModel):
             logger.info("No existing generations found, initializing root")
             gen = TrainingGen(
                 created_at=datetime.now(),
+                gen_n=0,
                 n_mcts_iterations=n_mcts_iterations,
                 exploration_constant=exploration_constant,
                 self_play_batch_size=self_play_batch_size,
@@ -125,9 +127,11 @@ class TrainingGen(BaseModel):
             return pickle.load(f)
 
     def get_model(self, base_dir: str) -> ConnectFourNet:
+        """Gets the model for this generation."""
         gen_folder = self.gen_folder(base_dir)
         with open(os.path.join(gen_folder, "model.pkl"), "rb") as f:
-            return pickle.load(f)
+            model = pickle.load(f)
+            return model
 
 
 def train_single_gen(
@@ -146,9 +150,12 @@ def train_single_gen(
     Then train a new model based on the parent model using the generated samples.
     Finally, save the resulting games and model in the training directory.
     """
-    logger.info(f"Beginning new generation from {parent.created_at}")
+    gen_n = parent.gen_n + 1
+    logger.info(f"Beginning new generation {gen_n} from {parent.gen_n}")
 
     wandb_logger = WandbLogger(project="c4a0")
+    experiment = wandb_logger.experiment
+    experiment.config
     # TODO: add experiment metadata
 
     # Self play
@@ -179,12 +186,14 @@ def train_single_gen(
         ],
         logger=wandb_logger,
     )
+    trainer.gen_n = gen_n  # type: ignore
     model.train()  # Switch batch normalization to train mode for training bn params
     trainer.fit(model, data_module)
     logger.info("Finished training")
 
     gen = TrainingGen(
         created_at=datetime.now(),
+        gen_n=parent.gen_n + 1,
         n_mcts_iterations=n_mcts_iterations,
         exploration_constant=exploration_constant,
         self_play_batch_size=self_play_batch_size,
@@ -206,6 +215,15 @@ def training_loop(
     model_config: ModelConfig,
 ):
     """Main training loop. Sequentially trains generation after generation."""
+    logger.info("Beginning training loop")
+    logger.info("device: {}", device)
+    logger.info("n_self_play_games: {}", n_self_play_games)
+    logger.info("n_mcts_iterations: {}", n_mcts_iterations)
+    logger.info("exploration_constant: {}", exploration_constant)
+    logger.info("self_play_batch_size: {}", self_play_batch_size)
+    logger.info("training_batch_size: {}", training_batch_size)
+    logger.info("model_config: \n{}", model_config.model_dump_json(indent=2))
+
     gen = TrainingGen.load_latest_with_default(
         base_dir=base_dir,
         n_mcts_iterations=n_mcts_iterations,

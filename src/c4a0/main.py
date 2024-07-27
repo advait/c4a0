@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from typing import List
 import warnings
 
 import torch
@@ -26,16 +27,26 @@ def train(
     conv_filter_size: int = 32,
     n_policy_layers: int = 4,
     n_value_layers: int = 2,
-    learning_rate: float = 2e-3,
+    lr_schedule: List[float] = [0, 2e-3, 10, 8e-4],
     l2_reg: float = 4e-4,
 ):
     """Trains a model via self-play."""
+    assert len(lr_schedule) % 2 == 0, "lr_schedule must have an even number of elements"
+    schedule = {}
+    for i in range(0, len(lr_schedule), 2):
+        threshold = int(lr_schedule[i])
+        assert (
+            threshold == lr_schedule[i]
+        ), "lr_schedule must alternate between gen_id (int) and lr (float)"
+        lr = lr_schedule[i + 1]
+        schedule[threshold] = lr
+
     model_config = ModelConfig(
         n_residual_blocks=n_residual_blocks,
         conv_filter_size=conv_filter_size,
         n_policy_layers=n_policy_layers,
         n_value_layers=n_value_layers,
-        learning_rate=learning_rate,
+        lr_schedule=schedule,
         l2_reg=l2_reg,
     )
     training_loop(

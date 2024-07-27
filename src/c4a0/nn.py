@@ -1,5 +1,6 @@
-from typing import Tuple
+from typing import Dict, Tuple
 
+from loguru import logger
 import numpy as np
 from pydantic import BaseModel
 import torch
@@ -12,20 +13,46 @@ from c4a0_rust import N_COLS, N_ROWS  # type: ignore
 
 
 class ModelConfig(BaseModel):
+    """Configuration for ConnectFourNet."""
+
     n_residual_blocks: int
+    """The number of residual blocks."""
+
     conv_filter_size: int
+    """The number of filters for the conv layers in the residual blocks."""
+
     n_policy_layers: int
+    """Number of fully connected layers in the policy head."""
+
     n_value_layers: int
-    learning_rate: float
+    """Number of fully connected layers in the value head."""
+
+    lr_schedule: Dict[int, float]
+    """
+    Learning rate schedule. The first item in the tuple indicates which gen_n the learning rate
+    begins to be effective for. The second item in the tuple is the learning rate.
+    """
+
     l2_reg: float
+    """L2 weight decay regularization for the optimizer"""
 
 
 class ConnectFourNet(pl.LightningModule):
+    """
+    A CNN that takes in as input connect four positions and outputs a policy (in logprob space)
+    and a value. The policy is a (log) probability distribution over moves and the value is the
+    lucrativeness of the position between [-1, +1] where -1 is a definitively losing position and
+    +1 is a definitively winning position. The outputs of this network are used to guide MCTS.
+
+    The network consists of a sequence of ResidualBlocks (CNN + CNN + BatchNormalization + Relu)
+    followed by separate fully connected policy and value heads.
+    """
+
     EPS = 1e-8  # Epsilon small constant to avoid log(0)
 
     def __init__(self, config: ModelConfig):
         super().__init__()
-        self.learning_rate = config.learning_rate
+        self.lr_schedule = config.lr_schedule
         self.l2_reg = config.l2_reg
 
         self.conv = nn.Sequential(
@@ -72,7 +99,7 @@ class ConnectFourNet(pl.LightningModule):
 
         self.save_hyperparameters(config.model_dump())
 
-    def forward(self, x):
+    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
         x = self.conv(x)
         x = rearrange(x, "b c h w -> b (c h w)")
         policy_logprobs = self.fc_policy(x)
@@ -100,9 +127,17 @@ class ConnectFourNet(pl.LightningModule):
         return int(torch.numel(dummy_output))
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(
-            self.parameters(), lr=self.learning_rate, weight_decay=self.l2_reg
-        )
+        gen_n: int = self.trainer.gen_n  # type: ignore
+        assert gen_n is not None, "please pass gen_n to trainer"
+        schedule = sorted(list(self.lr_schedule.items()))
+        _, lr = schedule.pop(0)
+        for gen_threshold, gen_rate in schedule:
+            if gen_n < gen_threshold:
+                break
+            lr = gen_rate
+
+        logger.info("using lr {} for gen_n {}", lr, gen_n)
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=self.l2_reg)
         return optimizer
 
     def training_step(self, batch, batch_idx):
