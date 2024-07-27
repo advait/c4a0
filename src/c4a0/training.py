@@ -17,6 +17,7 @@ from torch.utils.data import DataLoader
 from pytorch_lightning.loggers import WandbLogger
 
 from c4a0.nn import ConnectFourNet, ModelConfig
+from c4a0.utils import BestModelCheckpoint
 
 import c4a0_rust  # type: ignore
 from c4a0_rust import PlayGamesResult, BUF_N_CHANNELS, N_COLS, N_ROWS, Sample  # type: ignore
@@ -159,7 +160,7 @@ def train_single_gen(
         self_play_batch_size,
         n_mcts_iterations,
         exploration_constant,
-        lambda player_id, pos: model.forward_numpy(pos),
+        lambda player_id, pos: model.forward_numpy(pos),  # type: ignore
     )
 
     # Training
@@ -167,11 +168,13 @@ def train_single_gen(
     model = copy.deepcopy(model)
     train, test = games.split_train_test(0.8, 1337)  # type: ignore
     data_module = SampleDataModule(train, test, training_batch_size)
+    best_model_cb = BestModelCheckpoint(monitor="val_loss", mode="min")
     trainer = pl.Trainer(
         max_epochs=100,
         accelerator="auto",
         devices="auto",
         callbacks=[
+            best_model_cb,
             EarlyStopping(monitor="val_loss", patience=10, mode="min"),
         ],
         logger=wandb_logger,
@@ -188,7 +191,7 @@ def train_single_gen(
         training_batch_size=training_batch_size,
         parent=parent.created_at,
     )
-    gen.save(base_dir, games, model)
+    gen.save(base_dir, games, best_model_cb.get_best_model())
     return gen
 
 
