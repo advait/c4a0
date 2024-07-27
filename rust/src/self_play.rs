@@ -95,7 +95,6 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
                         n_mcts_iterations,
                         n_mcts_threads,
                         exploration_constant,
-                        temperature: 1.0,
                         pb_game_done,
                         pb_mcts_iter,
                     }
@@ -112,7 +111,19 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
     })
     .unwrap();
 
-    done_queue_rx.into_iter().collect()
+    let ret: Vec<_> = done_queue_rx.into_iter().collect();
+
+    let unique_pos: HashSet<_> = ret
+        .iter()
+        .flat_map(|result| result.samples.iter().map(|s| s.pos.clone()))
+        .collect();
+    println!(
+        "Generated {} games with {} unique positions",
+        ret.len(),
+        unique_pos.len()
+    );
+
+    ret
 }
 
 /// Performs NN batch inference by reading from the [NNThread::nn_queue].
@@ -245,7 +256,6 @@ struct MctsThread {
     n_mcts_iterations: usize,
     n_mcts_threads: usize,
     exploration_constant: f32,
-    temperature: f32,
     pb_game_done: ProgressBar,
     pb_mcts_iter: ProgressBar,
 }
@@ -265,7 +275,16 @@ impl MctsThread {
 
                 if game.root_visit_count() >= self.n_mcts_iterations {
                     // We have reached the sufficient number of MCTS iterations to make a move.
-                    game.make_random_move(self.exploration_constant, self.temperature);
+                    // If we are in the early game, use a higher temperature to encourage
+                    // generating more diverse (but suboptimal) games.
+                    let ply = game.root_pos().ply();
+                    let temperature = match () {
+                        _ if ply < 4 => 4.0,
+                        _ if ply < 8 => 2.0,
+                        _ => 1.0,
+                    };
+                    game.make_random_move(self.exploration_constant, temperature);
+
                     if game.root_pos().is_terminal_state().is_some() {
                         self.n_games_remaining.fetch_sub(1, Ordering::Relaxed);
                         self.done_queue_tx.send(game.to_result()).unwrap();
