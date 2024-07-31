@@ -62,7 +62,7 @@ impl Pos {
             if (idx & self.mask) == 0 {
                 let mut ret = self.clone();
                 ret._set_piece_unsafe(row, col, CellValue::Player);
-                return Some(ret._invert());
+                return Some(ret.invert());
             }
         }
         None
@@ -114,7 +114,7 @@ impl Pos {
     }
 
     /// Inverts the colors of this position.
-    fn _invert(mut self) -> Pos {
+    pub fn invert(mut self) -> Pos {
         self.value = !self.value;
         self.value &= self.mask;
         self
@@ -220,7 +220,7 @@ impl Pos {
     pub fn is_terminal_state(&self) -> Option<TerminalState> {
         if self._is_terminal_for_player() {
             Some(TerminalState::PlayerWin)
-        } else if self.clone()._invert()._is_terminal_for_player() {
+        } else if self.clone().invert()._is_terminal_for_player() {
             Some(TerminalState::OpponentWin)
         } else if self.ply() == Self::N_COLS * Self::N_ROWS {
             Some(TerminalState::Draw)

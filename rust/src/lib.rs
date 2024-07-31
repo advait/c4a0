@@ -3,6 +3,7 @@ mod c4r;
 mod mcts;
 mod pybridge;
 mod self_play;
+mod tui;
 mod types;
 
 use c4r::Pos;
@@ -25,6 +26,7 @@ fn c4a0_rust(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PlayGamesResult>()?;
 
     m.add_function(wrap_pyfunction!(pybridge::play_games, m)?)?;
+    m.add_function(wrap_pyfunction!(pybridge::run_tui, m)?)?;
 
     Ok(())
 }
