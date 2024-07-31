@@ -19,7 +19,7 @@ use ratatui::{
     Frame, Terminal,
 };
 
-use crate::c4r::Pos;
+use crate::c4r::{Pos, TerminalState};
 
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
@@ -95,6 +95,9 @@ impl App {
     }
 
     fn make_move(&mut self, mov: usize) {
+        if self.pos.is_terminal_state().is_some() {
+            return;
+        }
         if let Some(pos) = self.pos.make_move(mov) {
             self.pos = pos;
         }
@@ -121,17 +124,24 @@ impl Widget for &App {
 
         // Game
         let mut pos = self.pos.clone();
-        let mut to_play = " Red".red();
         let isp0 = pos.ply() % 2 == 0;
         if !isp0 {
             pos = pos.invert();
-            to_play = " Blue".blue();
         }
+        let to_play = match pos.is_terminal_state() {
+            Some(TerminalState::PlayerWin) if isp0 => vec![" Blue".blue(), " won".into()],
+            Some(TerminalState::PlayerWin) => vec![" Red".red(), " won".into()],
+            Some(TerminalState::OpponentWin) if isp0 => vec![" Blue".blue(), " won".into()],
+            Some(TerminalState::OpponentWin) => vec![" Red".red(), " won".into()],
+            Some(TerminalState::Draw) => vec![" Draw".gray()],
+            None if isp0 => vec![" Red".red(), " to play".into()],
+            None => vec![" Blue".blue(), " to play".into()],
+        };
         Paragraph::new(pos.to_string())
             .block(
                 Block::bordered()
                     .title(" Board")
-                    .title_bottom(Line::from(vec![to_play, " to play".into()]))
+                    .title_bottom(to_play)
                     .padding(Padding::uniform(1)),
             )
             .render(layout[0], buf);
