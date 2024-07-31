@@ -1,5 +1,5 @@
 use core::fmt;
-use std::array::from_fn;
+use std::{array::from_fn, fmt::Display};
 
 use serde::{Deserialize, Serialize};
 
@@ -280,11 +280,11 @@ impl Pos {
     }
 }
 
-impl ToString for Pos {
-    fn to_string(&self) -> String {
+impl Display for Pos {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut ret: Vec<String> = Vec::with_capacity(Self::N_ROWS);
         for row in (0..Self::N_ROWS).rev() {
-            let mut s = String::new();
+            let mut s = String::with_capacity(Pos::N_COLS);
             for col in 0..Self::N_COLS {
                 let p = match self.get(row, col) {
                     Some(CellValue::Player) => "🔴",
@@ -295,7 +295,8 @@ impl ToString for Pos {
             }
             ret.push(s);
         }
-        ret.join("\n")
+        let ret = ret.join("\n");
+        write!(f, "{}", ret)
     }
 }
 
