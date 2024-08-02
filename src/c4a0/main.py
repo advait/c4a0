@@ -8,7 +8,7 @@ import typer
 
 from c4a0.nn import ModelConfig
 from c4a0.sweep import perform_sweep
-from c4a0.training import training_loop
+from c4a0.training import TrainingGen, training_loop
 from c4a0.utils import get_torch_device
 
 import c4a0_rust  # type: ignore
@@ -72,7 +72,9 @@ def sweep(base_dir: str = "training"):
 @app.command()
 def ui(base_dir: str = "training"):
     """Renders ui"""
-    c4a0_rust.run_tui()  # type: ignore
+    gen = TrainingGen.load_latest(base_dir)
+    model = gen.get_model(base_dir)
+    c4a0_rust.run_tui(lambda model_id, x: model.forward_numpy(x))  # type: ignore
 
 
 if __name__ == "__main__":

@@ -248,6 +248,12 @@ impl MctsGame {
         root.policy(self)
     }
 
+    /// The average [PosValue] of the root node as a consequence of performing MCTS iterations.
+    pub fn root_value(&self) -> PosValue {
+        let root = self.get(self.root_id);
+        root.exploitation_value()
+    }
+
     /// Converts a finished game into a Vec of [Sample] for future NN training.
     pub fn to_result(&self) -> GameResult {
         let final_value = self

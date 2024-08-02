@@ -67,6 +67,7 @@ dependencies = [
  "more-asserts",
  "num_cpus",
  "numpy",
+ "parking_lot",
  "proptest",
  "pyo3",
  "rand",

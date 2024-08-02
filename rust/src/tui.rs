@@ -19,7 +19,9 @@ use ratatui::{
     Frame, Terminal,
 };
 
-use crate::c4r::{Pos, TerminalState};
+use crate::c4r::TerminalState;
+use crate::interactive_play::InteractivePlay;
+use crate::types::EvalPosT;
 
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
@@ -38,13 +40,20 @@ pub fn restore() -> io::Result<()> {
     Ok(())
 }
 
-#[derive(Debug, Default)]
-pub struct App {
-    pos: Pos,
+#[derive(Debug)]
+pub struct App<E: EvalPosT> {
+    game: InteractivePlay<E>,
     exit: bool,
 }
 
-impl App {
+impl<E: EvalPosT + Send + Sync> App<E> {
+    pub fn new(eval_pos: E, max_mcts_iterations: usize, exploration_constant: f32) -> Self {
+        Self {
+            game: InteractivePlay::new(eval_pos, max_mcts_iterations, exploration_constant),
+            exit: false,
+        }
+    }
+
     /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut Tui) -> io::Result<()> {
         while !self.exit {
@@ -91,21 +100,18 @@ impl App {
     }
 
     fn reset_board(&mut self) {
-        self.pos = Pos::default();
+        todo!()
     }
 
     fn make_move(&mut self, mov: usize) {
-        if self.pos.is_terminal_state().is_some() {
-            return;
-        }
-        if let Some(pos) = self.pos.make_move(mov) {
-            self.pos = pos;
-        }
+        self.game.make_move(mov);
     }
 }
 
-impl Widget for &App {
+impl<E: EvalPosT + Send + Sync> Widget for &App<E> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        let snapshot = self.game.snapshot();
+
         let title = Title::from(" c4a0 - Connect Four Alpha Zero ".bold());
         let outer_block = Block::bordered()
             .title(title.alignment(Alignment::Center))
@@ -123,7 +129,7 @@ impl Widget for &App {
         .split(inner_area);
 
         // Game
-        let mut pos = self.pos.clone();
+        let mut pos = snapshot.root_pos.clone();
         let isp0 = pos.ply() % 2 == 0;
         if !isp0 {
             pos = pos.invert();

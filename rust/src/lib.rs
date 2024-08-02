@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 mod c4r;
+mod interactive_play;
 mod mcts;
 mod pybridge;
 mod self_play;
