@@ -3,7 +3,8 @@ use std::io::{stdout, Stdout};
 use std::time::Duration;
 
 use ratatui::layout::{Constraint, Layout};
-use ratatui::widgets::Padding;
+use ratatui::style::Style;
+use ratatui::widgets::{Bar, BarChart, BarGroup, Padding};
 use ratatui::{
     backend::CrosstermBackend,
     buffer::Buffer,
@@ -22,7 +23,7 @@ use ratatui::{
 
 use crate::c4r::{Pos, TerminalState};
 use crate::interactive_play::{InteractivePlay, Snapshot};
-use crate::types::EvalPosT;
+use crate::types::{EvalPosT, Policy};
 
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
@@ -122,17 +123,19 @@ impl<E: EvalPosT + Send + Sync + 'static> Widget for &App<E> {
         let layout = Layout::vertical([
             Constraint::Length(10), // Game
             Constraint::Fill(1),    // Snapshot
-            // Constraint::Fill(1),    // Spacer
-            Constraint::Length(7), // Instructions
+            Constraint::Fill(1),    // Policy
+            Constraint::Length(7),  // Instructions
         ])
         .spacing(1)
         .split(inner_rect);
         let game_rect = layout[0];
         let snapshot_rect = layout[1];
-        let instructions_rect = layout[2];
+        let policy_rect = layout[2];
+        let instructions_rect = layout[3];
 
-        render_game(snapshot.root_pos.clone(), game_rect, buf);
+        render_game(snapshot.pos.clone(), game_rect, buf);
         render_snapshot(&snapshot, snapshot_rect, buf);
+        render_policy(&snapshot.policy, policy_rect, buf);
         render_instructions(instructions_rect, buf);
     }
 }
@@ -149,11 +152,7 @@ fn render_outer_block(rect: Rect, buf: &mut Buffer) -> Rect {
 }
 
 fn render_game(pos: Pos, rect: Rect, buf: &mut Buffer) {
-    let mut pos = pos;
     let isp0 = pos.ply() % 2 == 0;
-    if !isp0 {
-        pos = pos.invert();
-    }
     let to_play = match pos.is_terminal_state() {
         Some(TerminalState::PlayerWin) if isp0 => vec![" Blue".blue(), " won".into()],
         Some(TerminalState::PlayerWin) => vec![" Red".red(), " won".into()],
@@ -174,10 +173,46 @@ fn render_game(pos: Pos, rect: Rect, buf: &mut Buffer) {
 }
 
 fn render_snapshot(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
-    Paragraph::new(format!("{:#?}", snapshot))
+    let thread_running = if snapshot.bg_thread_running {
+        "MCTS running".green()
+    } else {
+        "MCTS stopped".red()
+    };
+    Paragraph::new(format!(
+        "Value: {}\nMCTS iters: {}/{}\n{}",
+        snapshot.value, snapshot.n_mcts_iterations, snapshot.max_mcts_iterations, thread_running,
+    ))
+    .block(
+        Block::bordered()
+            .title(" Snapshot")
+            .padding(Padding::uniform(1)),
+    )
+    .render(rect, buf);
+}
+
+fn render_policy(policy: &Policy, rect: Rect, buf: &mut Buffer) {
+    let policy_max = 1000u64;
+    let bars = policy
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            Bar::default()
+                .label(format!("{}", i + 1).into())
+                .value((p * (policy_max as f32)) as u64)
+                .text_value(format!("{:.2}", p)[1..].into())
+        })
+        .collect::<Vec<_>>();
+    BarChart::default()
+        .data(BarGroup::default().bars(&bars))
+        .bar_width(5)
+        .bar_gap(2)
+        .max(policy_max)
+        .bar_style(Style::new().yellow())
+        .value_style(Style::new().red().bold())
+        .label_style(Style::new().white())
         .block(
             Block::bordered()
-                .title(" Snapshot")
+                .title(" Policy")
                 .padding(Padding::uniform(1)),
         )
         .render(rect, buf);
@@ -186,7 +221,7 @@ fn render_snapshot(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
 fn render_instructions(rect: Rect, buf: &mut Buffer) {
     let instruction_text = vec![
         Line::from(vec!["<1-7>".blue().bold(), " Play Move".into()]),
-        Line::from(vec!["<M>".blue().bold(), " Continue MCTS".into()]),
+        Line::from(vec!["<M>".blue().bold(), " More MCTS iterations".into()]),
         Line::from(vec!["<R>".blue().bold(), " Restart".into()]),
         Line::from(vec!["<Q>".blue().bold(), " Quit".into()]),
     ];

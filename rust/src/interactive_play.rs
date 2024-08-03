@@ -48,7 +48,6 @@ impl<E: EvalPosT + Send + Sync + 'static> InteractivePlay<E> {
     pub fn make_move(&self, mov: Move) -> bool {
         let mut state_guard = self.state.lock();
         let move_successful = state_guard.make_move(mov);
-
         if move_successful {
             self.ensure_bg_thread(state_guard);
         }
@@ -98,10 +97,17 @@ struct State<E: EvalPosT> {
 
 impl<E: EvalPosT> State<E> {
     fn snapshot(&self) -> Snapshot {
+        let mut pos = self.game.root_pos().clone();
+        let mut value = self.game.root_value();
+        if pos.ply() % 2 == 1 {
+            pos = pos.invert();
+            value = -value;
+        }
+
         Snapshot {
-            root_pos: self.game.root_pos().clone(),
+            pos,
             policy: self.game.root_policy(),
-            value: self.game.root_value(),
+            value,
             n_mcts_iterations: self.game.root_visit_count(),
             max_mcts_iterations: self.max_mcts_iterations,
             exploration_constant: self.exploration_constant,
@@ -111,7 +117,8 @@ impl<E: EvalPosT> State<E> {
 
     /// Makes the given move returning whether it was successfully played.
     pub fn make_move(&mut self, mov: Move) -> bool {
-        if self.game.root_pos().is_terminal_state().is_some() {
+        let pos = &self.game.root_pos();
+        if pos.is_terminal_state().is_some() || !pos.legal_moves()[mov] {
             return false;
         }
         self.game.make_move(mov, self.exploration_constant);
@@ -142,10 +149,12 @@ impl<E: EvalPosT> State<E> {
     }
 }
 
-/// A snapshot of the current state of the interactive play.
+/// A snapshot of the current state of the interactive play. The snapshot is always from the
+/// perspective of Player 0 (i.e. odd plys have inverted [Pos] and [PosValue] to reflect
+/// Player 0's perspective).
 #[derive(Debug)]
 pub struct Snapshot {
-    pub root_pos: Pos,
+    pub pos: Pos,
     pub policy: Policy,
     pub value: PosValue,
     pub n_mcts_iterations: usize,
