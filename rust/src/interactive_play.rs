@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use crossbeam::thread;
 use parking_lot::Mutex;
 
 use crate::{
@@ -15,7 +14,7 @@ pub struct InteractivePlay<E: EvalPosT> {
     state: Arc<Mutex<State<E>>>,
 }
 
-impl<E: EvalPosT + Send + Sync> InteractivePlay<E> {
+impl<E: EvalPosT + Send + Sync + 'static> InteractivePlay<E> {
     pub fn new(eval_pos: E, max_mcts_iterations: usize, exploration_constant: f32) -> Self {
         let state = State {
             eval_pos,
@@ -41,7 +40,13 @@ impl<E: EvalPosT + Send + Sync> InteractivePlay<E> {
     /// Makes the given move returning whether it was successfully played.
     pub fn make_move(&self, mov: Move) -> bool {
         let mut state_guard = self.state.lock();
-        state_guard.make_move(mov)
+        let move_successful = state_guard.make_move(mov);
+
+        if move_successful {
+            drop(state_guard);
+            self.ensure_bg_thread();
+        }
+        move_successful
     }
 
     /// Ensures that the background thread is running.
@@ -55,19 +60,18 @@ impl<E: EvalPosT + Send + Sync> InteractivePlay<E> {
         drop(state_guard);
 
         let state = Arc::clone(&self.state);
-        thread::scope(move |s| {
-            s.builder()
-                .name("bg_mcts".into())
-                .spawn(move |_| loop {
-                    let mut state_guard = state.lock();
-                    if !state_guard.bg_thread_tick() {
-                        state_guard.bg_thread_running = false;
-                        return;
-                    }
-                })
-                .expect("failed to start bg_mcts thread");
-        })
-        .expect("failed to start bg_mcts thread");
+        std::thread::Builder::new()
+            .name("mcts_bg_thread".into())
+            .spawn(move || loop {
+                let mut state_guard = state.lock();
+                if state_guard.bg_thread_should_stop() {
+                    state_guard.bg_thread_running = false;
+                    return;
+                }
+
+                state_guard.bg_thread_tick();
+            })
+            .expect("failed to start mcts_bg_thread");
     }
 }
 
@@ -111,12 +115,7 @@ impl<E: EvalPosT> State<E> {
 
     /// A single tick of the background thread.
     /// Performs a single MCTS iteration and updates the game state accordingly.
-    /// Returns false if the thread should stop.
-    fn bg_thread_tick(&mut self) -> bool {
-        if self.bg_thread_should_stop() {
-            return false;
-        }
-
+    fn bg_thread_tick(&mut self) {
         // TODO: Preemptively forward pass additional pos leafs and store their results in cache
         // to maximize GPU parallelism instead of evaluating a single pos at a time.
         let leaf_pos = self.game.leaf_pos().clone();
@@ -129,12 +128,11 @@ impl<E: EvalPosT> State<E> {
 
         self.game
             .on_received_policy(eval.policy, eval.value, self.exploration_constant);
-
-        true
     }
 }
 
 /// A snapshot of the current state of the interactive play.
+#[derive(Debug)]
 pub struct Snapshot {
     pub root_pos: Pos,
     pub policy: Policy,
