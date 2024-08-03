@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 
 use crate::{
     c4r::{Move, Pos},
@@ -27,7 +27,7 @@ impl<E: EvalPosT + Send + Sync + 'static> InteractivePlay<E> {
         let ret = Self {
             state: Arc::new(Mutex::new(state)),
         };
-        ret.ensure_bg_thread();
+        ret.lock_and_ensure_bg_thread();
         ret
     }
 
@@ -37,21 +37,32 @@ impl<E: EvalPosT + Send + Sync + 'static> InteractivePlay<E> {
         state_guard.snapshot()
     }
 
+    /// Increases the number of MCTS iterations by the given amount.
+    pub fn increase_mcts_iters(&self, n: usize) {
+        let mut state_guard = self.state.lock();
+        state_guard.max_mcts_iterations += n;
+        self.ensure_bg_thread(state_guard);
+    }
+
     /// Makes the given move returning whether it was successfully played.
     pub fn make_move(&self, mov: Move) -> bool {
         let mut state_guard = self.state.lock();
         let move_successful = state_guard.make_move(mov);
 
         if move_successful {
-            drop(state_guard);
-            self.ensure_bg_thread();
+            self.ensure_bg_thread(state_guard);
         }
         move_successful
     }
 
-    /// Ensures that the background thread is running.
-    fn ensure_bg_thread(&self) {
-        let mut state_guard = self.state.lock();
+    /// Locks the state and then ensures that the background thread is running.
+    fn lock_and_ensure_bg_thread(&self) {
+        let state_guard = self.state.lock();
+        self.ensure_bg_thread(state_guard);
+    }
+
+    /// Ensures that the background thread is running with the given lock.
+    fn ensure_bg_thread(&self, mut state_guard: MutexGuard<State<E>>) {
         if state_guard.bg_thread_should_stop() || state_guard.bg_thread_running {
             return;
         }

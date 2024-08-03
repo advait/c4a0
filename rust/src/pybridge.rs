@@ -195,7 +195,7 @@ pub fn run_tui<'py>(py: Python<'py>, py_eval_pos_cb: &Bound<'py, PyAny>) -> PyRe
     // Start the TUI while releasing the GIL with allow_threads.
     py.allow_threads(move || {
         let mut terminal = tui::init()?;
-        let mut app = tui::App::new(eval_pos, 1000, 1.4);
+        let mut app = tui::App::new(eval_pos, 100, 1.4);
         app.run(&mut terminal)?;
         tui::restore()?;
         Ok(())

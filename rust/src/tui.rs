@@ -88,6 +88,7 @@ impl<E: EvalPosT + Send + Sync + 'static> App<E> {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Char('r') => self.reset_board(),
+            KeyCode::Char('m') => self.game.increase_mcts_iters(100),
             KeyCode::Char('1') => self.make_move(0),
             KeyCode::Char('2') => self.make_move(1),
             KeyCode::Char('3') => self.make_move(2),
@@ -185,6 +186,7 @@ fn render_snapshot(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
 fn render_instructions(rect: Rect, buf: &mut Buffer) {
     let instruction_text = vec![
         Line::from(vec!["<1-7>".blue().bold(), " Play Move".into()]),
+        Line::from(vec!["<M>".blue().bold(), " Continue MCTS".into()]),
         Line::from(vec!["<R>".blue().bold(), " Restart".into()]),
         Line::from(vec!["<Q>".blue().bold(), " Quit".into()]),
     ];
