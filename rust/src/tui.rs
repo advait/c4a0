@@ -23,7 +23,7 @@ use ratatui::{
 
 use crate::c4r::{Pos, TerminalState};
 use crate::interactive_play::{InteractivePlay, Snapshot};
-use crate::types::{EvalPosT, Policy};
+use crate::types::{EvalPosT, Policy, PosValue};
 
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
@@ -123,19 +123,19 @@ impl<E: EvalPosT + Send + Sync + 'static> Widget for &App<E> {
         let layout = Layout::vertical([
             Constraint::Length(10), // Game
             Constraint::Fill(1),    // Snapshot
-            Constraint::Fill(1),    // Policy
+            Constraint::Fill(1),    // Eval and Policy
             Constraint::Length(7),  // Instructions
         ])
         .spacing(1)
         .split(inner_rect);
         let game_rect = layout[0];
         let snapshot_rect = layout[1];
-        let policy_rect = layout[2];
+        let eval_and_policy_rect = layout[2];
         let instructions_rect = layout[3];
 
         render_game(snapshot.pos.clone(), game_rect, buf);
         render_snapshot(&snapshot, snapshot_rect, buf);
-        render_policy(&snapshot.policy, policy_rect, buf);
+        render_eval_and_policy(snapshot.value, &snapshot.policy, eval_and_policy_rect, buf);
         render_instructions(instructions_rect, buf);
     }
 }
@@ -190,6 +190,39 @@ fn render_snapshot(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
     .render(rect, buf);
 }
 
+fn render_eval_and_policy(pos_value: PosValue, policy: &Policy, rect: Rect, buf: &mut Buffer) {
+    let layout = Layout::horizontal([Constraint::Length(10), Constraint::Fill(1)]).split(rect);
+    render_eval(pos_value, layout[0], buf);
+    render_policy(policy, layout[1], buf);
+}
+
+fn render_eval(pos_value: PosValue, rect: Rect, buf: &mut Buffer) {
+    let value_max = 1000u64;
+    let value = ((pos_value + 1.0) / 2.0 * (value_max as f32)) as u64;
+    let bars = vec![Bar::default()
+        .label("Eval".into())
+        .value(value)
+        .text_value(format!("{:.2}", pos_value).into())];
+    BarChart::default()
+        .data(BarGroup::default().bars(&bars))
+        .bar_width(5)
+        .bar_gap(2)
+        .max(value_max)
+        .bar_style(if pos_value >= 0.0 {
+            Style::new().red()
+        } else {
+            Style::new().blue()
+        })
+        .value_style(Style::new().green().bold())
+        .label_style(Style::new().white())
+        .block(
+            Block::bordered()
+                .title(" Eval")
+                .padding(Padding::uniform(1)),
+        )
+        .render(rect, buf);
+}
+
 fn render_policy(policy: &Policy, rect: Rect, buf: &mut Buffer) {
     let policy_max = 1000u64;
     let bars = policy
@@ -208,7 +241,7 @@ fn render_policy(policy: &Policy, rect: Rect, buf: &mut Buffer) {
         .bar_gap(2)
         .max(policy_max)
         .bar_style(Style::new().yellow())
-        .value_style(Style::new().red().bold())
+        .value_style(Style::new().green().bold())
         .label_style(Style::new().white())
         .block(
             Block::bordered()
