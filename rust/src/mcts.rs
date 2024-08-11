@@ -253,6 +253,44 @@ impl MctsGame {
         self.make_move(mov, exploration_constant);
     }
 
+    /// Sets the root node to the given position, clearing the entire tree and moves.
+    /// This is necessary when updating the root position to a non-child state (e.g. via
+    /// [Self::reset_game] or [Self::undo_move]) as ancestor states are no longer valid after
+    /// [Self::make_move] is called. Therefore, instead of re-using stale ancestor states, we
+    /// simply blow away the tree and start from scratch.
+    fn reset_root_and_moves(&mut self, pos: Pos, moves: Vec<Move>) {
+        self.nodes.clear();
+        let root_node = Node::new(pos, None, 1.0);
+        self.nodes.push(root_node);
+        self.root_id = 0;
+        self.leaf_id = 0;
+        self.moves = moves;
+    }
+
+    /// Resets the game to the starting position.
+    pub fn reset_game(&mut self) {
+        self.reset_root_and_moves(Pos::default(), Vec::default())
+    }
+
+    /// Undoes the last move by manually replaying the moves from the start and calling
+    /// [Self::reset_root_and_moves] accordingly. Returns whether the undo actually happened.
+    pub fn undo_move(&mut self) -> bool {
+        if self.moves.is_empty() {
+            return false;
+        }
+
+        let mut moves = self.moves.clone();
+        let mut pos = Pos::default();
+        moves.pop();
+        for &mov in &moves {
+            pos = pos
+                .make_move(mov)
+                .expect("attempted to undo an invalid move");
+        }
+        self.reset_root_and_moves(pos, moves);
+        true
+    }
+
     /// The number of visits to the root node.
     pub fn root_visit_count(&self) -> usize {
         self.get(self.root_id).visit_count

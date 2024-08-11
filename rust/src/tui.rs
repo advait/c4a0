@@ -88,7 +88,8 @@ impl<E: EvalPosT + Send + Sync + 'static> App<E> {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
             KeyCode::Char('q') => self.exit(),
-            KeyCode::Char('r') => self.reset_board(),
+            KeyCode::Char('r') => self.game.reset_game(),
+            KeyCode::Char('u') => self.game.undo_move(),
             KeyCode::Char('m') => self.game.increase_mcts_iters(100),
             KeyCode::Char('t') => self.game.increase_mcts_iters(1),
             KeyCode::Char('1') => self.make_move(0),
@@ -99,15 +100,11 @@ impl<E: EvalPosT + Send + Sync + 'static> App<E> {
             KeyCode::Char('6') => self.make_move(5),
             KeyCode::Char('7') => self.make_move(6),
             _ => {}
-        }
+        };
     }
 
     fn exit(&mut self) {
         self.exit = true;
-    }
-
-    fn reset_board(&mut self) {
-        todo!()
     }
 
     fn make_move(&mut self, mov: usize) {
@@ -264,6 +261,7 @@ fn render_instructions(rect: Rect, buf: &mut Buffer) {
     let instruction_text = vec![
         Line::from(vec!["<1-7>".blue().bold(), " Play Move".into()]),
         Line::from(vec!["<M>".blue().bold(), " More MCTS iterations".into()]),
+        Line::from(vec!["<U>".blue().bold(), " Undo last move".into()]),
         Line::from(vec!["<R>".blue().bold(), " Restart".into()]),
         Line::from(vec!["<Q>".blue().bold(), " Quit".into()]),
     ];

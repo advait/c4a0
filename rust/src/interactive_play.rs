@@ -68,6 +68,22 @@ impl<E: EvalPosT + Send + Sync + 'static> InteractivePlay<E> {
         move_successful
     }
 
+    /// Resets the game to the starting position.
+    pub fn reset_game(&self) {
+        let mut state_guard = self.state.lock();
+        state_guard.reset_game();
+        self.ensure_bg_thread(state_guard);
+    }
+
+    /// Undoes the last move if possible.
+    pub fn undo_move(&self) {
+        let mut state_guard = self.state.lock();
+        let move_successful = state_guard.undo_move();
+        if move_successful {
+            self.ensure_bg_thread(state_guard);
+        }
+    }
+
     /// Locks the state and then ensures that the background thread is running.
     fn lock_and_ensure_bg_thread(&self) {
         let state_guard = self.state.lock();
@@ -136,6 +152,16 @@ impl<E: EvalPosT> State<E> {
         }
         self.game.make_move(mov, self.exploration_constant);
         true
+    }
+
+    /// Resets the game to the starting position.
+    pub fn reset_game(&mut self) {
+        self.game.reset_game();
+    }
+
+    /// Undoes the last move returning whether it was successfully undone.
+    pub fn undo_move(&mut self) -> bool {
+        self.game.undo_move()
     }
 
     /// Returns true if the background thread should stop.
