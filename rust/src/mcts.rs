@@ -107,6 +107,8 @@ impl MctsGame {
                 TerminalState::OpponentWin => -1.0,
                 TerminalState::Draw => 0.0,
             };
+            log::debug!("on_received_policy: terminal state, value={}", value);
+
             self._backpropagate(value);
             self._select_new_leaf(exploration_constant);
             return;
@@ -127,6 +129,11 @@ impl MctsGame {
             }
         }
         let policy_probs = softmax(policy_logprobs);
+        log::debug!(
+            "policy after softmax={:?}\nnn_value={:.2}",
+            policy_probs,
+            nn_value
+        );
 
         self._expand_leaf(policy_probs);
         self._backpropagate(nn_value);
@@ -172,6 +179,15 @@ impl MctsGame {
         loop {
             pos.visit_count += 1;
             pos.exploitation_value_sum += value;
+            log::debug!(
+                "backpropagate: pos=\n{}\nvalue_delta={}\nexploit_value={:.2}/{}={:.2}",
+                pos.pos,
+                value,
+                pos.exploitation_value_sum,
+                pos.visit_count,
+                pos.exploitation_value(),
+            );
+
             value = -value;
 
             if let Some(parent_id) = pos.parent {
@@ -207,6 +223,7 @@ impl MctsGame {
         }
 
         self.leaf_id = cur_id;
+        log::debug!("select_new_leaf: leaf=\n{}", self.leaf_pos());
     }
 
     /// Makes a move, updating the root node to be the child node corresponding to the move.
@@ -322,9 +339,8 @@ impl Node {
     }
 
     /// The exploitation component of the UCT value, i.e. the average win rate.
-    /// Because we are viewing the value from the perspective of the parent node, we negate it.
     fn exploitation_value(&self) -> PosValue {
-        -1.0 * self.exploitation_value_sum / ((self.visit_count as f32) + 1.0)
+        self.exploitation_value_sum / ((self.visit_count as f32) + 1.0)
     }
 
     /// The exploration component of the UCT value. Higher visit counts result in lower values.
@@ -340,8 +356,10 @@ impl Node {
     }
 
     /// The UCT value of this node. Represents the lucrativeness of this node according to MCTS.
+    /// Because [Self::utc_value] is called from the perspective of the *parent* node, we negate
+    /// the exploration value.
     fn uct_value(&self, game: &MctsGame, exploration_constant: f32) -> PosValue {
-        self.exploitation_value() + exploration_constant * self.exploration_value(game)
+        -self.exploitation_value() + exploration_constant * self.exploration_value(game)
     }
 
     /// Whether the game is over (won, los, draw) from this position.
@@ -413,38 +431,38 @@ pub fn apply_temperature(policy: &Policy, temperature: f32) -> Policy {
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
-    use more_asserts::assert_gt;
+    use more_asserts::{assert_gt, assert_lt};
     use proptest::prelude::*;
 
     const CONST_COL_WEIGHT: f32 = 1.0 / (Pos::N_COLS as f32);
     const CONST_POLICY: Policy = [CONST_COL_WEIGHT; Pos::N_COLS];
-    const TEST_EXPLORATION_CONSTANT: f32 = 1.0;
+    const TEST_EXPLORATION_CONSTANT: f32 = 4.0;
 
     /// Runs a batch with a single game and a constant evaluation function.
-    fn run_mcts(pos: Pos, n_iterations: usize) -> Policy {
+    fn run_mcts(pos: Pos, n_iterations: usize) -> (Policy, PosValue) {
         let mut game = MctsGame::new_from_pos(pos, GameMetadata::default());
         for _ in 0..n_iterations {
             game.on_received_policy(MctsGame::UNIFORM_POLICY, 0.0, TEST_EXPLORATION_CONSTANT)
         }
-        game.root_policy()
+        (game.root_policy(), game.root_value())
     }
 
     #[test]
     fn mcts_prefers_center_column() {
-        let policy = run_mcts(Pos::default(), 1000);
+        let (policy, _value) = run_mcts(Pos::default(), 1000);
         assert_policy_sum_1(&policy);
         assert_gt!(policy[3], CONST_COL_WEIGHT);
     }
 
     #[test]
     fn mcts_depth_one() {
-        let policy = run_mcts(Pos::default(), 1 + Pos::N_COLS + Pos::N_COLS);
+        let (policy, _value) = run_mcts(Pos::default(), 1 + Pos::N_COLS + Pos::N_COLS);
         assert_policy_eq(&policy, &CONST_POLICY, Node::EPS);
     }
 
     #[test]
     fn mcts_depth_two() {
-        let policy = run_mcts(
+        let (policy, _value) = run_mcts(
             Pos::default(),
             1 + Pos::N_COLS + (Pos::N_COLS * Pos::N_COLS) + (Pos::N_COLS * Pos::N_COLS),
         );
@@ -453,11 +471,12 @@ mod tests {
 
     #[test]
     fn mcts_depth_uneven() {
-        let policy = run_mcts(Pos::default(), 47);
+        let (policy, _value) = run_mcts(Pos::default(), 47);
         assert_policy_ne(&policy, &CONST_POLICY, Node::EPS);
     }
 
-    /// From a winning position, mcts should end up with a policy that prefers the winning move.
+    /// From an obviously winning position, mcts should end up with a policy that prefers the
+    /// winning move.
     #[test]
     fn winning_position() {
         let pos = Pos::from(
@@ -472,10 +491,52 @@ mod tests {
             .join("\n")
             .as_str(),
         );
-        let policy = run_mcts(pos, 1_000);
+        let (policy, value) = run_mcts(pos, 1_000);
         let winning_moves = policy[0] + policy[4];
         assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
-        assert_relative_eq!(winning_moves, 1.0, epsilon = 0.01)
+        assert_gt!(winning_moves, 0.99);
+        assert_gt!(value, 0.99);
+    }
+
+    /// From a winning position, mcts should end up with a policy that prefers the winning move.
+    #[test]
+    fn winning_position2() {
+        let pos = Pos::from(
+            [
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫🔵🔵⚫⚫⚫",
+                "⚫⚫🔴🔴⚫⚫⚫",
+            ]
+            .join("\n")
+            .as_str(),
+        );
+        let (policy, value) = run_mcts(pos, 10_000);
+        let winning_moves = policy[1] + policy[4];
+        assert_gt!(winning_moves, 0.98);
+        assert_gt!(value, 0.98);
+    }
+
+    /// From a winning position, mcts should end up with a policy that prefers the winning move.
+    #[test]
+    fn winning_position3() {
+        let pos = Pos::from(
+            [
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫🔴🔵🔵⚫⚫⚫",
+                "⚫🔵🔴🔴🔴⚫⚫",
+                "⚫🔵🔵🔴🔵🔴⚫",
+            ]
+            .join("\n")
+            .as_str(),
+        );
+        let (policy, value) = run_mcts(pos, 10_000);
+        assert_gt!(policy[5], 0.99);
+        assert_gt!(value, 0.99);
     }
 
     /// From a definitively losing position, mcts should end up with a uniform policy because it's
@@ -494,11 +555,12 @@ mod tests {
             .join("\n")
             .as_str(),
         );
-        let policy = run_mcts(pos, 300_000);
+        let (policy, value) = run_mcts(pos, 300_000);
         assert_policy_sum_1(&policy);
         policy.iter().for_each(|&p| {
             assert_relative_eq!(p, CONST_COL_WEIGHT, epsilon = 0.01);
         });
+        assert_lt!(value, -0.99);
     }
 
     /// Strategy for generating a policy with at least one non-zero value.

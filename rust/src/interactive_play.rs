@@ -5,7 +5,7 @@ use parking_lot::{Mutex, MutexGuard};
 use crate::{
     c4r::{Move, Pos},
     mcts::MctsGame,
-    types::{EvalPosT, Policy, PosValue},
+    types::{EvalPosT, GameMetadata, Policy, PosValue},
 };
 
 /// Enables interactive play with a game using MCTS.
@@ -16,9 +16,23 @@ pub struct InteractivePlay<E: EvalPosT> {
 
 impl<E: EvalPosT + Send + Sync + 'static> InteractivePlay<E> {
     pub fn new(eval_pos: E, max_mcts_iterations: usize, exploration_constant: f32) -> Self {
+        Self::new_from_pos(
+            Pos::default(),
+            eval_pos,
+            max_mcts_iterations,
+            exploration_constant,
+        )
+    }
+
+    pub fn new_from_pos(
+        pos: Pos,
+        eval_pos: E,
+        max_mcts_iterations: usize,
+        exploration_constant: f32,
+    ) -> Self {
         let state = State {
             eval_pos,
-            game: MctsGame::default(),
+            game: MctsGame::new_from_pos(pos, GameMetadata::default()),
             max_mcts_iterations,
             exploration_constant,
             bg_thread_running: false,
@@ -68,7 +82,6 @@ impl<E: EvalPosT + Send + Sync + 'static> InteractivePlay<E> {
 
         state_guard.bg_thread_running = true;
         drop(state_guard);
-
         let state = Arc::clone(&self.state);
         std::thread::Builder::new()
             .name("mcts_bg_thread".into())
@@ -146,6 +159,13 @@ impl<E: EvalPosT> State<E> {
 
         self.game
             .on_received_policy(eval.policy, eval.value, self.exploration_constant);
+
+        let snapshot = self.snapshot();
+        log::debug!(
+            "bg_thread_tick finished; root_policy: {:?}\nroot_value: {:.2}",
+            snapshot.policy,
+            snapshot.value
+        );
     }
 }
 
@@ -161,4 +181,66 @@ pub struct Snapshot {
     pub max_mcts_iterations: usize,
     pub exploration_constant: f32,
     pub bg_thread_running: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use more_asserts::assert_ge;
+
+    use crate::{c4r::Pos, self_play::tests::UniformEvalPos};
+
+    use super::{InteractivePlay, Snapshot};
+
+    const TEST_EXPLORATION_CONSTANT: f32 = 4.0;
+
+    impl InteractivePlay<UniformEvalPos> {
+        fn new_test(pos: Pos, max_mcts_iters: usize) -> InteractivePlay<UniformEvalPos> {
+            InteractivePlay::new_from_pos(
+                pos,
+                UniformEvalPos {},
+                max_mcts_iters,
+                TEST_EXPLORATION_CONSTANT,
+            )
+        }
+
+        fn block_then_snapshot(&self) -> Snapshot {
+            loop {
+                let state_guard = self.state.lock();
+                if !state_guard.bg_thread_running {
+                    return state_guard.snapshot();
+                }
+                std::thread::yield_now();
+            }
+        }
+    }
+
+    #[test]
+    fn forcing_position() {
+        let pos = Pos::from(
+            [
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫⚫⚫⚫⚫⚫",
+                "⚫⚫🔵🔵⚫⚫⚫",
+                "⚫⚫🔴🔴⚫⚫⚫",
+            ]
+            .join("\n")
+            .as_str(),
+        );
+        let play = InteractivePlay::new_test(pos, 10_000);
+        let snapshot = play.block_then_snapshot();
+        let winning_moves = snapshot.policy[1] + snapshot.policy[4];
+        assert_ge!(winning_moves, 0.98);
+        assert_ge!(snapshot.value, 0.98);
+
+        play.make_move(1);
+        let snapshot = play.block_then_snapshot();
+        assert_ge!(snapshot.value, 0.99);
+
+        play.make_move(0);
+        let snapshot = play.block_then_snapshot();
+        assert_ge!(snapshot.policy[4], 0.99);
+        assert_ge!(snapshot.value, 0.99);
+    }
 }

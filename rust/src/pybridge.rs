@@ -187,7 +187,12 @@ fn policy_from_slice(policy: &[f32]) -> Policy {
 }
 
 #[pyfunction]
-pub fn run_tui<'py>(py: Python<'py>, py_eval_pos_cb: &Bound<'py, PyAny>) -> PyResult<()> {
+pub fn run_tui<'py>(
+    py: Python<'py>,
+    py_eval_pos_cb: &Bound<'py, PyAny>,
+    max_mcts_iters: usize,
+    exploration_constant: f32,
+) -> PyResult<()> {
     let eval_pos = PyEvalPos {
         py_eval_pos_cb: py_eval_pos_cb.to_object(py),
     };
@@ -195,7 +200,7 @@ pub fn run_tui<'py>(py: Python<'py>, py_eval_pos_cb: &Bound<'py, PyAny>) -> PyRe
     // Start the TUI while releasing the GIL with allow_threads.
     py.allow_threads(move || {
         let mut terminal = tui::init()?;
-        let mut app = tui::App::new(eval_pos, 100, 1.4);
+        let mut app = tui::App::new(eval_pos, max_mcts_iters, exploration_constant);
         app.run(&mut terminal)?;
         tui::restore()?;
         Ok(())

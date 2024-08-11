@@ -90,6 +90,7 @@ impl<E: EvalPosT + Send + Sync + 'static> App<E> {
             KeyCode::Char('q') => self.exit(),
             KeyCode::Char('r') => self.reset_board(),
             KeyCode::Char('m') => self.game.increase_mcts_iters(100),
+            KeyCode::Char('t') => self.game.increase_mcts_iters(1),
             KeyCode::Char('1') => self.make_move(0),
             KeyCode::Char('2') => self.make_move(1),
             KeyCode::Char('3') => self.make_move(2),
@@ -173,15 +174,23 @@ fn render_game(pos: Pos, rect: Rect, buf: &mut Buffer) {
 }
 
 fn render_snapshot(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
-    let thread_running = if snapshot.bg_thread_running {
-        "MCTS running".green()
-    } else {
-        "MCTS stopped".red()
-    };
-    Paragraph::new(format!(
-        "Value: {}\nMCTS iters: {}/{}\n{}",
-        snapshot.value, snapshot.n_mcts_iterations, snapshot.max_mcts_iterations, thread_running,
-    ))
+    Paragraph::new(vec![
+        Line::from(vec![
+            "Value: ".into(),
+            format!("{:.2}", snapshot.value).yellow().bold(),
+        ]),
+        Line::from(vec![
+            "MCTS iters: ".into(),
+            snapshot.n_mcts_iterations.to_string().bold(),
+            "/".into(),
+            snapshot.max_mcts_iterations.to_string().bold(),
+        ]),
+        Line::from(if snapshot.bg_thread_running {
+            "MCTS running".green()
+        } else {
+            "MCTS stopped".red()
+        }),
+    ])
     .block(
         Block::bordered()
             .title(" Snapshot")
