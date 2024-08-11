@@ -87,28 +87,22 @@ impl<E: EvalPosT + Send + Sync + 'static> App<E> {
 
     fn handle_key_event(&mut self, key_event: KeyEvent) {
         match key_event.code {
-            KeyCode::Char('q') => self.exit(),
-            KeyCode::Char('r') => self.game.reset_game(),
-            KeyCode::Char('u') => self.game.undo_move(),
+            KeyCode::Char('b') => self.game.make_random_move(0.0),
             KeyCode::Char('m') => self.game.increase_mcts_iters(100),
+            KeyCode::Char('n') => self.game.reset_game(),
+            KeyCode::Char('r') => self.game.make_random_move(1.0),
+            KeyCode::Char('q') => self.exit = true,
             KeyCode::Char('t') => self.game.increase_mcts_iters(1),
-            KeyCode::Char('1') => self.make_move(0),
-            KeyCode::Char('2') => self.make_move(1),
-            KeyCode::Char('3') => self.make_move(2),
-            KeyCode::Char('4') => self.make_move(3),
-            KeyCode::Char('5') => self.make_move(4),
-            KeyCode::Char('6') => self.make_move(5),
-            KeyCode::Char('7') => self.make_move(6),
+            KeyCode::Char('u') => self.game.undo_move(),
+            KeyCode::Char('1') => self.game.make_move(0),
+            KeyCode::Char('2') => self.game.make_move(1),
+            KeyCode::Char('3') => self.game.make_move(2),
+            KeyCode::Char('4') => self.game.make_move(3),
+            KeyCode::Char('5') => self.game.make_move(4),
+            KeyCode::Char('6') => self.game.make_move(5),
+            KeyCode::Char('7') => self.game.make_move(6),
             _ => {}
         };
-    }
-
-    fn exit(&mut self) {
-        self.exit = true;
-    }
-
-    fn make_move(&mut self, mov: usize) {
-        self.game.make_move(mov);
     }
 }
 
@@ -260,9 +254,11 @@ fn render_policy(policy: &Policy, rect: Rect, buf: &mut Buffer) {
 fn render_instructions(rect: Rect, buf: &mut Buffer) {
     let instruction_text = vec![
         Line::from(vec!["<1-7>".blue().bold(), " Play Move".into()]),
+        Line::from(vec!["<B>".blue().bold(), " Play the best move".into()]),
+        Line::from(vec!["<R>".blue().bold(), " Play a random move".into()]),
         Line::from(vec!["<M>".blue().bold(), " More MCTS iterations".into()]),
         Line::from(vec!["<U>".blue().bold(), " Undo last move".into()]),
-        Line::from(vec!["<R>".blue().bold(), " Restart".into()]),
+        Line::from(vec!["<N>".blue().bold(), " New game".into()]),
         Line::from(vec!["<Q>".blue().bold(), " Quit".into()]),
     ];
     Paragraph::new(instruction_text)

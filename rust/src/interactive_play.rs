@@ -58,27 +58,35 @@ impl<E: EvalPosT + Send + Sync + 'static> InteractivePlay<E> {
         self.ensure_bg_thread(state_guard);
     }
 
-    /// Makes the given move returning whether it was successfully played.
-    pub fn make_move(&self, mov: Move) -> bool {
+    /// Makes the given move.
+    pub fn make_move(&self, mov: Move) {
         let mut state_guard = self.state.lock();
         let move_successful = state_guard.make_move(mov);
         if move_successful {
             self.ensure_bg_thread(state_guard);
         }
-        move_successful
+    }
+
+    /// Makes a random move using the given temperature.
+    pub fn make_random_move(&self, temperature: f32) {
+        let mut state_guard = self.state.lock();
+        let move_successful = state_guard.make_random_move(temperature);
+        if move_successful {
+            self.ensure_bg_thread(state_guard);
+        }
     }
 
     /// Resets the game to the starting position.
     pub fn reset_game(&self) {
         let mut state_guard = self.state.lock();
-        state_guard.reset_game();
+        state_guard.game.reset_game();
         self.ensure_bg_thread(state_guard);
     }
 
     /// Undoes the last move if possible.
     pub fn undo_move(&self) {
         let mut state_guard = self.state.lock();
-        let move_successful = state_guard.undo_move();
+        let move_successful = state_guard.game.undo_move();
         if move_successful {
             self.ensure_bg_thread(state_guard);
         }
@@ -154,14 +162,14 @@ impl<E: EvalPosT> State<E> {
         true
     }
 
-    /// Resets the game to the starting position.
-    pub fn reset_game(&mut self) {
-        self.game.reset_game();
-    }
-
-    /// Undoes the last move returning whether it was successfully undone.
-    pub fn undo_move(&mut self) -> bool {
-        self.game.undo_move()
+    /// Makes a random move using the given temperature.
+    pub fn make_random_move(&mut self, temperature: f32) -> bool {
+        if self.game.root_pos().is_terminal_state().is_some() {
+            return false;
+        }
+        self.game
+            .make_random_move(self.exploration_constant, temperature);
+        true
     }
 
     /// Returns true if the background thread should stop.
