@@ -18,7 +18,7 @@ use ratatui::{
     symbols::border,
     text::Line,
     widgets::{block::Title, Block, Paragraph, Widget},
-    Frame, Terminal,
+    Terminal,
 };
 
 use crate::c4r::{Pos, TerminalState};
@@ -59,17 +59,16 @@ impl<E: EvalPosT + Send + Sync + 'static> App<E> {
     /// runs the application's main loop until the user quits
     pub fn run(&mut self, terminal: &mut Tui) -> io::Result<()> {
         while !self.exit {
-            terminal.draw(|frame| self.render_frame(frame))?;
+            terminal.draw(|frame| {
+                let snapshot = self.game.snapshot();
+                render_app(snapshot, frame.size(), frame.buffer_mut());
+            })?;
 
             if event::poll(Duration::from_millis(100))? {
                 self.handle_events()?;
             }
         }
         Ok(())
-    }
-
-    fn render_frame(&self, frame: &mut Frame) {
-        frame.render_widget(self, frame.size());
     }
 
     /// updates the application's state based on user input
@@ -106,30 +105,25 @@ impl<E: EvalPosT + Send + Sync + 'static> App<E> {
     }
 }
 
-impl<E: EvalPosT + Send + Sync + 'static> Widget for &App<E> {
-    fn render(self, rect: Rect, buf: &mut Buffer) {
-        let snapshot = self.game.snapshot();
+fn render_app(snapshot: Snapshot, rect: Rect, buf: &mut Buffer) {
+    let inner_rect = render_outer_block(rect, buf);
+    let layout = Layout::vertical([
+        Constraint::Length(10), // Game
+        Constraint::Length(7),  // Snapshot Summary
+        Constraint::Fill(1),    // Eval and Policy
+        Constraint::Length(11), // Instructions
+    ])
+    .spacing(1)
+    .split(inner_rect);
+    let game_rect = layout[0];
+    let snapshot_rect = layout[1];
+    let eval_and_policy_rect = layout[2];
+    let instructions_rect = layout[3];
 
-        let inner_rect = render_outer_block(rect, buf);
-
-        let layout = Layout::vertical([
-            Constraint::Length(10), // Game
-            Constraint::Length(7),  // Snapshot
-            Constraint::Fill(1),    // Eval and Policy
-            Constraint::Length(11), // Instructions
-        ])
-        .spacing(1)
-        .split(inner_rect);
-        let game_rect = layout[0];
-        let snapshot_rect = layout[1];
-        let eval_and_policy_rect = layout[2];
-        let instructions_rect = layout[3];
-
-        render_game(snapshot.pos.clone(), game_rect, buf);
-        render_snapshot(&snapshot, snapshot_rect, buf);
-        render_eval_and_policy(snapshot.value, &snapshot.policy, eval_and_policy_rect, buf);
-        render_instructions(instructions_rect, buf);
-    }
+    render_game(snapshot.pos.clone(), game_rect, buf);
+    render_snapshot_summary(&snapshot, snapshot_rect, buf);
+    render_eval_and_policy(snapshot.value, &snapshot.policy, eval_and_policy_rect, buf);
+    render_instructions(instructions_rect, buf);
 }
 
 fn render_outer_block(rect: Rect, buf: &mut Buffer) -> Rect {
@@ -164,7 +158,7 @@ fn render_game(pos: Pos, rect: Rect, buf: &mut Buffer) {
         .render(rect, buf);
 }
 
-fn render_snapshot(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
+fn render_snapshot_summary(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
     Paragraph::new(vec![
         Line::from(vec![
             "Value: ".into(),
