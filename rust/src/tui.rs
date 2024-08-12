@@ -114,9 +114,9 @@ impl<E: EvalPosT + Send + Sync + 'static> Widget for &App<E> {
 
         let layout = Layout::vertical([
             Constraint::Length(10), // Game
-            Constraint::Fill(1),    // Snapshot
+            Constraint::Length(7),  // Snapshot
             Constraint::Fill(1),    // Eval and Policy
-            Constraint::Length(7),  // Instructions
+            Constraint::Length(11), // Instructions
         ])
         .spacing(1)
         .split(inner_rect);
