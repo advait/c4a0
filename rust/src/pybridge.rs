@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     c4r::Pos,
     self_play::self_play,
+    tui,
     types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, ModelID, Policy, Sample},
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
@@ -183,6 +184,27 @@ fn policy_from_slice(policy: &[f32]) -> Policy {
     let mut ret = Policy::default();
     ret.copy_from_slice(policy);
     ret
+}
+
+#[pyfunction]
+pub fn run_tui<'py>(
+    py: Python<'py>,
+    py_eval_pos_cb: &Bound<'py, PyAny>,
+    max_mcts_iters: usize,
+    exploration_constant: f32,
+) -> PyResult<()> {
+    let eval_pos = PyEvalPos {
+        py_eval_pos_cb: py_eval_pos_cb.to_object(py),
+    };
+
+    // Start the TUI while releasing the GIL with allow_threads.
+    py.allow_threads(move || {
+        let mut terminal = tui::init()?;
+        let mut app = tui::App::new(eval_pos, max_mcts_iters, exploration_constant);
+        app.run(&mut terminal)?;
+        tui::restore()?;
+        Ok(())
+    })
 }
 
 /// Convert a Rust error into a Python exception.

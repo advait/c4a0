@@ -365,14 +365,14 @@ fn init_progress_bars(n_games: usize) -> (ProgressBar, ProgressBar, ProgressBar)
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use more_asserts::{assert_ge, assert_le};
 
     use super::*;
 
     const MAX_NN_BATCH_SIZE: usize = 10;
 
-    struct UniformEvalPos {}
+    pub struct UniformEvalPos {}
     impl EvalPosT for UniformEvalPos {
         fn eval_pos(&self, _model_id: ModelID, pos: Vec<Pos>) -> Vec<EvalPosResult> {
             assert_le!(pos.len(), MAX_NN_BATCH_SIZE);

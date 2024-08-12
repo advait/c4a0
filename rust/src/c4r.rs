@@ -1,5 +1,5 @@
 use core::fmt;
-use std::array::from_fn;
+use std::{array::from_fn, fmt::Display};
 
 use serde::{Deserialize, Serialize};
 
@@ -62,7 +62,7 @@ impl Pos {
             if (idx & self.mask) == 0 {
                 let mut ret = self.clone();
                 ret._set_piece_unsafe(row, col, CellValue::Player);
-                return Some(ret._invert());
+                return Some(ret.invert());
             }
         }
         None
@@ -114,7 +114,7 @@ impl Pos {
     }
 
     /// Inverts the colors of this position.
-    fn _invert(mut self) -> Pos {
+    pub fn invert(mut self) -> Pos {
         self.value = !self.value;
         self.value &= self.mask;
         self
@@ -220,7 +220,7 @@ impl Pos {
     pub fn is_terminal_state(&self) -> Option<TerminalState> {
         if self._is_terminal_for_player() {
             Some(TerminalState::PlayerWin)
-        } else if self.clone()._invert()._is_terminal_for_player() {
+        } else if self.clone().invert()._is_terminal_for_player() {
             Some(TerminalState::OpponentWin)
         } else if self.ply() == Self::N_COLS * Self::N_ROWS {
             Some(TerminalState::Draw)
@@ -280,11 +280,11 @@ impl Pos {
     }
 }
 
-impl ToString for Pos {
-    fn to_string(&self) -> String {
+impl Display for Pos {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut ret: Vec<String> = Vec::with_capacity(Self::N_ROWS);
         for row in (0..Self::N_ROWS).rev() {
-            let mut s = String::new();
+            let mut s = String::with_capacity(Pos::N_COLS);
             for col in 0..Self::N_COLS {
                 let p = match self.get(row, col) {
                     Some(CellValue::Player) => "🔴",
@@ -295,7 +295,8 @@ impl ToString for Pos {
             }
             ret.push(s);
         }
-        ret.join("\n")
+        let ret = ret.join("\n");
+        write!(f, "{}", ret)
     }
 }
 

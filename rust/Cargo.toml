@@ -19,6 +19,10 @@ indicatif = "0.17.8"
 numpy = "0.21.0"
 serde = { version = "1.0.204", features = ["derive"] }
 serde_cbor = "0.11.2"
+ratatui = "0.27.0"
+parking_lot = "0.12.3"
+log = "0.4.22"
+env_logger = "0.11.5"
 
 [dev-dependencies]
 proptest = "1.5.0"

@@ -8,8 +8,11 @@ import typer
 
 from c4a0.nn import ModelConfig
 from c4a0.sweep import perform_sweep
-from c4a0.training import training_loop
+from c4a0.tournament import ModelID, RandomPlayer, UniformPlayer
+from c4a0.training import TrainingGen, training_loop
 from c4a0.utils import get_torch_device
+
+import c4a0_rust  # type: ignore
 
 app = typer.Typer()
 
@@ -65,6 +68,31 @@ def train(
 def sweep(base_dir: str = "training"):
     """Perofrms a hyperparameter sweep."""
     perform_sweep(base_dir)
+
+
+@app.command()
+def ui(
+    base_dir: str = "training",
+    max_mcts_iters: int = 100,
+    exploration_constant: float = 1.4,
+    model: str = "best",
+):
+    """Play interactive games"""
+    gen = TrainingGen.load_latest(base_dir)
+    if model == "best":
+        nn = gen.get_model(base_dir)
+    elif model == "random":
+        nn = RandomPlayer(ModelID(0))
+    elif model == "uniform":
+        nn = UniformPlayer(ModelID(0))
+    else:
+        raise ValueError(f"unrecognized model: {model}")
+
+    c4a0_rust.run_tui(  # type: ignore
+        lambda model_id, x: nn.forward_numpy(x),
+        max_mcts_iters,
+        exploration_constant,
+    )
 
 
 if __name__ == "__main__":
