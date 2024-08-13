@@ -61,7 +61,7 @@ impl Pos {
             let idx = Self::_idx_mask_unsafe(row, col);
             if (idx & self.mask) == 0 {
                 let mut ret = self.clone();
-                ret._set_piece_unsafe(row, col, CellValue::Player);
+                ret._set_piece_unsafe(row, col, Some(CellValue::Player));
                 return Some(ret.invert());
             }
         }
@@ -94,15 +94,20 @@ impl Pos {
     }
 
     /// Mutably sets the given piece without any bounds or collision checking.
-    fn _set_piece_unsafe(&mut self, row: usize, col: usize, piece: CellValue) {
+    fn _set_piece_unsafe(&mut self, row: usize, col: usize, piece: Option<CellValue>) {
         let idx_mask = Self::_idx_mask_unsafe(row, col);
-        self.mask |= idx_mask;
         match piece {
-            CellValue::Opponent => {
+            Some(CellValue::Opponent) => {
+                self.mask |= idx_mask;
                 self.value &= !idx_mask;
             }
-            CellValue::Player => {
+            Some(CellValue::Player) => {
+                self.mask |= idx_mask;
                 self.value |= idx_mask;
+            }
+            None => {
+                self.mask &= !idx_mask;
+                self.value &= !idx_mask;
             }
         };
     }
@@ -252,11 +257,77 @@ impl Pos {
         (0..Pos::N_ROWS).for_each(|row| {
             (0..Pos::N_COLS).for_each(|col| {
                 if let Some(piece) = self.get(row, col) {
-                    ret._set_piece_unsafe(row, Pos::N_COLS - 1 - col, piece);
+                    ret._set_piece_unsafe(row, Pos::N_COLS - 1 - col, Some(piece));
                 }
             })
         });
         ret
+    }
+
+    /// Returns a list of moves that can be played to reach the given position.
+    /// Note this might not be the actual move sequence that was played.
+    /// This move sequence can be used to pass our [Pos] states to external solvers for evaluation.
+    pub fn to_moves(&self) -> Vec<Move> {
+        self.to_moves_rec(self.clone(), Vec::new())
+            .expect(format!("failed to generate moves for pos:\n{}", self).as_str())
+            .into_iter()
+            .rev()
+            .collect()
+    }
+
+    /// Helper function for [Self::to_moves] that attempts to recursively remove pieces from the top
+    /// of the `temp` board until it is empty, then returns the [Move]s representing the removals.
+    ///
+    /// We can't remove pieces in a greedy way as that might result in "trapped" pieces. As such,
+    /// we have to recursively backtrack and try removing pieces in a different order until we find
+    /// an order that results in an empty board.
+    fn to_moves_rec(&self, temp: Pos, moves: Vec<Move>) -> Option<Vec<Move>> {
+        if temp.ply() == 0 {
+            return Some(moves);
+        }
+
+        // Whether we are remove player 0's piece or player 1's piece
+        let removing_p0_piece = (self.ply() % 2 == 0) ^ (temp.ply() % 2 == 0);
+
+        'next_col: for col in 0..Self::N_COLS {
+            'next_row: for row in (0..Self::N_ROWS).rev() {
+                match (self.get(row, col), temp.get(row, col)) {
+                    (Some(CellValue::Player), Some(CellValue::Player)) if removing_p0_piece => {
+                        let mut temp = temp.clone();
+                        temp._set_piece_unsafe(row, col, None);
+                        let mut moves = moves.clone();
+                        moves.push(col);
+                        if let Some(ret) = self.to_moves_rec(temp, moves) {
+                            return Some(ret);
+                        } else {
+                            continue 'next_col;
+                        }
+                    }
+                    (Some(CellValue::Opponent), Some(CellValue::Opponent))
+                        if !removing_p0_piece =>
+                    {
+                        let mut temp = temp.clone();
+                        temp._set_piece_unsafe(row, col, None);
+                        let mut moves = moves.clone();
+                        moves.push(col);
+                        if let Some(ret) = self.to_moves_rec(temp, moves) {
+                            return Some(ret);
+                        } else {
+                            continue 'next_col;
+                        }
+                    }
+                    (_, None) => {
+                        // Already removed this stone from temp, continue to next row
+                        continue 'next_row;
+                    }
+                    _ => {
+                        continue 'next_col;
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     /// Writes the position to a buffer intended to be interpreted as a [numpy] array.
@@ -310,7 +381,7 @@ impl From<&str> for Pos {
                     '🔵' => CellValue::Opponent,
                     _ => continue,
                 };
-                pos._set_piece_unsafe(row, col, cell_value);
+                pos._set_piece_unsafe(row, col, Some(cell_value));
             }
         }
         pos
@@ -326,6 +397,16 @@ impl fmt::Debug for Pos {
             self.mask,
             self.value
         )
+    }
+}
+
+impl From<&Vec<Move>> for Pos {
+    fn from(moves: &Vec<Move>) -> Self {
+        let mut pos = Pos::default();
+        for &mov in moves {
+            pos = pos.make_move(mov).unwrap();
+        }
+        pos
     }
 }
 
@@ -519,6 +600,14 @@ mod tests {
         fn to_from_string(pos in random_pos()) {
             let s = pos.to_string();
             assert_eq!(Pos::from(s.as_str()), pos);
+        }
+
+        /// Generating moves from a position and converting them back should result in the same pos.
+        #[test]
+        fn to_moves(pos in random_pos()) {
+            let moves = pos.to_moves();
+            let generated = Pos::from(&moves);
+            assert_eq!(generated, pos);
         }
     }
 }
