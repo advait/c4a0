@@ -14,7 +14,7 @@ pub struct Pos {
 }
 
 /// The oponnent/player token within a cell.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum CellValue {
     Opponent = 0,
     Player = 1,
@@ -291,42 +291,40 @@ impl Pos {
 
         'next_col: for col in 0..Self::N_COLS {
             'next_row: for row in (0..Self::N_ROWS).rev() {
-                match (self.get(row, col), temp.get(row, col)) {
-                    (Some(CellValue::Player), Some(CellValue::Player)) if removing_p0_piece => {
-                        let mut temp = temp.clone();
-                        temp._set_piece_unsafe(row, col, None);
-                        let mut moves = moves.clone();
-                        moves.push(col);
-                        if let Some(ret) = self.to_moves_rec(temp, moves) {
-                            return Some(ret);
-                        } else {
-                            continue 'next_col;
-                        }
-                    }
-                    (Some(CellValue::Opponent), Some(CellValue::Opponent))
-                        if !removing_p0_piece =>
-                    {
-                        let mut temp = temp.clone();
-                        temp._set_piece_unsafe(row, col, None);
-                        let mut moves = moves.clone();
-                        moves.push(col);
-                        if let Some(ret) = self.to_moves_rec(temp, moves) {
-                            return Some(ret);
-                        } else {
-                            continue 'next_col;
-                        }
-                    }
-                    (_, None) => {
-                        // Already removed this stone from temp, continue to next row
-                        continue 'next_row;
-                    }
-                    _ => {
+                let self_piece = self.get(row, col);
+                let temp_piece = temp.get(row, col);
+                let should_remove_piece = if removing_p0_piece {
+                    (self_piece, temp_piece) == (Some(CellValue::Player), Some(CellValue::Player))
+                } else {
+                    (self_piece, temp_piece)
+                        == (Some(CellValue::Opponent), Some(CellValue::Opponent))
+                };
+
+                if should_remove_piece {
+                    let mut temp = temp.clone();
+                    temp._set_piece_unsafe(row, col, None);
+                    let mut moves = moves.clone();
+                    moves.push(col);
+
+                    // Recursively try to continue removing pieces, or if that fails,
+                    // try the next column instead.
+                    if let Some(ret) = self.to_moves_rec(temp, moves) {
+                        return Some(ret);
+                    } else {
                         continue 'next_col;
                     }
+                } else if temp_piece.is_none() {
+                    // Already removed this piece from temp, continue to next row down
+                    continue 'next_row;
+                } else {
+                    // No more eligible pieces in this column, continue to the next column
+                    continue 'next_col;
                 }
             }
         }
 
+        // Failed to successfully remove all pieces (i.e. stuck pieces remain).
+        // Return None to enable the caller to backtrack.
         None
     }
 
