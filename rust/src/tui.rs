@@ -23,7 +23,7 @@ use ratatui::{
 
 use crate::c4r::{Pos, TerminalState};
 use crate::interactive_play::{InteractivePlay, Snapshot};
-use crate::types::{EvalPosT, Policy, PosValue};
+use crate::types::{EvalPosT, Policy, QValue};
 
 /// A type alias for the terminal type used in this application
 pub type Tui = Terminal<CrosstermBackend<Stdout>>;
@@ -49,9 +49,14 @@ pub struct App<E: EvalPosT> {
 }
 
 impl<E: EvalPosT + Send + Sync + 'static> App<E> {
-    pub fn new(eval_pos: E, max_mcts_iterations: usize, exploration_constant: f32) -> Self {
+    pub fn new(
+        eval_pos: E,
+        max_mcts_iterations: usize,
+        c_exploration: f32,
+        c_ply_penalty: f32,
+    ) -> Self {
         Self {
-            game: InteractivePlay::new(eval_pos, max_mcts_iterations, exploration_constant),
+            game: InteractivePlay::new(eval_pos, max_mcts_iterations, c_exploration, c_ply_penalty),
             exit: false,
         }
     }
@@ -122,7 +127,12 @@ fn render_app(snapshot: Snapshot, rect: Rect, buf: &mut Buffer) {
 
     render_game(snapshot.pos.clone(), game_rect, buf);
     render_snapshot_summary(&snapshot, snapshot_rect, buf);
-    render_eval_and_policy(snapshot.value, &snapshot.policy, eval_and_policy_rect, buf);
+    render_eval_and_policy(
+        snapshot.q_penalty,
+        &snapshot.policy,
+        eval_and_policy_rect,
+        buf,
+    );
     render_instructions(instructions_rect, buf);
 }
 
@@ -162,7 +172,7 @@ fn render_snapshot_summary(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
     Paragraph::new(vec![
         Line::from(vec![
             "Value: ".into(),
-            format!("{:.2}", snapshot.value).yellow().bold(),
+            format!("{:.2}", snapshot.q_penalty).yellow().bold(),
         ]),
         Line::from(vec![
             "MCTS iters: ".into(),
@@ -184,13 +194,13 @@ fn render_snapshot_summary(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
     .render(rect, buf);
 }
 
-fn render_eval_and_policy(pos_value: PosValue, policy: &Policy, rect: Rect, buf: &mut Buffer) {
+fn render_eval_and_policy(pos_value: QValue, policy: &Policy, rect: Rect, buf: &mut Buffer) {
     let layout = Layout::horizontal([Constraint::Length(10), Constraint::Fill(1)]).split(rect);
     render_eval(pos_value, layout[0], buf);
     render_policy(policy, layout[1], buf);
 }
 
-fn render_eval(pos_value: PosValue, rect: Rect, buf: &mut Buffer) {
+fn render_eval(pos_value: QValue, rect: Rect, buf: &mut Buffer) {
     let value_max = 1000u64;
     let value = ((pos_value + 1.0) / 2.0 * (value_max as f32)) as u64;
     let bars = vec![Bar::default()

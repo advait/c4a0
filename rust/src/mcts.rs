@@ -9,7 +9,7 @@ use rand::{
 
 use crate::{
     c4r::{Move, Pos, TerminalState},
-    types::{GameMetadata, GameResult, ModelID, Policy, PosValue, Sample},
+    types::{GameMetadata, GameResult, ModelID, Policy, QValue, Sample},
 };
 
 /// A single Monte Carlo Tree Search connect four game.
@@ -38,7 +38,7 @@ impl MctsGame {
     pub const UNIFORM_POLICY: Policy = [1.0 / Pos::N_COLS as f32; Pos::N_COLS];
 
     /// New game with the given id and start position.
-    /// `exploration_constant` is an MCTS parameter that guides how aggressively to explore vs.
+    /// `c_exploration` is an MCTS parameter that guides how aggressively to explore vs.
     /// exploit.
     pub fn new_from_pos(pos: Pos, metadata: GameMetadata) -> MctsGame {
         let root_node = Node::new(pos, None, 1.0);
@@ -96,21 +96,26 @@ impl MctsGame {
     pub fn on_received_policy(
         &mut self,
         mut policy_logprobs: Policy,
-        nn_value: PosValue,
-        exploration_constant: f32,
+        q_penalty: QValue,
+        q_no_penalty: QValue,
+        c_exploration: f32,
+        c_ply_penalty: f32,
     ) {
         if let Some(terminal) = self.leaf_pos().is_terminal_state() {
             // If this is a terminal state, the received policy is irrelevant. We backpropagate
             // the objective terminal value and select a new leaf.
-            let value = match terminal {
-                TerminalState::PlayerWin => 1.0,
-                TerminalState::OpponentWin => -1.0,
-                TerminalState::Draw => 0.0,
+            let ply_penalty_magnitude = c_ply_penalty * self.leaf_pos().ply() as f32;
+            let (q_no_penalty, q_penalty) = match terminal {
+                // If the player wins, we apply a penalty to encourage shorter wins
+                TerminalState::PlayerWin => (1.0, 1.0 - ply_penalty_magnitude),
+                // If the player loses, we apply a penalty to encourage more drawn out games
+                TerminalState::OpponentWin => (-1.0, -1.0 + ply_penalty_magnitude),
+                TerminalState::Draw => (0.0, 0.0 - ply_penalty_magnitude),
             };
-            log::debug!("on_received_policy: terminal state, value={}", value);
+            log::debug!("on_received_policy: terminal state, value={}", q_no_penalty);
 
-            self._backpropagate(value);
-            self._select_new_leaf(exploration_constant);
+            self._backpropagate(q_penalty, q_no_penalty);
+            self._select_new_leaf(c_exploration);
             return;
         }
 
@@ -132,12 +137,12 @@ impl MctsGame {
         log::debug!(
             "policy after softmax={:?}\nnn_value={:.2}",
             policy_probs,
-            nn_value
+            q_penalty
         );
 
         self._expand_leaf(policy_probs);
-        self._backpropagate(nn_value);
-        self._select_new_leaf(exploration_constant);
+        self._backpropagate(q_penalty, q_no_penalty);
+        self._select_new_leaf(c_exploration);
     }
 
     /// Expands the the leaf by adding child nodes to it which then be eligible for exploration via
@@ -174,21 +179,24 @@ impl MctsGame {
     /// effectively invalidating the policy for these nodes. This should not be a problem as we only
     /// expose a [MctsGame::root_policy] method (which will be valid), preventing callers from
     /// accessing policies for the root node's parent ancestors (which will be invalid).
-    fn _backpropagate(&mut self, mut value: PosValue) {
+    fn _backpropagate(&mut self, mut q_penalty: QValue, mut q_no_penalty: QValue) {
         let mut pos = self.get_mut(self.leaf_id);
         loop {
             pos.visit_count += 1;
-            pos.exploitation_value_sum += value;
+            pos.q_sum_penalty += q_penalty;
+            pos.q_sum_no_penalty += q_no_penalty;
             log::debug!(
-                "backpropagate: pos=\n{}\nvalue_delta={}\nexploit_value={:.2}/{}={:.2}",
+                "backpropagate: pos=\n{}\nq_penalty / no_penalty={}/{}\nexploit_value={:.2}/{}={:.2}",
                 pos.pos,
-                value,
-                pos.exploitation_value_sum,
+                q_penalty,
+                q_no_penalty,
+                pos.q_sum_penalty,
                 pos.visit_count,
-                pos.exploitation_value(),
+                pos.q_with_penalty(),
             );
 
-            value = -value;
+            q_penalty = -q_penalty;
+            q_no_penalty = -q_no_penalty;
 
             if let Some(parent_id) = pos.parent {
                 pos = self.get_mut(parent_id);
@@ -201,7 +209,7 @@ impl MctsGame {
     /// Select the next leaf node by traversing from the root node, repeatedly selecting the child
     /// with the highest [Node::uct_value] until we reach a node with no expanded children (leaf
     /// node).
-    fn _select_new_leaf(&mut self, exploration_constant: f32) {
+    fn _select_new_leaf(&mut self, c_exploration: f32) {
         let mut cur_id = self.root_id;
 
         while let Some(children) = self.get(cur_id).children {
@@ -210,7 +218,7 @@ impl MctsGame {
                 .flatten()
                 .map(|&id| {
                     let child = self.get(id);
-                    let score = child.uct_value(self, exploration_constant);
+                    let score = child.uct_value(self, c_exploration);
                     (id, score)
                 })
                 .max_by(|(_a_id, a_score), (_b_id, b_score)| {
@@ -228,14 +236,14 @@ impl MctsGame {
 
     /// Makes a move, updating the root node to be the child node corresponding to the move.
     /// Note that this method does not perform garbage collection for un-played sub-trees.
-    pub fn make_move(&mut self, m: Move, exploration_constant: f32) {
+    pub fn make_move(&mut self, m: Move, c_exploration: f32) {
         let root = self.get(self.root_id);
         let children = root.children.expect("root node has no children");
         let child_id = children[m as usize].expect("attempted to make an invalid move");
         self.root_id = child_id;
         self.moves.push(m);
         // We must select a new leaf as the old leaf might not be in the subtree of the new root
-        self._select_new_leaf(exploration_constant);
+        self._select_new_leaf(c_exploration);
     }
 
     /// Makes a move probabalistically based on the root node's policy.
@@ -243,14 +251,14 @@ impl MctsGame {
     /// The temperature parameter scales the policy probabilities, with values > 1.0 making the
     /// sampled distribution more uniform and values < 1.0 making the sampled distribution favor
     /// the most lucrative moves.
-    pub fn make_random_move(&mut self, exploration_constant: f32, temperature: f32) {
+    pub fn make_random_move(&mut self, c_exploration: f32, temperature: f32) {
         let seed = self.metadata.game_id * ((Pos::N_ROWS * Pos::N_COLS) + self.moves.len()) as u64;
         let mut rng = StdRng::seed_from_u64(seed);
         let policy = self.root_policy();
         let policy = apply_temperature(&policy, temperature);
         let dist = WeightedIndex::new(policy).unwrap();
         let mov = dist.sample(&mut rng);
-        self.make_move(mov, exploration_constant);
+        self.make_move(mov, c_exploration);
     }
 
     /// Sets the root node to the given position, clearing the entire tree and moves.
@@ -303,39 +311,47 @@ impl MctsGame {
         root.policy(self)
     }
 
-    /// The average [PosValue] of the root node as a consequence of performing MCTS iterations.
-    pub fn root_value(&self) -> PosValue {
+    /// The average [QValue] of the root node as a consequence of performing MCTS iterations.
+    pub fn root_q_with_penalty(&self) -> QValue {
         let root = self.get(self.root_id);
-        root.exploitation_value()
+        root.q_with_penalty()
+    }
+
+    pub fn root_q_no_penalty(&self) -> QValue {
+        let root = self.get(self.root_id);
+        root.q_no_penalty()
     }
 
     /// Converts a finished game into a Vec of [Sample] for future NN training.
-    pub fn to_result(&self) -> GameResult {
-        let final_value = self
+    pub fn to_result(&self, c_ply_penalty: f32) -> GameResult {
+        let ply_penalty_magnitude = c_ply_penalty * self.root_pos().ply() as f32;
+        let (mut q_no_penalty, mut q_penalty) = self
             .root_pos()
             .is_terminal_state()
             .map(|ts| match ts {
-                TerminalState::PlayerWin => 1.0,
-                TerminalState::OpponentWin => -1.0,
-                TerminalState::Draw => 0.0,
+                TerminalState::PlayerWin => (1.0, 1.0 - ply_penalty_magnitude),
+                TerminalState::OpponentWin => (-1.0, -1.0 + ply_penalty_magnitude),
+                TerminalState::Draw => (0.0, 0.0 - ply_penalty_magnitude),
             })
             .expect("attempted to convert a non-terminal game to a training sample");
 
         let mut cur = self.get(self.leaf_id);
-        let mut cur_value = final_value;
         let mut samples = vec![Sample {
             pos: cur.pos.clone(),
             policy: cur.policy(&self),
-            value: cur_value,
+            q_penalty,
+            q_no_penalty,
         }];
         while let Some(parent_id) = cur.parent {
             // Alternate values as the each consecutive position alternates player vs. opponent
-            cur_value = -cur_value;
+            q_penalty = -q_penalty;
+            q_no_penalty = -q_no_penalty;
             cur = self.get(parent_id);
             samples.push(Sample {
                 pos: cur.pos.clone(),
                 policy: cur.policy(&self),
-                value: cur_value,
+                q_penalty,
+                q_no_penalty,
             });
         }
 
@@ -357,34 +373,43 @@ struct Node {
     pos: Pos,
     parent: Option<NodeId>,
     visit_count: usize,
-    exploitation_value_sum: f32,
-    initial_policy_value: PosValue,
+    q_sum_penalty: f32,
+    q_sum_no_penalty: f32,
+    initial_policy_value: QValue,
     children: Option<[Option<NodeId>; Pos::N_COLS]>,
 }
 
 impl Node {
     const EPS: f32 = 1e-8;
 
-    fn new(pos: Pos, parent: Option<NodeId>, initial_policy_value: PosValue) -> Node {
+    fn new(pos: Pos, parent: Option<NodeId>, initial_policy_value: QValue) -> Node {
         Node {
             pos,
             parent,
             visit_count: 0,
-            exploitation_value_sum: 0.0,
+            q_sum_penalty: 0.0,
+            q_sum_no_penalty: 0.0,
             initial_policy_value,
             children: None,
         }
     }
 
-    /// The exploitation component of the UCT value, i.e. the average win rate.
-    fn exploitation_value(&self) -> PosValue {
-        self.exploitation_value_sum / ((self.visit_count as f32) + 1.0)
+    /// The exploitation component of the UCT value (i.e. the average win rate) with a penalty
+    /// applied for additional plys to discourage longer sequences.
+    fn q_with_penalty(&self) -> QValue {
+        self.q_sum_penalty / ((self.visit_count as f32) + 1.0)
+    }
+
+    /// The exploitation component of the UCT value (i.e. the average win rate) without any
+    /// ply penalty.
+    fn q_no_penalty(&self) -> QValue {
+        self.q_sum_no_penalty / ((self.visit_count as f32) + 1.0)
     }
 
     /// The exploration component of the UCT value. Higher visit counts result in lower values.
     /// We also weight the exploration value by the initial policy value to allow the network
     /// to guide the search.
-    fn exploration_value(&self, game: &MctsGame) -> PosValue {
+    fn exploration_value(&self, game: &MctsGame) -> QValue {
         let parent_visit_count = match self.parent {
             Some(parent_id) => game.get(parent_id).visit_count,
             None => self.visit_count,
@@ -396,8 +421,8 @@ impl Node {
     /// The UCT value of this node. Represents the lucrativeness of this node according to MCTS.
     /// Because [Self::utc_value] is called from the perspective of the *parent* node, we negate
     /// the exploration value.
-    fn uct_value(&self, game: &MctsGame, exploration_constant: f32) -> PosValue {
-        -self.exploitation_value() + exploration_constant * self.exploration_value(game)
+    fn uct_value(&self, game: &MctsGame, c_exploration: f32) -> QValue {
+        -self.q_with_penalty() + c_exploration * self.exploration_value(game)
     }
 
     /// Whether the game is over (won, los, draw) from this position.
@@ -474,33 +499,45 @@ mod tests {
 
     const CONST_COL_WEIGHT: f32 = 1.0 / (Pos::N_COLS as f32);
     const CONST_POLICY: Policy = [CONST_COL_WEIGHT; Pos::N_COLS];
-    const TEST_EXPLORATION_CONSTANT: f32 = 4.0;
+    const TEST_C_EXPLORATION: f32 = 4.0;
+    const TEST_C_PLY_PENALTY: f32 = 0.01;
 
     /// Runs a batch with a single game and a constant evaluation function.
-    fn run_mcts(pos: Pos, n_iterations: usize) -> (Policy, PosValue) {
+    fn run_mcts(pos: Pos, n_iterations: usize) -> (Policy, QValue, QValue) {
         let mut game = MctsGame::new_from_pos(pos, GameMetadata::default());
         for _ in 0..n_iterations {
-            game.on_received_policy(MctsGame::UNIFORM_POLICY, 0.0, TEST_EXPLORATION_CONSTANT)
+            game.on_received_policy(
+                MctsGame::UNIFORM_POLICY,
+                0.0,
+                0.0,
+                TEST_C_EXPLORATION,
+                TEST_C_PLY_PENALTY,
+            )
         }
-        (game.root_policy(), game.root_value())
+        (
+            game.root_policy(),
+            game.root_q_with_penalty(),
+            game.root_q_no_penalty(),
+        )
     }
 
     #[test]
     fn mcts_prefers_center_column() {
-        let (policy, _value) = run_mcts(Pos::default(), 1000);
+        let (policy, _q_penalty, _q_no_penalty) = run_mcts(Pos::default(), 1000);
         assert_policy_sum_1(&policy);
         assert_gt!(policy[3], CONST_COL_WEIGHT);
     }
 
     #[test]
     fn mcts_depth_one() {
-        let (policy, _value) = run_mcts(Pos::default(), 1 + Pos::N_COLS + Pos::N_COLS);
+        let (policy, _q_penalty, _q_no_penalty) =
+            run_mcts(Pos::default(), 1 + Pos::N_COLS + Pos::N_COLS);
         assert_policy_eq(&policy, &CONST_POLICY, Node::EPS);
     }
 
     #[test]
     fn mcts_depth_two() {
-        let (policy, _value) = run_mcts(
+        let (policy, _q_penalty, _q_no_penalty) = run_mcts(
             Pos::default(),
             1 + Pos::N_COLS + (Pos::N_COLS * Pos::N_COLS) + (Pos::N_COLS * Pos::N_COLS),
         );
@@ -509,7 +546,7 @@ mod tests {
 
     #[test]
     fn mcts_depth_uneven() {
-        let (policy, _value) = run_mcts(Pos::default(), 47);
+        let (policy, _q_penalty, _q_no_penalty) = run_mcts(Pos::default(), 47);
         assert_policy_ne(&policy, &CONST_POLICY, Node::EPS);
     }
 
@@ -529,11 +566,12 @@ mod tests {
             .join("\n")
             .as_str(),
         );
-        let (policy, value) = run_mcts(pos, 1_000);
+        let (policy, q_penalty, q_no_penalty) = run_mcts(pos, 10_000);
         let winning_moves = policy[0] + policy[4];
         assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
         assert_gt!(winning_moves, 0.99);
-        assert_gt!(value, 0.99);
+        assert_gt!(q_penalty, 0.92);
+        assert_gt!(q_no_penalty, 0.99);
     }
 
     /// From a winning position, mcts should end up with a policy that prefers the winning move.
@@ -551,10 +589,12 @@ mod tests {
             .join("\n")
             .as_str(),
         );
-        let (policy, value) = run_mcts(pos, 10_000);
+        let (policy, q_penalty, q_no_penalty) = run_mcts(pos, 10_000);
         let winning_moves = policy[1] + policy[4];
         assert_gt!(winning_moves, 0.98);
-        assert_gt!(value, 0.98);
+        assert_gt!(q_penalty, 0.90);
+        assert_gt!(q_no_penalty, 0.98);
+        assert_gt!(q_no_penalty, q_penalty);
     }
 
     /// From a winning position, mcts should end up with a policy that prefers the winning move.
@@ -572,9 +612,11 @@ mod tests {
             .join("\n")
             .as_str(),
         );
-        let (policy, value) = run_mcts(pos, 10_000);
+        let (policy, q_penalty, q_no_penalty) = run_mcts(pos, 10_000);
         assert_gt!(policy[5], 0.99);
-        assert_gt!(value, 0.99);
+        assert_gt!(q_penalty, 0.86);
+        assert_gt!(q_no_penalty, 0.99);
+        assert_gt!(q_no_penalty, q_penalty);
     }
 
     /// From a definitively losing position, mcts should end up with a uniform policy because it's
@@ -593,12 +635,37 @@ mod tests {
             .join("\n")
             .as_str(),
         );
-        let (policy, value) = run_mcts(pos, 300_000);
+        let (policy, q_penalty, q_no_penalty) = run_mcts(pos, 300_000);
         assert_policy_sum_1(&policy);
         policy.iter().for_each(|&p| {
             assert_relative_eq!(p, CONST_COL_WEIGHT, epsilon = 0.01);
         });
-        assert_lt!(value, -0.99);
+        assert_lt!(q_penalty, -0.93);
+        assert_lt!(q_no_penalty, -0.99);
+        assert_lt!(q_no_penalty, q_penalty);
+    }
+
+    /// From a position with two wins, prefer the shorter win. Here, playing 0 leads to a forced
+    /// win, but playing 4 leads to an immediate win.
+    #[test]
+    fn prefer_shorter_wins() {
+        let pos = Pos::from(
+            [
+                "⚫⚫⚫🔵⚫⚫⚫",
+                "⚫🔵🔵🔵⚫⚫⚫",
+                "⚫🔴🔵🔵⚫⚫⚫",
+                "⚫🔴🔴🔴⚫⚫⚫",
+                "⚫🔴🔴🔴⚫⚫⚫",
+                "⚫🔵🔴🔵⚫⚫⚫",
+            ]
+            .join("\n")
+            .as_str(),
+        );
+        let (policy, q_penalty, q_no_penalty) = run_mcts(pos, 10_000);
+        assert_gt!(policy[4], 0.99);
+        assert_gt!(q_penalty, 0.82);
+        assert_gt!(q_no_penalty, 0.99);
+        assert_gt!(q_no_penalty, q_penalty);
     }
 
     /// Strategy for generating a policy with at least one non-zero value.

@@ -13,8 +13,8 @@ use crate::c4r::Pos;
 /// Probabilities for how lucrative each column is.
 pub type Policy = [f32; Pos::N_COLS];
 
-/// The lucrativeness value of a given position.
-pub type PosValue = f32;
+/// The lucrativeness value of a given position. This is the objective we are trying to maximize.
+pub type QValue = f32;
 
 /// ID of the Model's NN.
 pub type ModelID = u64;
@@ -28,8 +28,9 @@ pub trait EvalPosT {
 /// The returned output from the forward pass of the NN.
 #[derive(Debug, Clone)]
 pub struct EvalPosResult {
-    pub policy: Policy,  // Probability distribution over moves from the position.
-    pub value: PosValue, // Lucrativeness [-1, 1] of the position.
+    pub policy: Policy,       // Probability distribution over moves from the position.
+    pub q_penalty: QValue,    // Lucrativeness [-1, 1] of the position with ply penalty.
+    pub q_no_penalty: QValue, // Lucrativeness [-1, 1] of the position without ply penalty.
 }
 
 /// Metadata about a game.
@@ -104,7 +105,8 @@ impl GameResult {
 pub struct Sample {
     pub pos: Pos,
     pub policy: Policy,
-    pub value: PosValue,
+    pub q_penalty: QValue,
+    pub q_no_penalty: QValue,
 }
 
 #[pymethods]
@@ -114,7 +116,8 @@ impl Sample {
         Sample {
             pos: self.pos.flip_h(),
             policy: array::from_fn(|col| self.policy[Pos::N_COLS - 1 - col]),
-            value: self.value,
+            q_penalty: self.q_penalty,
+            q_no_penalty: self.q_no_penalty,
         }
     }
 
@@ -126,6 +129,7 @@ impl Sample {
         Bound<'py, PyArray3<f32>>,
         Bound<'py, PyArray1<f32>>,
         Bound<'py, PyArray0<f32>>,
+        Bound<'py, PyArray0<f32>>,
     ) {
         let mut pos_buffer = vec![0.0; Pos::BUF_LEN];
         self.pos.write_numpy_buffer(&mut pos_buffer);
@@ -134,10 +138,12 @@ impl Sample {
                 .unwrap();
         let pos = PyArray3::from_array_bound(py, &pos);
         let policy = PyArray1::from_slice_bound(py, &self.policy);
-        let value = Array0::from_elem([] /* shape */, self.value);
-        let value = PyArray0::from_array_bound(py, &value);
+        let q_penalty = Array0::from_elem([] /* shape */, self.q_penalty);
+        let q_penalty = PyArray0::from_array_bound(py, &q_penalty);
+        let q_no_penalty = Array0::from_elem([] /* shape */, self.q_no_penalty);
+        let q_no_penalty = PyArray0::from_array_bound(py, &q_no_penalty);
 
-        (pos, policy, value)
+        (pos, policy, q_penalty, q_no_penalty)
     }
 
     /// String representation of the position.

@@ -40,9 +40,14 @@ class ModelConfig(BaseModel):
 class ConnectFourNet(pl.LightningModule):
     """
     A CNN that takes in as input connect four positions and outputs a policy (in logprob space)
-    and a value. The policy is a (log) probability distribution over moves and the value is the
-    lucrativeness of the position between [-1, +1] where -1 is a definitively losing position and
-    +1 is a definitively winning position. The outputs of this network are used to guide MCTS.
+    and two Q Values. The policy is a (log) probability distribution over moves. q_penalty
+    represents the predicted lucrativeness of the position between [-1, +1] where -1 is a
+    definitively losing position and +1 is a definitively winning position where there is a
+    penalty applied based on the number of plys (to encourage faster wins). q_no_penalty is the
+    lucrativeness without the ply penalty.
+
+    The outputs of this network are used to guide MCTS.
+    The outputs of MCTS are used to train the next network.
 
     The network consists of a sequence of ResidualBlocks (CNN + CNN + BatchNormalization + Relu)
     followed by separate fully connected policy and value heads.
@@ -79,7 +84,7 @@ class ConnectFourNet(pl.LightningModule):
             nn.LogSoftmax(dim=1),
         )
 
-        # Value head
+        # Q Value head, one output dim for q_penalty and another for q_no_penalty
         self.fc_value = nn.Sequential(
             *[
                 nn.Sequential(
@@ -89,34 +94,38 @@ class ConnectFourNet(pl.LightningModule):
                 )
                 for _ in range(config.n_value_layers - 1)
             ],
-            nn.Linear(fc_size, 1),
+            nn.Linear(fc_size, 2),
             nn.Tanh(),
         )
 
         # Metrics
         self.policy_kl_div = torchmetrics.KLDivergence(log_prob=True)
-        self.value_mse = torchmetrics.MeanSquaredError()
+        self.q_penalty_mse = torchmetrics.MeanSquaredError()
+        self.q_no_penalty_mse = torchmetrics.MeanSquaredError()
 
         self.save_hyperparameters(config.model_dump())
 
-    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = self.conv(x)
         x = rearrange(x, "b c h w -> b (c h w)")
         policy_logprobs = self.fc_policy(x)
-        value = self.fc_value(x).squeeze(1)
-        return policy_logprobs, value
+        q_values = self.fc_value(x)  # b 2
+        q_penalty = q_values[:, 0].squeeze(1)  # b
+        q_no_penalty = q_values[:, 1].squeeze(1)  # b
+        return policy_logprobs, q_penalty, q_no_penalty
 
-    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Forward pass with input/output as numpy. Model is run in inference mode. Used for self play.
         """
         self.eval()
         pos = torch.from_numpy(x).to(self.device)
         with torch.no_grad():
-            policy, value = self.forward(pos)
+            policy, q_penalty, q_no_penalty = self.forward(pos)
         policy = policy.cpu().numpy()
-        value = value.cpu().numpy()
-        return policy, value
+        q_penalty = q_penalty.cpu().numpy()
+        q_no_penalty = q_no_penalty.cpu().numpy()
+        return policy, q_penalty, q_no_penalty
 
     def _calculate_conv_output_size(self):
         """Helper function to calculate the output size of the convolutional block."""
@@ -148,18 +157,21 @@ class ConnectFourNet(pl.LightningModule):
 
     def step(self, batch, log_prefix):
         # Forward pass
-        pos, policy_targets, value_targets = batch
-        policy_logprob, value_pred = self.forward(pos)
-        policy_logprob_targets = torch.log(policy_targets + self.EPS)
+        pos, policy_target, q_penalty_target, q_no_penalty_target = batch
+        policy_logprob, q_penalty_pred, q_no_penalty_pred = self.forward(pos)
+        policy_logprob_targets = torch.log(policy_target + self.EPS)
 
         # Losses
         policy_loss = self.policy_kl_div(policy_logprob_targets, policy_logprob)
-        value_loss = self.value_mse(value_pred, value_targets)
-        loss = policy_loss + value_loss
+        q_penalty_loss = self.q_penalty_mse(q_penalty_pred, q_penalty_target)
+        q_no_penalty_loss = self.q_no_penalty_mse(
+            q_no_penalty_pred, q_no_penalty_target
+        )
+        loss = policy_loss + q_penalty_loss + q_no_penalty_loss
 
         self.log(f"{log_prefix}_loss", loss, prog_bar=True)
         self.log(f"{log_prefix}_policy_kl_div", policy_loss)
-        self.log(f"{log_prefix}_value_mse", value_loss)
+        self.log(f"{log_prefix}_value_mse", q_penalty_loss)
         return loss
 
 

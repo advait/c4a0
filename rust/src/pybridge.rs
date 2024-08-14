@@ -22,7 +22,8 @@ pub fn play_games<'py>(
     reqs: &Bound<'py, PyList>,
     max_nn_batch_size: usize,
     n_mcts_iterations: usize,
-    exploration_constant: f32,
+    c_exploration: f32,
+    c_ply_penalty: f32,
     py_eval_pos_cb: &Bound<'py, PyAny>,
 ) -> PyResult<PlayGamesResult> {
     let reqs: Vec<GameMetadata> = reqs.extract().expect("error extracting reqs");
@@ -41,7 +42,8 @@ pub fn play_games<'py>(
                 reqs,
                 max_nn_batch_size,
                 n_mcts_iterations,
-                exploration_constant,
+                c_exploration,
+                c_ply_penalty,
             )
         })
     };
@@ -136,7 +138,11 @@ impl EvalPosT for PyEvalPos {
             let batch_size = pos.len();
             let pos_batch = create_pos_batch(py, &pos);
 
-            let (policy, value): (PyReadonlyArray2<f32>, PyReadonlyArray1<f32>) = (&self
+            let (policy, q_penalty, q_no_penalty): (
+                PyReadonlyArray2<f32>,
+                PyReadonlyArray1<f32>,
+                PyReadonlyArray1<f32>,
+            ) = (&self
                 .py_eval_pos_cb
                 .call_bound(py, ((model_id), pos_batch), None)
                 .expect("Failed to call py_eval_pos_cb"))
@@ -144,12 +150,14 @@ impl EvalPosT for PyEvalPos {
                 .expect("Failed to extract result");
 
             let policy = policy.as_slice().expect("Failed to get policy slice");
-            let value = value.as_slice().expect("Failed to get value slice");
+            let q_penalty = q_penalty.as_slice().expect("Failed to get value slice");
+            let q_no_penalty = q_no_penalty.as_slice().expect("Failed to get value slice");
 
             (0..batch_size)
                 .map(|i| EvalPosResult {
                     policy: policy_from_slice(&policy[i * Pos::N_COLS..(i + 1) * Pos::N_COLS]),
-                    value: value[i],
+                    q_penalty: q_penalty[i],
+                    q_no_penalty: q_no_penalty[i],
                 })
                 .collect()
         })
@@ -191,7 +199,8 @@ pub fn run_tui<'py>(
     py: Python<'py>,
     py_eval_pos_cb: &Bound<'py, PyAny>,
     max_mcts_iters: usize,
-    exploration_constant: f32,
+    c_exploration: f32,
+    c_ply_penalty: f32,
 ) -> PyResult<()> {
     let eval_pos = PyEvalPos {
         py_eval_pos_cb: py_eval_pos_cb.to_object(py),
@@ -200,7 +209,7 @@ pub fn run_tui<'py>(
     // Start the TUI while releasing the GIL with allow_threads.
     py.allow_threads(move || {
         let mut terminal = tui::init()?;
-        let mut app = tui::App::new(eval_pos, max_mcts_iters, exploration_constant);
+        let mut app = tui::App::new(eval_pos, max_mcts_iters, c_exploration, c_ply_penalty);
         app.run(&mut terminal)?;
         tui::restore()?;
         Ok(())

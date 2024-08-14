@@ -23,7 +23,8 @@ def train(
     device: str = str(get_torch_device()),
     n_self_play_games: int = 2000,
     n_mcts_iterations: int = 150,
-    exploration_constant: float = 1.4,
+    c_exploration: float = 1.4,
+    c_ply_penalty: float = 0.01,
     self_play_batch_size: int = 2000,
     training_batch_size: int = 2000,
     n_residual_blocks: int = 1,
@@ -57,7 +58,8 @@ def train(
         device=torch.device(device),
         n_self_play_games=n_self_play_games,
         n_mcts_iterations=n_mcts_iterations,
-        exploration_constant=exploration_constant,
+        c_exploration=c_exploration,
+        c_ply_penalty=c_ply_penalty,
         self_play_batch_size=self_play_batch_size,
         training_batch_size=training_batch_size,
         model_config=model_config,
@@ -74,7 +76,8 @@ def sweep(base_dir: str = "training"):
 def ui(
     base_dir: str = "training",
     max_mcts_iters: int = 100,
-    exploration_constant: float = 1.4,
+    c_exploration: float = 1.4,
+    c_ply_penalty: float = 0.01,
     model: str = "best",
 ):
     """Play interactive games"""
@@ -91,7 +94,8 @@ def ui(
     c4a0_rust.run_tui(  # type: ignore
         lambda model_id, x: nn.forward_numpy(x),
         max_mcts_iters,
-        exploration_constant,
+        c_exploration,
+        c_ply_penalty,
     )
 
 
