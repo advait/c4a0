@@ -129,6 +129,7 @@ fn render_app(snapshot: Snapshot, rect: Rect, buf: &mut Buffer) {
     render_snapshot_summary(&snapshot, snapshot_rect, buf);
     render_eval_and_policy(
         snapshot.q_penalty,
+        snapshot.q_no_penalty,
         &snapshot.policy,
         eval_and_policy_rect,
         buf,
@@ -194,34 +195,52 @@ fn render_snapshot_summary(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
     .render(rect, buf);
 }
 
-fn render_eval_and_policy(pos_value: QValue, policy: &Policy, rect: Rect, buf: &mut Buffer) {
-    let layout = Layout::horizontal([Constraint::Length(10), Constraint::Fill(1)]).split(rect);
-    render_eval(pos_value, layout[0], buf);
+fn render_eval_and_policy(
+    q_penalty: QValue,
+    q_no_penalty: QValue,
+    policy: &Policy,
+    rect: Rect,
+    buf: &mut Buffer,
+) {
+    let layout = Layout::horizontal([Constraint::Length(20), Constraint::Fill(1)]).split(rect);
+    render_q_values(q_penalty, q_no_penalty, layout[0], buf);
     render_policy(policy, layout[1], buf);
 }
 
-fn render_eval(pos_value: QValue, rect: Rect, buf: &mut Buffer) {
+fn render_q_values(q_penalty: QValue, q_no_penalty: QValue, rect: Rect, buf: &mut Buffer) {
     let value_max = 1000u64;
-    let value = ((pos_value + 1.0) / 2.0 * (value_max as f32)) as u64;
-    let bars = vec![Bar::default()
-        .label("Eval".into())
-        .value(value)
-        .text_value(format!("{:.2}", pos_value).into())];
+    let q_penalty_u64 = ((q_penalty + 1.0) / 2.0 * (value_max as f32)) as u64;
+    let q_no_penalty_u64 = ((q_no_penalty + 1.0) / 2.0 * (value_max as f32)) as u64;
+    let bars = vec![
+        Bar::default()
+            .label("w/ ply".into())
+            .value(q_penalty_u64)
+            .text_value(format!("{:.2}", q_penalty).into())
+            .style(if q_penalty >= 0.0 {
+                Style::new().red()
+            } else {
+                Style::new().blue()
+            }),
+        Bar::default()
+            .label("no ply".into())
+            .value(q_no_penalty_u64)
+            .text_value(format!("{:.2}", q_penalty).into())
+            .style(if q_penalty >= 0.0 {
+                Style::new().red()
+            } else {
+                Style::new().blue()
+            }),
+    ];
     BarChart::default()
         .data(BarGroup::default().bars(&bars))
-        .bar_width(5)
+        .bar_width((rect.width - 4) / 2 - 1)
         .bar_gap(2)
         .max(value_max)
-        .bar_style(if pos_value >= 0.0 {
-            Style::new().red()
-        } else {
-            Style::new().blue()
-        })
         .value_style(Style::new().green().bold())
         .label_style(Style::new().white())
         .block(
             Block::bordered()
-                .title(" Eval")
+                .title(" Q Values")
                 .padding(Padding::uniform(1)),
         )
         .render(rect, buf);
