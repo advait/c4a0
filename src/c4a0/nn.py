@@ -110,8 +110,9 @@ class ConnectFourNet(pl.LightningModule):
         x = rearrange(x, "b c h w -> b (c h w)")
         policy_logprobs = self.fc_policy(x)
         q_values = self.fc_value(x)  # b 2
-        q_penalty = q_values[:, 0].squeeze(1)  # b
-        q_no_penalty = q_values[:, 1].squeeze(1)  # b
+        q_penalty, q_no_penalty = q_values.split(1, dim=1)  # both: b 1
+        q_penalty = q_penalty.squeeze(1)  # b
+        q_no_penalty = q_no_penalty.squeeze(1)  # b
         return policy_logprobs, q_penalty, q_no_penalty
 
     def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:

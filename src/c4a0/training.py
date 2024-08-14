@@ -157,7 +157,7 @@ def train_single_gen(
     gen_n = parent.gen_n + 1
     logger.info(f"Beginning new generation {gen_n} from {parent.gen_n}")
 
-    wandb_logger = WandbLogger(project="c4a0", offline=True)
+    wandb_logger = WandbLogger(project="c4a0")
     experiment = wandb_logger.experiment
     experiment.config
     # TODO: add experiment metadata

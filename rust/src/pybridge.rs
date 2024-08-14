@@ -144,7 +144,7 @@ impl EvalPosT for PyEvalPos {
                 PyReadonlyArray1<f32>,
             ) = (&self
                 .py_eval_pos_cb
-                .call_bound(py, ((model_id), pos_batch), None)
+                .call_bound(py, (model_id, pos_batch), None)
                 .expect("Failed to call py_eval_pos_cb"))
                 .extract(py)
                 .expect("Failed to extract result");
