@@ -213,7 +213,7 @@ fn render_q_values(q_penalty: QValue, q_no_penalty: QValue, rect: Rect, buf: &mu
     let q_no_penalty_u64 = ((q_no_penalty + 1.0) / 2.0 * (value_max as f32)) as u64;
     let bars = vec![
         Bar::default()
-            .label("w/ ply".into())
+            .label("Eval".into())
             .value(q_penalty_u64)
             .text_value(format!("{:.2}", q_penalty).into())
             .style(if q_penalty >= 0.0 {
@@ -222,9 +222,9 @@ fn render_q_values(q_penalty: QValue, q_no_penalty: QValue, rect: Rect, buf: &mu
                 Style::new().blue()
             }),
         Bar::default()
-            .label("no ply".into())
+            .label("Win Prb".into())
             .value(q_no_penalty_u64)
-            .text_value(format!("{:.2}", q_penalty).into())
+            .text_value(format!("{:.0}%", q_penalty * 100.).into())
             .style(if q_penalty >= 0.0 {
                 Style::new().red()
             } else {
@@ -240,7 +240,7 @@ fn render_q_values(q_penalty: QValue, q_no_penalty: QValue, rect: Rect, buf: &mu
         .label_style(Style::new().white())
         .block(
             Block::bordered()
-                .title(" Q Values")
+                .title(" Evals")
                 .padding(Padding::uniform(1)),
         )
         .render(rect, buf);
