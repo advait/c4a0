@@ -31,7 +31,7 @@ class Player(abc.ABC):
         self.name = PlayerName(name)
         self.model_id = model_id
 
-    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         raise NotImplementedError
 
 
@@ -47,7 +47,7 @@ class ModelPlayer(Player):
         self.model = model
         self.model.to(device)
 
-    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         return self.model.forward_numpy(x)
 
 
@@ -57,11 +57,11 @@ class RandomPlayer(Player):
     def __init__(self, model_id: ModelID):
         super().__init__("random", model_id)
 
-    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         batch_size = x.shape[0]
         policy_logits = torch.rand(batch_size, N_COLS).numpy()
-        value = (torch.rand(batch_size) * 2 - 1).numpy()  # [-1, 1]
-        return policy_logits, value
+        q_value = (torch.rand(batch_size) * 2 - 1).numpy()  # [-1, 1]
+        return policy_logits, q_value, q_value
 
 
 class UniformPlayer(Player):
@@ -70,11 +70,11 @@ class UniformPlayer(Player):
     def __init__(self, model_id: ModelID):
         super().__init__("uniform", model_id)
 
-    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         batch_size = x.shape[0]
         policy_logits = torch.ones(batch_size, N_COLS).numpy()
-        value = torch.zeros(batch_size).numpy()
-        return policy_logits, value
+        q_value = torch.zeros(batch_size).numpy()
+        return policy_logits, q_value, q_value
 
 
 @dataclass

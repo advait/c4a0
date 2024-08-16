@@ -41,7 +41,8 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
     reqs: Vec<GameMetadata>,
     max_nn_batch_size: usize,
     n_mcts_iterations: usize,
-    exploration_constant: f32,
+    c_exploration: f32,
+    c_ply_penalty: f32,
 ) -> Vec<GameResult> {
     let n_games = reqs.len();
     let (pb_game_done, pb_nn_eval, pb_mcts_iter) = init_progress_bars(n_games);
@@ -94,7 +95,8 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
                         n_games_remaining,
                         n_mcts_iterations,
                         n_mcts_threads,
-                        exploration_constant,
+                        c_exploration,
+                        c_ply_penalty,
                         pb_game_done,
                         pb_mcts_iter,
                     }
@@ -255,7 +257,8 @@ struct MctsThread {
     n_games_remaining: Arc<AtomicUsize>,
     n_mcts_iterations: usize,
     n_mcts_threads: usize,
-    exploration_constant: f32,
+    c_exploration: f32,
+    c_ply_penalty: f32,
     pb_game_done: ProgressBar,
     pb_mcts_iter: ProgressBar,
 }
@@ -269,8 +272,10 @@ impl MctsThread {
                 self.pb_mcts_iter.inc(1);
                 game.on_received_policy(
                     nn_result.policy,
-                    nn_result.value,
-                    self.exploration_constant,
+                    nn_result.q_penalty,
+                    nn_result.q_no_penalty,
+                    self.c_exploration,
+                    self.c_ply_penalty,
                 );
 
                 if game.root_visit_count() >= self.n_mcts_iterations {
@@ -283,11 +288,13 @@ impl MctsThread {
                         _ if ply < 8 => 2.0,
                         _ => 1.0,
                     };
-                    game.make_random_move(self.exploration_constant, temperature);
+                    game.make_random_move(self.c_exploration, temperature);
 
                     if game.root_pos().is_terminal_state().is_some() {
                         self.n_games_remaining.fetch_sub(1, Ordering::Relaxed);
-                        self.done_queue_tx.send(game.to_result()).unwrap();
+                        self.done_queue_tx
+                            .send(game.to_result(self.c_ply_penalty))
+                            .unwrap();
                         self.pb_game_done.inc(1);
                     } else {
                         self.nn_queue_tx.send(game).unwrap();
@@ -379,7 +386,8 @@ pub mod tests {
             pos.into_iter()
                 .map(|_| EvalPosResult {
                     policy: MctsGame::UNIFORM_POLICY,
-                    value: 0.0,
+                    q_penalty: 0.0,
+                    q_no_penalty: 0.0,
                 })
                 .collect()
         }
@@ -389,7 +397,8 @@ pub mod tests {
     fn test_self_play() {
         let n_games = 1;
         let mcts_iterations = 50;
-        let exploration_constant = 1.0;
+        let c_exploration = 1.0;
+        let c_ply_penalty = 0.01;
         let results = self_play(
             UniformEvalPos {},
             (0..n_games)
@@ -401,7 +410,8 @@ pub mod tests {
                 .collect(),
             MAX_NN_BATCH_SIZE,
             mcts_iterations,
-            exploration_constant,
+            c_exploration,
+            c_ply_penalty,
         );
 
         for result in results {
@@ -428,7 +438,7 @@ pub mod tests {
                 "game {:?} should have a single terminal position",
                 result
             );
-            let terminal_value = terminal_positions[0].value;
+            let terminal_value = terminal_positions[0].q_no_penalty;
             if terminal_value != -1.0 && terminal_value != 0.0 && terminal_value != 1.0 {
                 assert!(
                     false,

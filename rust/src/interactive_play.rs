@@ -5,7 +5,7 @@ use parking_lot::{Mutex, MutexGuard};
 use crate::{
     c4r::{Move, Pos},
     mcts::MctsGame,
-    types::{EvalPosT, GameMetadata, Policy, PosValue},
+    types::{EvalPosT, GameMetadata, Policy, QValue},
 };
 
 /// Enables interactive play with a game using MCTS.
@@ -15,12 +15,18 @@ pub struct InteractivePlay<E: EvalPosT> {
 }
 
 impl<E: EvalPosT + Send + Sync + 'static> InteractivePlay<E> {
-    pub fn new(eval_pos: E, max_mcts_iterations: usize, exploration_constant: f32) -> Self {
+    pub fn new(
+        eval_pos: E,
+        max_mcts_iterations: usize,
+        c_exploration: f32,
+        c_ply_penalty: f32,
+    ) -> Self {
         Self::new_from_pos(
             Pos::default(),
             eval_pos,
             max_mcts_iterations,
-            exploration_constant,
+            c_exploration,
+            c_ply_penalty,
         )
     }
 
@@ -28,13 +34,15 @@ impl<E: EvalPosT + Send + Sync + 'static> InteractivePlay<E> {
         pos: Pos,
         eval_pos: E,
         max_mcts_iterations: usize,
-        exploration_constant: f32,
+        c_exploration: f32,
+        c_ply_penalty: f32,
     ) -> Self {
         let state = State {
             eval_pos,
             game: MctsGame::new_from_pos(pos, GameMetadata::default()),
             max_mcts_iterations,
-            exploration_constant,
+            c_exploration,
+            c_ply_penalty,
             bg_thread_running: false,
         };
 
@@ -128,26 +136,31 @@ struct State<E: EvalPosT> {
     eval_pos: E,
     game: MctsGame,
     max_mcts_iterations: usize,
-    exploration_constant: f32,
+    c_exploration: f32,
+    c_ply_penalty: f32,
     bg_thread_running: bool,
 }
 
 impl<E: EvalPosT> State<E> {
     fn snapshot(&self) -> Snapshot {
         let mut pos = self.game.root_pos().clone();
-        let mut value = self.game.root_value();
+        let mut q_penalty = self.game.root_q_with_penalty();
+        let mut q_no_penalty = self.game.root_q_no_penalty();
         if pos.ply() % 2 == 1 {
             pos = pos.invert();
-            value = -value;
+            q_penalty = -q_penalty;
+            q_no_penalty = -q_no_penalty;
         }
 
         Snapshot {
             pos,
             policy: self.game.root_policy(),
-            value,
+            q_penalty,
+            q_no_penalty,
             n_mcts_iterations: self.game.root_visit_count(),
             max_mcts_iterations: self.max_mcts_iterations,
-            exploration_constant: self.exploration_constant,
+            c_exploration: self.c_exploration,
+            c_ply_penalty: self.c_ply_penalty,
             bg_thread_running: self.bg_thread_running,
         }
     }
@@ -158,7 +171,7 @@ impl<E: EvalPosT> State<E> {
         if pos.is_terminal_state().is_some() || !pos.legal_moves()[mov] {
             return false;
         }
-        self.game.make_move(mov, self.exploration_constant);
+        self.game.make_move(mov, self.c_exploration);
         true
     }
 
@@ -167,8 +180,7 @@ impl<E: EvalPosT> State<E> {
         if self.game.root_pos().is_terminal_state().is_some() {
             return false;
         }
-        self.game
-            .make_random_move(self.exploration_constant, temperature);
+        self.game.make_random_move(self.c_exploration, temperature);
         true
     }
 
@@ -191,29 +203,36 @@ impl<E: EvalPosT> State<E> {
             .next()
             .unwrap();
 
-        self.game
-            .on_received_policy(eval.policy, eval.value, self.exploration_constant);
+        self.game.on_received_policy(
+            eval.policy,
+            eval.q_penalty,
+            eval.q_no_penalty,
+            self.c_exploration,
+            self.c_ply_penalty,
+        );
 
         let snapshot = self.snapshot();
         log::debug!(
             "bg_thread_tick finished; root_policy: {:?}\nroot_value: {:.2}",
             snapshot.policy,
-            snapshot.value
+            snapshot.q_penalty
         );
     }
 }
 
 /// A snapshot of the current state of the interactive play. The snapshot is always from the
-/// perspective of Player 0 (i.e. odd plys have inverted [Pos] and [PosValue] to reflect
+/// perspective of Player 0 (i.e. odd plys have inverted [Pos] and [QValue] to reflect
 /// Player 0's perspective).
 #[derive(Debug)]
 pub struct Snapshot {
     pub pos: Pos,
     pub policy: Policy,
-    pub value: PosValue,
+    pub q_penalty: QValue,
+    pub q_no_penalty: QValue,
     pub n_mcts_iterations: usize,
     pub max_mcts_iterations: usize,
-    pub exploration_constant: f32,
+    pub c_exploration: f32,
+    pub c_ply_penalty: f32,
     pub bg_thread_running: bool,
 }
 
@@ -225,7 +244,8 @@ mod tests {
 
     use super::{InteractivePlay, Snapshot};
 
-    const TEST_EXPLORATION_CONSTANT: f32 = 4.0;
+    const TEST_C_EXPLORATION: f32 = 4.0;
+    const TEST_C_PLY_PENALTY: f32 = 0.01;
 
     impl InteractivePlay<UniformEvalPos> {
         fn new_test(pos: Pos, max_mcts_iters: usize) -> InteractivePlay<UniformEvalPos> {
@@ -233,7 +253,8 @@ mod tests {
                 pos,
                 UniformEvalPos {},
                 max_mcts_iters,
-                TEST_EXPLORATION_CONSTANT,
+                TEST_C_EXPLORATION,
+                TEST_C_PLY_PENALTY,
             )
         }
 
@@ -266,15 +287,18 @@ mod tests {
         let snapshot = play.block_then_snapshot();
         let winning_moves = snapshot.policy[1] + snapshot.policy[4];
         assert_ge!(winning_moves, 0.98);
-        assert_ge!(snapshot.value, 0.98);
+        assert_ge!(snapshot.q_penalty, 0.91);
+        assert_ge!(snapshot.q_no_penalty, 0.98);
 
         play.make_move(1);
         let snapshot = play.block_then_snapshot();
-        assert_ge!(snapshot.value, 0.99);
+        assert_ge!(snapshot.q_penalty, 0.91);
+        assert_ge!(snapshot.q_no_penalty, 0.98);
 
         play.make_move(0);
         let snapshot = play.block_then_snapshot();
         assert_ge!(snapshot.policy[4], 0.99);
-        assert_ge!(snapshot.value, 0.99);
+        assert_ge!(snapshot.q_penalty, 0.91);
+        assert_ge!(snapshot.q_no_penalty, 0.98);
     }
 }

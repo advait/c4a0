@@ -31,7 +31,8 @@ class TrainingGen(BaseModel):
     created_at: datetime
     gen_n: int
     n_mcts_iterations: int
-    exploration_constant: float
+    c_exploration: float
+    c_ply_penalty: float
     self_play_batch_size: int
     training_batch_size: int
     parent: Optional[datetime] = None
@@ -100,7 +101,8 @@ class TrainingGen(BaseModel):
     def load_latest_with_default(
         base_dir: str,
         n_mcts_iterations: int,
-        exploration_constant: float,
+        c_exploration: float,
+        c_ply_penalty: float,
         self_play_batch_size: int,
         training_batch_size: int,
         model_config: ModelConfig,
@@ -113,7 +115,8 @@ class TrainingGen(BaseModel):
                 created_at=datetime.now(),
                 gen_n=0,
                 n_mcts_iterations=n_mcts_iterations,
-                exploration_constant=exploration_constant,
+                c_exploration=c_exploration,
+                c_ply_penalty=c_ply_penalty,
                 self_play_batch_size=self_play_batch_size,
                 training_batch_size=training_batch_size,
             )
@@ -140,7 +143,8 @@ def train_single_gen(
     parent: TrainingGen,
     n_self_play_games: int,
     n_mcts_iterations: int,
-    exploration_constant: float,
+    c_exploration: float,
+    c_ply_penalty: float,
     self_play_batch_size: int,
     training_batch_size: int,
 ) -> TrainingGen:
@@ -166,7 +170,8 @@ def train_single_gen(
         reqs,
         self_play_batch_size,
         n_mcts_iterations,
-        exploration_constant,
+        c_exploration,
+        c_ply_penalty,
         lambda player_id, pos: model.forward_numpy(pos),  # type: ignore
     )
 
@@ -195,7 +200,8 @@ def train_single_gen(
         created_at=datetime.now(),
         gen_n=parent.gen_n + 1,
         n_mcts_iterations=n_mcts_iterations,
-        exploration_constant=exploration_constant,
+        c_exploration=c_exploration,
+        c_ply_penalty=c_ply_penalty,
         self_play_batch_size=self_play_batch_size,
         training_batch_size=training_batch_size,
         parent=parent.created_at,
@@ -209,7 +215,8 @@ def training_loop(
     device: torch.device,
     n_self_play_games: int,
     n_mcts_iterations: int,
-    exploration_constant: float,
+    c_exploration: float,
+    c_ply_penalty: float,
     self_play_batch_size: int,
     training_batch_size: int,
     model_config: ModelConfig,
@@ -219,7 +226,8 @@ def training_loop(
     logger.info("device: {}", device)
     logger.info("n_self_play_games: {}", n_self_play_games)
     logger.info("n_mcts_iterations: {}", n_mcts_iterations)
-    logger.info("exploration_constant: {}", exploration_constant)
+    logger.info("c_exploration: {}", c_exploration)
+    logger.info("c_ply_penalty: {}", c_ply_penalty)
     logger.info("self_play_batch_size: {}", self_play_batch_size)
     logger.info("training_batch_size: {}", training_batch_size)
     logger.info("model_config: \n{}", model_config.model_dump_json(indent=2))
@@ -227,7 +235,8 @@ def training_loop(
     gen = TrainingGen.load_latest_with_default(
         base_dir=base_dir,
         n_mcts_iterations=n_mcts_iterations,
-        exploration_constant=exploration_constant,
+        c_exploration=c_exploration,
+        c_ply_penalty=c_ply_penalty,
         self_play_batch_size=self_play_batch_size,
         training_batch_size=training_batch_size,
         model_config=model_config,
@@ -240,7 +249,8 @@ def training_loop(
             parent=gen,
             n_self_play_games=n_self_play_games,
             n_mcts_iterations=n_mcts_iterations,
-            exploration_constant=exploration_constant,
+            c_exploration=c_exploration,
+            c_ply_penalty=c_ply_penalty,
             self_play_batch_size=self_play_batch_size,
             training_batch_size=training_batch_size,
         )
@@ -251,7 +261,8 @@ SampleTensor = NewType(
     Tuple[
         torch.Tensor,  # Pos
         torch.Tensor,  # Policy
-        torch.Tensor,  # Value
+        torch.Tensor,  # Q Value with penalty
+        torch.Tensor,  # Q Value without penalty
     ],
 )
 
@@ -272,14 +283,16 @@ class SampleDataModule(pl.LightningDataModule):
 
     @staticmethod
     def sample_to_tensor(sample: Sample) -> "SampleTensor":
-        pos, policy, value = sample.to_numpy()
+        pos, policy, q_penalty, q_no_penalty = sample.to_numpy()
         pos_t = torch.from_numpy(pos)
         policy_t = torch.from_numpy(policy)
-        value_t = torch.from_numpy(value)
+        q_penalty_t = torch.from_numpy(q_penalty)
+        q_no_penalty_t = torch.from_numpy(q_no_penalty)
         assert pos_t.shape == (BUF_N_CHANNELS, N_ROWS, N_COLS)
         assert policy_t.shape == (N_COLS,)
-        assert value_t.shape == ()
-        return SampleTensor((pos_t, policy_t, value_t))
+        assert q_penalty_t.shape == ()
+        assert q_no_penalty.shape == ()
+        return SampleTensor((pos_t, policy_t, q_penalty_t, q_no_penalty_t))
 
     def train_dataloader(self):
         return DataLoader(
