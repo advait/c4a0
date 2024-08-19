@@ -1,4 +1,8 @@
-use std::array;
+use std::{
+    array,
+    cell::RefCell,
+    rc::{Rc, Weak},
+};
 
 use more_asserts::debug_assert_gt;
 use rand::{
@@ -9,7 +13,8 @@ use rand::{
 
 use crate::{
     c4r::{Move, Pos, TerminalState},
-    types::{GameMetadata, GameResult, ModelID, Policy, QValue, Sample},
+    types::{policy_from_iter, GameMetadata, GameResult, ModelID, Policy, QValue, Sample},
+    utils::OrdF32,
 };
 
 /// A single Monte Carlo Tree Search connect four game.
@@ -22,10 +27,9 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct MctsGame {
     metadata: GameMetadata,
-    nodes: Vec<Node>,
-    root_id: NodeId,
-    leaf_id: NodeId,
-    moves: Vec<Move>,
+    root: Rc<RefCell<Node>>,
+    leaf: Rc<RefCell<Node>>,
+    moves: Vec<RecordedMove>,
 }
 
 impl Default for MctsGame {
@@ -34,6 +38,10 @@ impl Default for MctsGame {
     }
 }
 
+/// SAFETY: MctsGame is Send because it doesn't have any public methods that expose the Rc/RefCell
+/// allowing for illegal cross-thread mutation.
+unsafe impl Send for MctsGame {}
+
 impl MctsGame {
     pub const UNIFORM_POLICY: Policy = [1.0 / Pos::N_COLS as f32; Pos::N_COLS];
 
@@ -41,47 +49,29 @@ impl MctsGame {
     /// `c_exploration` is an MCTS parameter that guides how aggressively to explore vs.
     /// exploit.
     pub fn new_from_pos(pos: Pos, metadata: GameMetadata) -> MctsGame {
-        let root_node = Node::new(pos, None, 1.0);
+        let root_node = Rc::new(RefCell::new(Node::new(pos, Weak::new(), 1.0)));
         MctsGame {
             metadata,
-            nodes: vec![root_node],
-            root_id: 0,
-            leaf_id: 0,
+            root: Rc::clone(&root_node),
+            leaf: root_node,
             moves: Vec::new(),
         }
     }
 
-    /// Gets a [Node] with the given [NodeID].
-    fn get(&self, id: NodeId) -> &Node {
-        &self.nodes[id]
-    }
-
-    /// Gets a &mut [Node] with the given [NodeID].
-    fn get_mut(&mut self, id: NodeId) -> &mut Node {
-        &mut self.nodes[id]
-    }
-
-    /// Adds the node to the collection, return its id.
-    fn add_node(&mut self, node: Node) -> NodeId {
-        let id = self.nodes.len();
-        self.nodes.push(node);
-        id
-    }
-
     /// Gets the root position - the last moved that was played.
-    pub fn root_pos(&self) -> &Pos {
-        &self.get(self.root_id).pos
+    pub fn root_pos(&self) -> Pos {
+        self.root.borrow().pos.clone()
     }
 
     /// Gets the leaf node position that needs to be evaluated by the NN.
-    pub fn leaf_pos(&self) -> &Pos {
-        &self.get(self.leaf_id).pos
+    pub fn leaf_pos(&self) -> Pos {
+        self.leaf.borrow().pos.clone()
     }
 
     /// Gets the [ModelID] that is to play in the leaf position. The [ModelID] corresponds to which
     /// NN we need to call to evaluate the position.
     pub fn leaf_model_id_to_play(&self) -> ModelID {
-        if self.leaf_pos().ply() % 2 == 0 {
+        if self.leaf.borrow().pos.ply() % 2 == 0 {
             self.metadata.player0_id
         } else {
             self.metadata.player1_id
@@ -101,10 +91,11 @@ impl MctsGame {
         c_exploration: f32,
         c_ply_penalty: f32,
     ) {
-        if let Some(terminal) = self.leaf_pos().is_terminal_state() {
+        let leaf_pos = self.leaf_pos();
+        if let Some(terminal) = leaf_pos.is_terminal_state() {
             // If this is a terminal state, the received policy is irrelevant. We backpropagate
             // the objective terminal value and select a new leaf.
-            let ply_penalty_magnitude = c_ply_penalty * self.leaf_pos().ply() as f32;
+            let ply_penalty_magnitude = c_ply_penalty * leaf_pos.ply() as f32;
             let (q_no_penalty, q_penalty) = match terminal {
                 // If the player wins, we apply a penalty to encourage shorter wins
                 TerminalState::PlayerWin => (1.0, 1.0 - ply_penalty_magnitude),
@@ -116,58 +107,56 @@ impl MctsGame {
 
             self._backpropagate(q_penalty, q_no_penalty);
             self._select_new_leaf(c_exploration);
-            return;
-        }
+        } else {
+            // If this is a non-terminal state, we use the received policy to expand the leaf,
+            // backpropagate the received value, and select a new leaf.
+            let legal_moves = leaf_pos.legal_moves();
+            debug_assert_gt!(
+                { legal_moves.iter().filter(|&&m| m).count() },
+                0,
+                "no legal moves in leaf node"
+            );
 
-        let leaf = self.get(self.leaf_id);
-        let legal_moves = leaf.pos.legal_moves();
-        debug_assert_gt!(
-            { legal_moves.iter().filter(|&&m| m).count() },
-            0,
-            "no legal moves in leaf node"
-        );
-
-        // Mask policy for illegal moves and softmax
-        for mov in 0..Pos::N_COLS {
-            if !legal_moves[mov] {
-                policy_logprobs[mov] = f32::NEG_INFINITY;
+            // Mask policy for illegal moves and softmax
+            for mov in 0..Pos::N_COLS {
+                if !legal_moves[mov] {
+                    policy_logprobs[mov] = f32::NEG_INFINITY;
+                }
             }
-        }
-        let policy_probs = softmax(policy_logprobs);
-        log::debug!(
-            "policy after softmax={:?}\nnn_value={:.2}",
-            policy_probs,
-            q_penalty
-        );
+            let policy_probs = softmax(policy_logprobs);
+            log::debug!(
+                "policy after softmax={:?}\nnn_value={:.2}",
+                policy_probs,
+                q_penalty
+            );
 
-        self._expand_leaf(policy_probs);
-        self._backpropagate(q_penalty, q_no_penalty);
-        self._select_new_leaf(c_exploration);
+            self._expand_leaf(policy_probs);
+            self._backpropagate(q_penalty, q_no_penalty);
+            self._select_new_leaf(c_exploration);
+        }
     }
 
     /// Expands the the leaf by adding child nodes to it which then be eligible for exploration via
     /// subsequent MCTS iterations. Each child node's [Node::initial_policy_value] is determined by
     /// the provided policy.
     /// Noop for terminal nodes.
-    fn _expand_leaf(&mut self, policy_probs: Policy) {
-        let leaf = self.get_mut(self.leaf_id);
-        if leaf.is_terminal() {
+    fn _expand_leaf(&self, policy_probs: Policy) {
+        let leaf_pos = self.leaf_pos();
+        if leaf_pos.is_terminal_state().is_some() {
             return;
         }
-        let legal_moves = leaf.pos.legal_moves();
-        let children: [Option<NodeId>; Pos::N_COLS] = std::array::from_fn(|m| {
+        let legal_moves = leaf_pos.legal_moves();
+
+        let children: [Option<Rc<RefCell<Node>>>; Pos::N_COLS] = std::array::from_fn(|m| {
             if legal_moves[m] {
-                let child_pos = {
-                    let leaf = self.get(self.leaf_id);
-                    leaf.pos.make_move(m).unwrap()
-                };
-                let child = Node::new(child_pos, Some(self.leaf_id), policy_probs[m]);
-                Some(self.add_node(child))
+                let child_pos = leaf_pos.make_move(m).unwrap();
+                let child = Node::new(child_pos, Rc::downgrade(&self.leaf), policy_probs[m]);
+                Some(Rc::new(RefCell::new(child)))
             } else {
                 None
             }
         });
-        let leaf = self.get_mut(self.leaf_id);
+        let mut leaf = self.leaf.borrow_mut();
         leaf.children = Some(children);
     }
 
@@ -179,27 +168,30 @@ impl MctsGame {
     /// effectively invalidating the policy for these nodes. This should not be a problem as we only
     /// expose a [MctsGame::root_policy] method (which will be valid), preventing callers from
     /// accessing policies for the root node's parent ancestors (which will be invalid).
-    fn _backpropagate(&mut self, mut q_penalty: QValue, mut q_no_penalty: QValue) {
-        let mut pos = self.get_mut(self.leaf_id);
+    fn _backpropagate(&self, mut q_penalty: QValue, mut q_no_penalty: QValue) {
+        log::debug!("backprop");
+        let mut node_ref = Rc::clone(&self.leaf);
         loop {
-            pos.visit_count += 1;
-            pos.q_sum_penalty += q_penalty;
-            pos.q_sum_no_penalty += q_no_penalty;
+            let mut node = node_ref.borrow_mut();
+            node.visit_count += 1;
+            node.q_sum_penalty += q_penalty;
+            node.q_sum_no_penalty += q_no_penalty;
             log::debug!(
                 "backpropagate: pos=\n{}\nq_penalty / no_penalty={}/{}\nexploit_value={:.2}/{}={:.2}",
-                pos.pos,
+                node.pos,
                 q_penalty,
                 q_no_penalty,
-                pos.q_sum_penalty,
-                pos.visit_count,
-                pos.q_with_penalty(),
+                node.q_sum_penalty,
+                node.visit_count,
+                node.q_with_penalty(),
             );
 
             q_penalty = -q_penalty;
             q_no_penalty = -q_no_penalty;
 
-            if let Some(parent_id) = pos.parent {
-                pos = self.get_mut(parent_id);
+            if let Some(parent) = node.parent.upgrade() {
+                drop(node); // Drop node_ref borrow so we can reassign node_ref
+                node_ref = parent;
             } else {
                 break;
             }
@@ -210,38 +202,48 @@ impl MctsGame {
     /// with the highest [Node::uct_value] until we reach a node with no expanded children (leaf
     /// node).
     fn _select_new_leaf(&mut self, c_exploration: f32) {
-        let mut cur_id = self.root_id;
+        let mut node_ref = Rc::clone(&self.root);
 
-        while let Some(children) = self.get(cur_id).children {
-            cur_id = children
-                .iter()
-                .flatten()
-                .map(|&id| {
-                    let child = self.get(id);
-                    let score = child.uct_value(self, c_exploration);
-                    (id, score)
-                })
-                .max_by(|(_a_id, a_score), (_b_id, b_score)| {
-                    a_score
-                        .partial_cmp(b_score)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                })
-                .map(|(id, _score)| id)
-                .expect("attempted to expand a terminal node")
+        loop {
+            let next = node_ref.borrow().children.as_ref().and_then(|children| {
+                children
+                    .iter()
+                    .flatten()
+                    .max_by_key(|&child| {
+                        let score = child.borrow().uct_value(c_exploration);
+                        OrdF32(score)
+                    })
+                    .cloned()
+            });
+
+            match next {
+                Some(next) => node_ref = Rc::clone(&next),
+                None => break,
+            }
         }
 
-        self.leaf_id = cur_id;
-        log::debug!("select_new_leaf: leaf=\n{}", self.leaf_pos());
+        self.leaf = node_ref;
+        log::debug!("select_new_leaf: leaf=\n{}", self.leaf.borrow().pos);
     }
 
     /// Makes a move, updating the root node to be the child node corresponding to the move.
-    /// Note that this method does not perform garbage collection for un-played sub-trees.
     pub fn make_move(&mut self, m: Move, c_exploration: f32) {
-        let root = self.get(self.root_id);
-        let children = root.children.expect("root node has no children");
-        let child_id = children[m as usize].expect("attempted to make an invalid move");
-        self.root_id = child_id;
-        self.moves.push(m);
+        let child = {
+            let root = self.root.borrow();
+            let children = root.children.as_ref().expect("root node has no children");
+            let child = children[m as usize]
+                .as_ref()
+                .expect("attempted to make an invalid move");
+            Rc::clone(&child)
+        };
+
+        self.moves.push(RecordedMove {
+            pos: self.root_pos(),
+            policy: self.root_policy(),
+            mov: m,
+        });
+        self.root = child;
+
         // We must select a new leaf as the old leaf might not be in the subtree of the new root
         self._select_new_leaf(c_exploration);
     }
@@ -261,101 +263,93 @@ impl MctsGame {
         self.make_move(mov, c_exploration);
     }
 
-    /// Sets the root node to the given position, clearing the entire tree and moves.
-    /// This is necessary when updating the root position to a non-child state (e.g. via
-    /// [Self::reset_game] or [Self::undo_move]) as ancestor states are no longer valid after
-    /// [Self::make_move] is called. Therefore, instead of re-using stale ancestor states, we
-    /// simply blow away the tree and start from scratch.
-    fn reset_root_and_moves(&mut self, pos: Pos, moves: Vec<Move>) {
-        self.nodes.clear();
-        let root_node = Node::new(pos, None, 1.0);
-        self.nodes.push(root_node);
-        self.root_id = 0;
-        self.leaf_id = 0;
-        self.moves = moves;
-    }
-
     /// Resets the game to the starting position.
     pub fn reset_game(&mut self) {
-        self.reset_root_and_moves(Pos::default(), Vec::default())
+        while self.undo_move() {}
     }
 
-    /// Undoes the last move by manually replaying the moves from the start and calling
-    /// [Self::reset_root_and_moves] accordingly. Returns whether the undo actually happened.
+    /// Undo the last move.
     pub fn undo_move(&mut self) -> bool {
         if self.moves.is_empty() {
             return false;
         }
 
         let mut moves = self.moves.clone();
-        let mut pos = Pos::default();
-        moves.pop();
-        for &mov in &moves {
-            pos = pos
-                .make_move(mov)
-                .expect("attempted to undo an invalid move");
-        }
-        self.reset_root_and_moves(pos, moves);
+        let last_move = moves.pop().unwrap();
+
+        // last_move.root_pos is the previous position
+        let root = Node::new(last_move.pos, Weak::new(), 1.0);
+        let root = Rc::new(RefCell::new(root));
+        self.root = Rc::clone(&root);
+        self.leaf = root;
+        self.moves = moves;
         true
     }
 
     /// The number of visits to the root node.
     pub fn root_visit_count(&self) -> usize {
-        self.get(self.root_id).visit_count
+        self.root.borrow().visit_count
     }
 
     /// After performing many MCTS iterations, the resulting policy is determined by the visit count
     /// of each child (more visits implies more lucrative).
     pub fn root_policy(&self) -> Policy {
-        let root = self.get(self.root_id);
-        root.policy(self)
+        self.root.borrow().policy()
     }
 
     /// The average [QValue] of the root node as a consequence of performing MCTS iterations.
     pub fn root_q_with_penalty(&self) -> QValue {
-        let root = self.get(self.root_id);
-        root.q_with_penalty()
+        self.root.borrow().q_with_penalty()
     }
 
     pub fn root_q_no_penalty(&self) -> QValue {
-        let root = self.get(self.root_id);
-        root.q_no_penalty()
+        self.root.borrow().q_no_penalty()
     }
 
     /// Converts a finished game into a Vec of [Sample] for future NN training.
-    pub fn to_result(&self, c_ply_penalty: f32) -> GameResult {
-        let ply_penalty_magnitude = c_ply_penalty * self.root_pos().ply() as f32;
-        let (mut q_no_penalty, mut q_penalty) = self
-            .root_pos()
+    pub fn to_result(self, c_ply_penalty: f32) -> GameResult {
+        let root = self.root.borrow();
+        let ply_penalty_magnitude = c_ply_penalty * root.pos.ply() as f32;
+        let (q_no_penalty, q_penalty) = root
+            .pos
             .is_terminal_state()
             .map(|ts| match ts {
-                TerminalState::PlayerWin => (1.0, 1.0 - ply_penalty_magnitude),
+                // After playing a move, we switch the perspective of the board. Therefore, we can
+                // never reach a TerminalState::PlayerWin state.
+                TerminalState::PlayerWin => panic!("PlayerWin can never be a terminal state"),
                 TerminalState::OpponentWin => (-1.0, -1.0 + ply_penalty_magnitude),
                 TerminalState::Draw => (0.0, 0.0 - ply_penalty_magnitude),
             })
             .expect("attempted to convert a non-terminal game to a training sample");
 
-        let mut cur = self.get(self.leaf_id);
-        let mut samples = vec![Sample {
-            pos: cur.pos.clone(),
-            policy: cur.policy(&self),
-            q_penalty,
-            q_no_penalty,
-        }];
-        while let Some(parent_id) = cur.parent {
-            // Alternate values as the each consecutive position alternates player vs. opponent
-            q_penalty = -q_penalty;
-            q_no_penalty = -q_no_penalty;
-            cur = self.get(parent_id);
-            samples.push(Sample {
-                pos: cur.pos.clone(),
-                policy: cur.policy(&self),
-                q_penalty,
-                q_no_penalty,
-            });
+        // Q values alternate for each ply
+        let mut alternating_q = vec![(q_penalty, q_no_penalty), (-q_penalty, -q_no_penalty)]
+            .into_iter()
+            .cycle();
+        if self.moves.len() % 2 == 1 {
+            // If we have an odd number of moves (even number of total positions), the first Q value
+            // should be inverted so that the final Q value is based on the terminal state above.
+            alternating_q.next();
         }
 
-        samples.reverse();
+        let mut samples: Vec<_> = self
+            .moves
+            .iter()
+            .zip(alternating_q)
+            .map(|(mov, (q_penalty, q_no_penalty))| Sample {
+                pos: mov.pos.clone(),
+                policy: mov.policy,
+                q_penalty,
+                q_no_penalty,
+            })
+            .collect();
+        samples.push(Sample {
+            pos: root.pos.clone(),
+            policy: MctsGame::UNIFORM_POLICY,
+            q_penalty,
+            q_no_penalty,
+        });
+
         GameResult {
             metadata: self.metadata.clone(),
             samples: samples,
@@ -363,26 +357,30 @@ impl MctsGame {
     }
 }
 
-/// We use integer Node IDs to represent pointers to nodes instead of weak referenes for
-/// convenience.
-type NodeId = usize;
+/// Recorded move during the MCTS process.
+#[derive(Debug, Clone)]
+struct RecordedMove {
+    pos: Pos,
+    policy: Policy,
+    mov: Move,
+}
 
 /// A node within an MCTS tree.
 #[derive(Debug, Clone)]
 struct Node {
     pos: Pos,
-    parent: Option<NodeId>,
+    parent: Weak<RefCell<Node>>,
     visit_count: usize,
     q_sum_penalty: f32,
     q_sum_no_penalty: f32,
     initial_policy_value: QValue,
-    children: Option<[Option<NodeId>; Pos::N_COLS]>,
+    children: Option<[Option<Rc<RefCell<Node>>>; Pos::N_COLS]>,
 }
 
 impl Node {
     const EPS: f32 = 1e-8;
 
-    fn new(pos: Pos, parent: Option<NodeId>, initial_policy_value: QValue) -> Node {
+    fn new(pos: Pos, parent: Weak<RefCell<Node>>, initial_policy_value: QValue) -> Node {
         Node {
             pos,
             parent,
@@ -409,11 +407,13 @@ impl Node {
     /// The exploration component of the UCT value. Higher visit counts result in lower values.
     /// We also weight the exploration value by the initial policy value to allow the network
     /// to guide the search.
-    fn exploration_value(&self, game: &MctsGame) -> QValue {
-        let parent_visit_count = match self.parent {
-            Some(parent_id) => game.get(parent_id).visit_count,
-            None => self.visit_count,
-        } as f32;
+    fn exploration_value(&self) -> QValue {
+        let parent_visit_count = self
+            .parent
+            .upgrade()
+            .map_or(self.visit_count as f32, |parent| {
+                parent.borrow().visit_count as f32
+            }) as f32;
         let exploration_value = (parent_visit_count.ln() / (self.visit_count as f32 + 1.)).sqrt();
         exploration_value * (self.initial_policy_value + Self::EPS)
     }
@@ -421,8 +421,8 @@ impl Node {
     /// The UCT value of this node. Represents the lucrativeness of this node according to MCTS.
     /// Because [Self::utc_value] is called from the perspective of the *parent* node, we negate
     /// the exploration value.
-    fn uct_value(&self, game: &MctsGame, c_exploration: f32) -> QValue {
-        -self.q_with_penalty() + c_exploration * self.exploration_value(game)
+    fn uct_value(&self, c_exploration: f32) -> QValue {
+        -self.q_with_penalty() + c_exploration * self.exploration_value()
     }
 
     /// Whether the game is over (won, los, draw) from this position.
@@ -431,13 +431,13 @@ impl Node {
     }
 
     /// Uses the child counts as weights to determine the implied policy from this position.
-    fn policy(&self, game: &MctsGame) -> Policy {
-        if let Some(children) = self.children {
-            let child_counts = children.map(|maybe_child| {
+    fn policy(&self) -> Policy {
+        if let Some(children) = &self.children {
+            let child_counts = policy_from_iter(children.iter().map(|maybe_child| {
                 maybe_child
-                    .map(|child_id| game.get(child_id).visit_count as f32)
-                    .unwrap_or(0.)
-            });
+                    .as_ref()
+                    .map_or(0., |child_ref| child_ref.borrow().visit_count as f32)
+            }));
             let child_counts_sum = child_counts.iter().sum::<f32>();
             if child_counts_sum == 0.0 {
                 MctsGame::UNIFORM_POLICY

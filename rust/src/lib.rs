@@ -6,6 +6,7 @@ mod pybridge;
 mod self_play;
 mod tui;
 mod types;
+mod utils;
 
 use c4r::Pos;
 use env_logger::Env;

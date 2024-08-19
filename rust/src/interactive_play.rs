@@ -143,7 +143,7 @@ struct State<E: EvalPosT> {
 
 impl<E: EvalPosT> State<E> {
     fn snapshot(&self) -> Snapshot {
-        let mut pos = self.game.root_pos().clone();
+        let mut pos = self.game.root_pos();
         let mut q_penalty = self.game.root_q_with_penalty();
         let mut q_no_penalty = self.game.root_q_no_penalty();
         if pos.ply() % 2 == 1 {
@@ -195,7 +195,7 @@ impl<E: EvalPosT> State<E> {
     fn bg_thread_tick(&mut self) {
         // TODO: Preemptively forward pass additional pos leafs and store their results in cache
         // to maximize GPU parallelism instead of evaluating a single pos at a time.
-        let leaf_pos = self.game.leaf_pos().clone();
+        let leaf_pos = self.game.leaf_pos();
         let eval = self
             .eval_pos
             .eval_pos(0, vec![leaf_pos])

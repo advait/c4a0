@@ -151,3 +151,11 @@ impl Sample {
         self.pos.to_string()
     }
 }
+
+pub fn policy_from_iter<I: IntoIterator<Item = f32>>(iter: I) -> Policy {
+    let mut policy = [0.0; Pos::N_COLS];
+    for (i, p) in iter.into_iter().enumerate() {
+        policy[i] = p;
+    }
+    policy
+}

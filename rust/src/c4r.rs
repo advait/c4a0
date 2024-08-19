@@ -21,7 +21,7 @@ pub enum CellValue {
 }
 
 /// Possible terminal states of a connect four game.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum TerminalState {
     PlayerWin,
     OpponentWin,
