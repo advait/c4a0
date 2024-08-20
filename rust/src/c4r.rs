@@ -1,7 +1,10 @@
 use core::fmt;
 use std::{array::from_fn, fmt::Display};
 
+use more_asserts::debug_assert_gt;
 use serde::{Deserialize, Serialize};
+
+use crate::types::{Policy, QValue};
 
 /// Connect four position.
 /// Internally consists of a u64 mask (bitmask representing whether a piece exists at a given
@@ -245,10 +248,40 @@ impl Pos {
         false
     }
 
+    /// Returns the f32 terminal value of the position. The first value is without the ply penalty
+    /// and the second value is with the ply penalty applied. Returns None if the game is not over.
+    pub fn terminal_value_with_ply_penalty(&self, c_ply_penalty: f32) -> Option<(QValue, QValue)> {
+        let ply_penalty_magnitude = c_ply_penalty * self.ply() as f32;
+        self.is_terminal_state().map(|t| match t {
+            // If the player wins, we apply a penalty to encourage shorter wins
+            TerminalState::PlayerWin => (1.0, 1.0 - ply_penalty_magnitude),
+            // If the player loses, we apply a penalty to encourage more drawn out games
+            TerminalState::OpponentWin => (-1.0, -1.0 + ply_penalty_magnitude),
+            TerminalState::Draw => (0.0, 0.0 - ply_penalty_magnitude),
+        })
+    }
+
     /// Indicates which moves (columns) are legal to play.
     pub fn legal_moves(&self) -> [bool; Self::N_COLS] {
         let top_row = Self::N_ROWS - 1;
         from_fn(|col| self.get(top_row, col).is_none())
+    }
+
+    /// Mask the policy logprobs by setting illegal moves to [f32::NEG_INFINITY].
+    pub fn mask_policy(&self, policy_logprobs: &mut Policy) {
+        let legal_moves = self.legal_moves();
+        debug_assert_gt!(
+            { legal_moves.iter().filter(|&&m| m).count() },
+            0,
+            "no legal moves in leaf node"
+        );
+
+        // Mask policy for illegal moves and softmax
+        for mov in 0..Pos::N_COLS {
+            if !legal_moves[mov] {
+                policy_logprobs[mov] = f32::NEG_INFINITY;
+            }
+        }
     }
 
     /// Returns a new [Pos] that is horizonitally flipped.

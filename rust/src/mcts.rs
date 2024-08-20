@@ -4,7 +4,6 @@ use std::{
     rc::{Rc, Weak},
 };
 
-use more_asserts::debug_assert_gt;
 use rand::{
     distributions::{Distribution, WeightedIndex},
     rngs::StdRng,
@@ -80,8 +79,8 @@ impl MctsGame {
 
     /// Called when we receive a new policy/value from the NN forward pass for this leaf node.
     /// This is the heart of the MCTS algorithm:
-    /// 1. Expands the current leaf with the given policy
-    /// 2. Backpropagates up the tree with the given value
+    /// 1. Expands the current leaf with the given policy (if it is non-terminal)
+    /// 2. Backpropagates up the tree with the given value (or the objective terminal value)
     /// 3. selects a new leaf for the next MCTS iteration.
     pub fn on_received_policy(
         &mut self,
@@ -92,47 +91,21 @@ impl MctsGame {
         c_ply_penalty: f32,
     ) {
         let leaf_pos = self.leaf_pos();
-        if let Some(terminal) = leaf_pos.is_terminal_state() {
+        if let Some((q_no_penalty, q_penalty)) =
+            leaf_pos.terminal_value_with_ply_penalty(c_ply_penalty)
+        {
             // If this is a terminal state, the received policy is irrelevant. We backpropagate
             // the objective terminal value and select a new leaf.
-            let ply_penalty_magnitude = c_ply_penalty * leaf_pos.ply() as f32;
-            let (q_no_penalty, q_penalty) = match terminal {
-                // If the player wins, we apply a penalty to encourage shorter wins
-                TerminalState::PlayerWin => (1.0, 1.0 - ply_penalty_magnitude),
-                // If the player loses, we apply a penalty to encourage more drawn out games
-                TerminalState::OpponentWin => (-1.0, -1.0 + ply_penalty_magnitude),
-                TerminalState::Draw => (0.0, 0.0 - ply_penalty_magnitude),
-            };
-            log::debug!("on_received_policy: terminal state, value={}", q_no_penalty);
-
-            self._backpropagate(q_penalty, q_no_penalty);
-            self._select_new_leaf(c_exploration);
+            self.backpropagate_value(q_penalty, q_no_penalty);
+            self.select_new_leaf(c_exploration);
         } else {
             // If this is a non-terminal state, we use the received policy to expand the leaf,
             // backpropagate the received value, and select a new leaf.
-            let legal_moves = leaf_pos.legal_moves();
-            debug_assert_gt!(
-                { legal_moves.iter().filter(|&&m| m).count() },
-                0,
-                "no legal moves in leaf node"
-            );
-
-            // Mask policy for illegal moves and softmax
-            for mov in 0..Pos::N_COLS {
-                if !legal_moves[mov] {
-                    policy_logprobs[mov] = f32::NEG_INFINITY;
-                }
-            }
+            leaf_pos.mask_policy(&mut policy_logprobs);
             let policy_probs = softmax(policy_logprobs);
-            log::debug!(
-                "policy after softmax={:?}\nnn_value={:.2}",
-                policy_probs,
-                q_penalty
-            );
-
-            self._expand_leaf(policy_probs);
-            self._backpropagate(q_penalty, q_no_penalty);
-            self._select_new_leaf(c_exploration);
+            self.expand_leaf(policy_probs);
+            self.backpropagate_value(q_penalty, q_no_penalty);
+            self.select_new_leaf(c_exploration);
         }
     }
 
@@ -140,7 +113,7 @@ impl MctsGame {
     /// subsequent MCTS iterations. Each child node's [Node::initial_policy_value] is determined by
     /// the provided policy.
     /// Noop for terminal nodes.
-    fn _expand_leaf(&self, policy_probs: Policy) {
+    fn expand_leaf(&self, policy_probs: Policy) {
         let leaf_pos = self.leaf_pos();
         if leaf_pos.is_terminal_state().is_some() {
             return;
@@ -168,23 +141,13 @@ impl MctsGame {
     /// effectively invalidating the policy for these nodes. This should not be a problem as we only
     /// expose a [MctsGame::root_policy] method (which will be valid), preventing callers from
     /// accessing policies for the root node's parent ancestors (which will be invalid).
-    fn _backpropagate(&self, mut q_penalty: QValue, mut q_no_penalty: QValue) {
-        log::debug!("backprop");
+    fn backpropagate_value(&self, mut q_penalty: QValue, mut q_no_penalty: QValue) {
         let mut node_ref = Rc::clone(&self.leaf);
         loop {
             let mut node = node_ref.borrow_mut();
             node.visit_count += 1;
             node.q_sum_penalty += q_penalty;
             node.q_sum_no_penalty += q_no_penalty;
-            log::debug!(
-                "backpropagate: pos=\n{}\nq_penalty / no_penalty={}/{}\nexploit_value={:.2}/{}={:.2}",
-                node.pos,
-                q_penalty,
-                q_no_penalty,
-                node.q_sum_penalty,
-                node.visit_count,
-                node.q_with_penalty(),
-            );
 
             q_penalty = -q_penalty;
             q_no_penalty = -q_no_penalty;
@@ -201,7 +164,7 @@ impl MctsGame {
     /// Select the next leaf node by traversing from the root node, repeatedly selecting the child
     /// with the highest [Node::uct_value] until we reach a node with no expanded children (leaf
     /// node).
-    fn _select_new_leaf(&mut self, c_exploration: f32) {
+    fn select_new_leaf(&mut self, c_exploration: f32) {
         let mut node_ref = Rc::clone(&self.root);
 
         loop {
@@ -216,9 +179,10 @@ impl MctsGame {
                     .cloned()
             });
 
-            match next {
-                Some(next) => node_ref = Rc::clone(&next),
-                None => break,
+            if let Some(next) = next {
+                node_ref = Rc::clone(&next)
+            } else {
+                break;
             }
         }
 
@@ -245,7 +209,7 @@ impl MctsGame {
         self.root = child;
 
         // We must select a new leaf as the old leaf might not be in the subtree of the new root
-        self._select_new_leaf(c_exploration);
+        self.select_new_leaf(c_exploration);
     }
 
     /// Makes a move probabalistically based on the root node's policy.
@@ -277,7 +241,7 @@ impl MctsGame {
         let mut moves = self.moves.clone();
         let last_move = moves.pop().unwrap();
 
-        // last_move.root_pos is the previous position
+        // last_move.pos is the previous position
         let root = Node::new(last_move.pos, Weak::new(), 1.0);
         let root = Rc::new(RefCell::new(root));
         self.root = Rc::clone(&root);
@@ -297,11 +261,14 @@ impl MctsGame {
         self.root.borrow().policy()
     }
 
-    /// The average [QValue] of the root node as a consequence of performing MCTS iterations.
+    /// The average [QValue] of the root node as a consequence of performing MCTS iterations
+    /// (with ply penalties applied).
     pub fn root_q_with_penalty(&self) -> QValue {
         self.root.borrow().q_with_penalty()
     }
 
+    /// The average [QValue] of the root node as a consequence of performing MCTS iterations
+    /// (without ply penalties applied).
     pub fn root_q_no_penalty(&self) -> QValue {
         self.root.borrow().q_no_penalty()
     }
