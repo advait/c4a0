@@ -204,7 +204,7 @@ impl<E: EvalPosT> NNThread<E> {
         for game in self.pending_games.iter() {
             let model_id = game.leaf_model_id_to_play();
             let entry = model_pos.entry(model_id).or_default();
-            entry.insert(game.leaf_pos().clone());
+            entry.insert(game.leaf_pos());
         }
 
         // Select the model with the most positions and evaluate
@@ -226,12 +226,12 @@ impl<E: EvalPosT> NNThread<E> {
         mem::swap(&mut self.pending_games, &mut games);
         for game in games.into_iter() {
             let pos = game.leaf_pos();
-            if game.leaf_model_id_to_play() != model_id || !eval_map.contains_key(pos) {
+            if game.leaf_model_id_to_play() != model_id || !eval_map.contains_key(&pos) {
                 self.pending_games.push(game);
                 continue;
             }
 
-            let nn_result = eval_map[pos].clone();
+            let nn_result = eval_map[&pos].clone();
             self.mcts_queue.send(MctsJob::Job(game, nn_result)).unwrap();
         }
     }
@@ -278,47 +278,56 @@ impl MctsThread {
                     self.c_ply_penalty,
                 );
 
-                if game.root_visit_count() >= self.n_mcts_iterations {
-                    // We have reached the sufficient number of MCTS iterations to make a move.
+                // If we haven't reached the requisite number of MCTS iterations, send back to NN
+                // to evaluate the next leaf.
+                if game.root_visit_count() < self.n_mcts_iterations {
+                    self.nn_queue_tx.send(game).unwrap();
+                    return Loop::Continue;
+                }
+
+                // We have reached the sufficient number of MCTS iterations to make a move.
+                let root_pos = game.root_pos();
+                if root_pos.is_terminal_state().is_none() {
+                    // Make a random move according to the MCTS policy.
                     // If we are in the early game, use a higher temperature to encourage
                     // generating more diverse (but suboptimal) games.
-                    let ply = game.root_pos().ply();
+                    let ply = root_pos.ply();
                     let temperature = match () {
                         _ if ply < 4 => 4.0,
                         _ if ply < 8 => 2.0,
                         _ => 1.0,
                     };
                     game.make_random_move(self.c_exploration, temperature);
-
-                    if game.root_pos().is_terminal_state().is_some() {
-                        self.n_games_remaining.fetch_sub(1, Ordering::Relaxed);
-                        self.done_queue_tx
-                            .send(game.to_result(self.c_ply_penalty))
-                            .unwrap();
-                        self.pb_game_done.inc(1);
-                    } else {
-                        self.nn_queue_tx.send(game).unwrap();
-                    }
-                } else {
                     self.nn_queue_tx.send(game).unwrap();
+                } else {
+                    // Game is over. Send to done_queue.
+                    self.n_games_remaining.fetch_sub(1, Ordering::Relaxed);
+                    self.done_queue_tx
+                        .send(game.to_result(self.c_ply_penalty))
+                        .unwrap();
+                    self.pb_game_done.inc(1);
+
+                    if self.n_games_remaining.load(Ordering::Relaxed) == 0 {
+                        // We wrote the last game. Send poison pills to remaining threads.
+                        self.terminate_and_poison_other_threads();
+                        return Loop::Break;
+                    }
                 }
 
-                if self.n_games_remaining.load(Ordering::Relaxed) == 0 {
-                    // We wrote the last game. Send poison pills to remaining threads.
-                    self.pb_mcts_iter
-                        .finish_with_message("MCTS iterations complete");
-                    self.pb_game_done.finish_with_message("All games generated");
-                    for _ in 0..(self.n_mcts_threads - 1) {
-                        self.mcts_queue_tx.send(MctsJob::PoisonPill).unwrap();
-                    }
-                    Loop::Break
-                } else {
-                    Loop::Continue
-                }
+                Loop::Continue
             }
             Err(RecvError) => {
                 panic!("mcts_thread: mcts_queue unexpectedly closed")
             }
+        }
+    }
+
+    fn terminate_and_poison_other_threads(&self) {
+        self.pb_mcts_iter
+            .finish_with_message("MCTS iterations complete");
+        self.pb_game_done.finish_with_message("All games generated");
+        for _ in 0..(self.n_mcts_threads - 1) {
+            self.mcts_queue_tx.send(MctsJob::PoisonPill).unwrap();
         }
     }
 
