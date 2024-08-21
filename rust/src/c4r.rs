@@ -248,16 +248,16 @@ impl Pos {
         false
     }
 
-    /// Returns the f32 terminal value of the position. The first value is without the ply penalty
-    /// and the second value is with the ply penalty applied. Returns None if the game is not over.
+    /// Returns the f32 terminal value of the position. The first value is with the ply penalty
+    /// and the second value is wwithout the ply penalty. Returns None if the game is not over.
     pub fn terminal_value_with_ply_penalty(&self, c_ply_penalty: f32) -> Option<(QValue, QValue)> {
         let ply_penalty_magnitude = c_ply_penalty * self.ply() as f32;
         self.is_terminal_state().map(|t| match t {
             // If the player wins, we apply a penalty to encourage shorter wins
-            TerminalState::PlayerWin => (1.0, 1.0 - ply_penalty_magnitude),
+            TerminalState::PlayerWin => (1.0 - ply_penalty_magnitude, 1.0),
             // If the player loses, we apply a penalty to encourage more drawn out games
-            TerminalState::OpponentWin => (-1.0, -1.0 + ply_penalty_magnitude),
-            TerminalState::Draw => (0.0, 0.0 - ply_penalty_magnitude),
+            TerminalState::OpponentWin => (-1.0 + ply_penalty_magnitude, -1.0),
+            TerminalState::Draw => (0.0 - ply_penalty_magnitude, 0.0),
         })
     }
 

@@ -11,7 +11,7 @@ use rand::{
 };
 
 use crate::{
-    c4r::{Move, Pos, TerminalState},
+    c4r::{Move, Pos},
     types::{policy_from_iter, GameMetadata, GameResult, ModelID, Policy, QValue, Sample},
     utils::OrdF32,
 };
@@ -91,7 +91,7 @@ impl MctsGame {
         c_ply_penalty: f32,
     ) {
         let leaf_pos = self.leaf_pos();
-        if let Some((q_no_penalty, q_penalty)) =
+        if let Some((q_penalty, q_no_penalty)) =
             leaf_pos.terminal_value_with_ply_penalty(c_ply_penalty)
         {
             // If this is a terminal state, the received policy is irrelevant. We backpropagate
@@ -136,11 +136,6 @@ impl MctsGame {
     /// Backpropagate value up the tree, alternating value signs for each step.
     /// If the leaf node is a non-terminal node, the value is taken from the NN forward pass.
     /// If the leaf node is a terminal node, the value is the objective value of the win/loss/draw.
-    ///
-    /// Note we continue backpropagating counts/values up past the root's parent ancestors,
-    /// effectively invalidating the policy for these nodes. This should not be a problem as we only
-    /// expose a [MctsGame::root_policy] method (which will be valid), preventing callers from
-    /// accessing policies for the root node's parent ancestors (which will be invalid).
     fn backpropagate_value(&self, mut q_penalty: QValue, mut q_no_penalty: QValue) {
         let mut node_ref = Rc::clone(&self.leaf);
         loop {
@@ -187,11 +182,17 @@ impl MctsGame {
         }
 
         self.leaf = node_ref;
-        log::debug!("select_new_leaf: leaf=\n{}", self.leaf.borrow().pos);
     }
 
     /// Makes a move, updating the root node to be the child node corresponding to the move.
+    /// Stores the previous position and policy in the [Self::moves] vector.
     pub fn make_move(&mut self, m: Move, c_exploration: f32) {
+        self.moves.push(RecordedMove {
+            pos: self.root_pos(),
+            policy: self.root_policy(),
+            mov: m,
+        });
+
         let child = {
             let root = self.root.borrow();
             let children = root.children.as_ref().expect("root node has no children");
@@ -200,12 +201,6 @@ impl MctsGame {
                 .expect("attempted to make an invalid move");
             Rc::clone(&child)
         };
-
-        self.moves.push(RecordedMove {
-            pos: self.root_pos(),
-            policy: self.root_policy(),
-            mov: m,
-        });
         self.root = child;
 
         // We must select a new leaf as the old leaf might not be in the subtree of the new root
@@ -214,6 +209,7 @@ impl MctsGame {
 
     /// Makes a move probabalistically based on the root node's policy.
     /// Uses the game_id and ply as rng seeds for deterministic sampling.
+    ///
     /// The temperature parameter scales the policy probabilities, with values > 1.0 making the
     /// sampled distribution more uniform and values < 1.0 making the sampled distribution favor
     /// the most lucrative moves.
@@ -275,21 +271,14 @@ impl MctsGame {
 
     /// Converts a finished game into a Vec of [Sample] for future NN training.
     pub fn to_result(self, c_ply_penalty: f32) -> GameResult {
-        let root = self.root.borrow();
-        let ply_penalty_magnitude = c_ply_penalty * root.pos.ply() as f32;
-        let (q_no_penalty, q_penalty) = root
+        let (q_penalty, q_no_penalty) = self
+            .root
+            .borrow()
             .pos
-            .is_terminal_state()
-            .map(|ts| match ts {
-                // After playing a move, we switch the perspective of the board. Therefore, we can
-                // never reach a TerminalState::PlayerWin state.
-                TerminalState::PlayerWin => panic!("PlayerWin can never be a terminal state"),
-                TerminalState::OpponentWin => (-1.0, -1.0 + ply_penalty_magnitude),
-                TerminalState::Draw => (0.0, 0.0 - ply_penalty_magnitude),
-            })
+            .terminal_value_with_ply_penalty(c_ply_penalty)
             .expect("attempted to convert a non-terminal game to a training sample");
 
-        // Q values alternate for each ply
+        // Q values alternate for each ply as perspective alternates between players.
         let mut alternating_q = vec![(q_penalty, q_no_penalty), (-q_penalty, -q_no_penalty)]
             .into_iter()
             .cycle();
@@ -310,8 +299,10 @@ impl MctsGame {
                 q_no_penalty,
             })
             .collect();
+
+        // Add the final (terminal) position with an arbitray uniform policy
         samples.push(Sample {
-            pos: root.pos.clone(),
+            pos: self.root.borrow().pos.clone(),
             policy: MctsGame::UNIFORM_POLICY,
             q_penalty,
             q_no_penalty,
@@ -333,6 +324,12 @@ struct RecordedMove {
 }
 
 /// A node within an MCTS tree.
+/// [Self::parent] is a weak reference to the parent node to avoid reference cycles.
+/// [Self::children] is an array of optional child nodes. If a child is None, it means that the
+/// move is illegal. Otherwise the child is a [Rc<RefCell<Node>>] reference to the child node.
+/// We maintain two separate Q values: one with ply penalties applied ([Self::q_sum_penalty]) and
+/// one without ([Self::q_sum_no_penalty]). These are normalized with [Self::visit_count] to get the
+/// average [QValue]s in [Self::q_with_penalty()] and [Self::q_no_penalty()].
 #[derive(Debug, Clone)]
 struct Node {
     pos: Pos,
@@ -386,7 +383,7 @@ impl Node {
     }
 
     /// The UCT value of this node. Represents the lucrativeness of this node according to MCTS.
-    /// Because [Self::utc_value] is called from the perspective of the *parent* node, we negate
+    /// Because [Self::uct_value] is called from the perspective of the *parent* node, we negate
     /// the exploration value.
     fn uct_value(&self, c_exploration: f32) -> QValue {
         -self.q_with_penalty() + c_exploration * self.exploration_value()
