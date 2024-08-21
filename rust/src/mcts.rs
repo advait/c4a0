@@ -45,8 +45,6 @@ impl MctsGame {
     pub const UNIFORM_POLICY: Policy = [1.0 / Pos::N_COLS as f32; Pos::N_COLS];
 
     /// New game with the given id and start position.
-    /// `c_exploration` is an MCTS parameter that guides how aggressively to explore vs.
-    /// exploit.
     pub fn new_from_pos(pos: Pos, metadata: GameMetadata) -> MctsGame {
         let root_node = Rc::new(RefCell::new(Node::new(pos, Weak::new(), 1.0)));
         MctsGame {

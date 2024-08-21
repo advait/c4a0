@@ -224,8 +224,8 @@ fn render_q_values(q_penalty: QValue, q_no_penalty: QValue, rect: Rect, buf: &mu
         Bar::default()
             .label("Win Prb".into())
             .value(q_no_penalty_u64)
-            .text_value(format!("{:.0}%", q_penalty * 100.).into())
-            .style(if q_penalty >= 0.0 {
+            .text_value(format!("{:.0}%", q_no_penalty * 100.).into())
+            .style(if q_no_penalty >= 0.0 {
                 Style::new().red()
             } else {
                 Style::new().blue()
