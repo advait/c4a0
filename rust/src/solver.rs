@@ -1,10 +1,75 @@
 use std::{
+    collections::{HashMap, HashSet},
     error::Error,
+    fs,
     io::Write,
     process::{Command, Stdio},
 };
 
+use serde::{Deserialize, Serialize};
+
 use crate::c4r::Pos;
+
+/// A caching wrapper around [Solver] that caches solutions to positions.
+struct CachingSolver {
+    solver: Solver,
+    cache_path: String,
+}
+
+impl CachingSolver {
+    pub fn new(path_to_solver: String, path_to_book: String, cache_path: String) -> Self {
+        Self {
+            solver: Solver::new(path_to_solver, path_to_book),
+            cache_path,
+        }
+    }
+
+    /// Solves the given position, resorting to cached positions if possible, relying on
+    /// [Self::solver] to solve missing positions, and then caches resulting solutions.
+    pub fn solve(&self, pos: Vec<Pos>) -> Result<Vec<Solution>, Box<dyn Error>> {
+        let mut cache = self.get_cache()?;
+
+        let missing_pos = pos
+            .iter()
+            .filter(|p| !cache.0.contains_key(p))
+            .cloned()
+            .collect::<HashSet<_>>() // Remove duplicates
+            .into_iter()
+            .collect::<Vec<_>>();
+        let missing_solutions = self.solver.solve(missing_pos)?;
+        for solution in missing_solutions.iter() {
+            cache.0.insert(solution.pos.clone(), solution.solution);
+        }
+        self.write_cache(&cache)?;
+
+        let ret = pos
+            .into_iter()
+            .map(|pos| {
+                let solution = cache.0.get(&pos).unwrap().clone();
+                Solution { pos, solution }
+            })
+            .collect();
+        Ok(ret)
+    }
+
+    fn get_cache(&self) -> Result<SolutionCache, Box<dyn Error>> {
+        if !std::path::Path::new(&self.cache_path).exists() {
+            return Ok(SolutionCache::default());
+        }
+
+        let bytes = fs::read(&self.cache_path)?;
+        Ok(serde_cbor::from_slice(&bytes)?)
+    }
+
+    fn write_cache(&self, cache: &SolutionCache) -> Result<(), Box<dyn Error>> {
+        let bytes = serde_cbor::to_vec(&cache)?;
+        fs::write(&self.cache_path, &bytes)?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Default)]
+struct SolutionCache(HashMap<Pos, [i16; Pos::N_COLS]>);
 
 /// Interface to PascalPons's connect4 solver: https://github.com/PascalPons/connect4
 /// Runs the solver in a subprocess, communicating via stdin/out.
@@ -14,6 +79,8 @@ struct Solver {
 }
 
 impl Solver {
+    /// Creates a new solver with the given path to the solver binary and book file.
+    /// Book files available here: https://github.com/PascalPons/connect4/releases/tag/book
     fn new(path_to_solver: String, path_to_book: String) -> Self {
         Self {
             path_to_solver,
@@ -21,6 +88,7 @@ impl Solver {
         }
     }
 
+    /// Calls the solver to solve the given positions.
     fn solve(&self, pos: Vec<Pos>) -> Result<Vec<Solution>, Box<dyn Error>> {
         let mut cmd = Command::new(self.path_to_solver.clone())
             .arg("-b")
@@ -89,6 +157,8 @@ struct Solution {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use proptest::prelude::*;
 
     use crate::{
@@ -96,15 +166,27 @@ mod tests {
         solver::Solver,
     };
 
+    // TODO: Dynamically pull/compile this solver in CI
+    const PATH_TO_SOLVER: &str = "/home/advait/connect4/c4solver";
+    const PATH_TO_BOOK: &str = "/home/advait/connect4/7x6.book";
+
+    fn paths_exist() -> bool {
+        Path::new(PATH_TO_SOLVER).exists() && Path::new(PATH_TO_BOOK).exists()
+    }
+
     fn test_solver() -> Solver {
         Solver {
-            path_to_solver: "/home/advait/connect4/c4solver".to_string(),
-            path_to_book: "/home/advait/connect4/7x6.book".to_string(),
+            path_to_solver: PATH_TO_SOLVER.to_string(),
+            path_to_book: PATH_TO_BOOK.to_string(),
         }
     }
 
     #[test]
     fn empty_pos() {
+        if !paths_exist() {
+            eprintln!("Warning: Skipping SOlver test because solver paths do not exist.");
+            return;
+        }
         let pos = Pos::default();
         let _solution = &test_solver().solve(vec![pos]).unwrap()[0];
     }
@@ -117,6 +199,9 @@ mod tests {
                 |p| p.is_terminal_state().is_none()
             )
         ) {
+            if !paths_exist() {
+                return Ok(());
+            }
             let _solution = &test_solver().solve(vec![pos]).unwrap()[0];
         }
     }
