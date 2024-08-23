@@ -66,7 +66,7 @@ impl<E: EvalPosT + Send + Sync + 'static> App<E> {
         while !self.exit {
             terminal.draw(|frame| {
                 let snapshot = self.game.snapshot();
-                render_app(snapshot, frame.size(), frame.buffer_mut());
+                draw_app(&snapshot, frame.size(), frame.buffer_mut());
             })?;
 
             if event::poll(Duration::from_millis(100))? {
@@ -110,7 +110,7 @@ impl<E: EvalPosT + Send + Sync + 'static> App<E> {
     }
 }
 
-fn render_app(snapshot: Snapshot, rect: Rect, buf: &mut Buffer) {
+fn draw_app(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
     let title = Title::from(" c4a0 - Connect Four AlphaZero ".bold());
     let outer_block = Block::bordered()
         .title(title.alignment(Alignment::Center))
@@ -120,19 +120,19 @@ fn render_app(snapshot: Snapshot, rect: Rect, buf: &mut Buffer) {
     outer_block.render(rect, buf);
 
     let layout = Layout::vertical([
-        Constraint::Length(24), // Game, Evals, Snapshot Summary
+        Constraint::Length(24), // Game, Evals
         Constraint::Fill(1),    // Policy
         Constraint::Length(11), // Instructions
     ])
     .spacing(1)
     .split(inner);
 
-    render_game_and_evals(&snapshot, layout[0], buf);
-    render_policy(&snapshot, layout[1], buf);
-    render_instructions(layout[2], buf);
+    draw_game_and_evals(&snapshot, layout[0], buf);
+    draw_policy(&snapshot, layout[1], buf);
+    draw_instructions(layout[2], buf);
 }
 
-fn render_game_and_evals(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
+fn draw_game_and_evals(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
     let isp0 = snapshot.pos.ply() % 2 == 0;
     let to_play = match snapshot.pos.is_terminal_state() {
         Some(TerminalState::PlayerWin) if isp0 => vec![" Blue".blue(), " won".into()],
@@ -155,11 +155,11 @@ fn render_game_and_evals(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
         .spacing(1)
         .split(inner);
 
-    render_game_grid(&snapshot.pos, layout[0], buf);
-    render_evals(snapshot.q_penalty, snapshot.q_no_penalty, layout[1], buf);
+    draw_game_grid(&snapshot.pos, layout[0], buf);
+    draw_evals(snapshot.q_penalty, snapshot.q_no_penalty, layout[1], buf);
 }
 
-fn render_game_grid(pos: &Pos, rect: Rect, buf: &mut Buffer) {
+fn draw_game_grid(pos: &Pos, rect: Rect, buf: &mut Buffer) {
     let cell_width = 5;
     let cell_height = 3;
     for row in 0..Pos::N_ROWS {
@@ -171,7 +171,7 @@ fn render_game_grid(pos: &Pos, rect: Rect, buf: &mut Buffer) {
                 cell_height,
             )
             .intersection(rect);
-            render_game_cell(
+            draw_game_cell(
                 pos.get(Pos::N_ROWS - row - 1, col),
                 row,
                 col,
@@ -196,13 +196,7 @@ fn render_game_grid(pos: &Pos, rect: Rect, buf: &mut Buffer) {
     }
 }
 
-fn render_game_cell(
-    value: Option<CellValue>,
-    row: usize,
-    col: usize,
-    rect: Rect,
-    buf: &mut Buffer,
-) {
+fn draw_game_cell(value: Option<CellValue>, row: usize, col: usize, rect: Rect, buf: &mut Buffer) {
     let bg_style = match value {
         Some(CellValue::Player) => Style::default().bg(Color::Red),
         Some(CellValue::Opponent) => Style::default().bg(Color::Blue),
@@ -281,7 +275,7 @@ fn render_game_cell(
     }
 }
 
-fn render_evals(q_penalty: QValue, q_no_penalty: QValue, rect: Rect, buf: &mut Buffer) {
+fn draw_evals(q_penalty: QValue, q_no_penalty: QValue, rect: Rect, buf: &mut Buffer) {
     let value_max = 1000u64;
     let q_penalty_u64 = ((q_penalty + 1.0) / 2.0 * (value_max as f32)) as u64;
     let q_no_penalty_u64 = ((q_no_penalty + 1.0) / 2.0 * (value_max as f32)) as u64;
@@ -315,7 +309,7 @@ fn render_evals(q_penalty: QValue, q_no_penalty: QValue, rect: Rect, buf: &mut B
         .render(rect, buf);
 }
 
-fn render_policy(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
+fn draw_policy(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
     let mcts_status = Line::from(vec![
         " ".into(),
         if snapshot.bg_thread_running {
@@ -358,7 +352,7 @@ fn render_policy(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
         .render(rect, buf);
 }
 
-fn render_instructions(rect: Rect, buf: &mut Buffer) {
+fn draw_instructions(rect: Rect, buf: &mut Buffer) {
     let instruction_text = vec![
         Line::from(vec!["<1-7>".blue().bold(), " Play Move".into()]),
         Line::from(vec!["<B>".blue().bold(), " Play the best move".into()]),
