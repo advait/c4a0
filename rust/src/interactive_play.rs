@@ -186,7 +186,7 @@ impl<E: EvalPosT> State<E> {
 
     /// Returns true if the background thread should stop.
     fn bg_thread_should_stop(&self) -> bool {
-        self.game.root_visit_count() > self.max_mcts_iterations
+        self.game.root_visit_count() >= self.max_mcts_iterations
             || self.game.root_pos().is_terminal_state().is_some()
     }
 
