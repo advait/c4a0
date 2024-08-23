@@ -442,7 +442,7 @@ impl From<&Vec<Move>> for Pos {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use proptest::prelude::*;
 
@@ -601,7 +601,7 @@ mod tests {
         /// Strategy to generate random connect four positions. We start with a Vec of random
         /// columns to play in and play them in order. If any moves are invalid, we ignore them.
         /// This allows proptest's shrinking to undo moves to find the smallest failing case.
-        fn random_pos()(moves in prop::collection::vec(0..Pos::N_COLS, 0..500)) -> Pos {
+        pub fn random_pos()(moves in prop::collection::vec(0..Pos::N_COLS, 0..500)) -> Pos {
             let mut pos = Pos::default();
 
             for &mov in &moves {
