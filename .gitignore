@@ -11,3 +11,4 @@ samples/
 training/
 *.bak
 *.log
+*.pkl

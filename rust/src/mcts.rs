@@ -435,6 +435,7 @@ fn softmax(policy_logprobs: Policy) -> Policy {
 
 /// Applies temperature scaling to a policy.
 /// Expects the policy to be in [0-1] (non-log) space.
+/// Temperature=0.0 is argmax, temperature=1.0 is a noop.
 pub fn apply_temperature(policy: &Policy, temperature: f32) -> Policy {
     if temperature == 1.0 || policy.iter().all(|&p| p == policy[0]) {
         // Temp 1.0 or uniform policy is noop
