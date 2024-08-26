@@ -12,3 +12,4 @@ training/
 *.bak
 *.log
 *.pkl
+*.db

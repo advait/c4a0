@@ -1,27 +1,34 @@
 use std::{
     collections::{HashMap, HashSet},
     error::Error,
-    fs,
     io::Write,
     ops,
     process::{Command, Stdio},
 };
 
+use rocksdb::{Options, DB};
 use serde::{Deserialize, Serialize};
 
 use crate::{c4r::Pos, types::Policy, utils::OrdF32};
 
-/// A caching wrapper around [Solver] that caches solutions to positions.
+/// A caching wrapper around [Solver] that caches solutions to positions in [rocksdb].
 pub struct CachingSolver {
     solver: Solver,
-    cache_path: String,
+    db: DB,
 }
 
 impl CachingSolver {
-    pub fn new(path_to_solver: String, path_to_book: String, cache_path: String) -> Self {
+    /// path_to_solver: Path to the solver binary.
+    /// path_to_book: Path to the solver's book file.
+    /// path_to_solution_db: Path to the rocksdb database to cache solutions.
+    pub fn new(path_to_solver: String, path_to_book: String, path_to_solution_db: String) -> Self {
+        let mut options = Options::default();
+        options.create_if_missing(true);
+        let db = DB::open(&options, path_to_solution_db).expect("failed to open rocksdb");
+
         Self {
             solver: Solver::new(path_to_solver, path_to_book),
-            cache_path,
+            db,
         }
     }
 
@@ -43,46 +50,43 @@ impl CachingSolver {
     /// Solves the given position, resorting to cached positions if possible, relying on
     /// [Self::solver] to solve missing positions, and then caches resulting solutions.
     fn solve(&self, pos: Vec<Pos>) -> Result<Vec<Solution>, Box<dyn Error>> {
-        let mut cache = self.get_cache()?;
-
         let missing_pos = pos
             .iter()
-            .filter(|p| !cache.0.contains_key(p))
+            .filter(|p| self.get(&p).is_none())
             .cloned()
             .collect::<HashSet<_>>() // Remove duplicates
             .into_iter()
             .collect::<Vec<_>>();
+
         log::debug!("Solving {} missing positions", missing_pos.len());
         for chunk in missing_pos.chunks(100) {
             log::debug!("Chunk size {}", chunk.len());
             let chunk_solutions = self.solver.solve(chunk)?;
             for (pos, solution) in chunk.into_iter().zip(chunk_solutions.into_iter()) {
-                cache.0.insert(pos.clone(), solution);
-                self.write_cache(&cache)?;
+                self.put(&pos, &solution);
             }
         }
+        self.db.flush()?;
         log::debug!("Finished solving positions");
 
-        let ret = pos
-            .into_iter()
-            .map(|pos| cache.0.get(&pos).unwrap().clone())
-            .collect();
+        let ret = pos.into_iter().map(|pos| self.get(&pos).unwrap()).collect();
         Ok(ret)
     }
 
-    fn get_cache(&self) -> Result<SolutionCache, Box<dyn Error>> {
-        if !std::path::Path::new(&self.cache_path).exists() {
-            return Ok(SolutionCache::default());
-        }
-
-        let bytes = fs::read(&self.cache_path)?;
-        Ok(serde_cbor::from_slice(&bytes)?)
+    fn get(&self, pos: &Pos) -> Option<Solution> {
+        self.db
+            .get(serde_cbor::to_vec(pos).expect("failed to serialize"))
+            .expect("failed to get from db")
+            .map(|bytes| serde_cbor::from_slice(&bytes).expect("failed to deserialize"))
     }
 
-    fn write_cache(&self, cache: &SolutionCache) -> Result<(), Box<dyn Error>> {
-        let bytes = serde_cbor::to_vec(cache)?;
-        fs::write(&self.cache_path, bytes)?;
-        Ok(())
+    fn put(&self, pos: &Pos, solution: &Solution) {
+        self.db
+            .put(
+                serde_cbor::to_vec(pos).expect("failed to serialize"),
+                serde_cbor::to_vec(solution).expect("failed to serialize"),
+            )
+            .expect("failed to put to db");
     }
 }
 

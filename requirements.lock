@@ -177,7 +177,7 @@ matplotlib==3.9.0
 matplotlib-inline==0.1.7
     # via ipykernel
     # via ipython
-maturin==1.6.0
+maturin==1.7.1
     # via c4a0
 mdurl==0.1.2
     # via markdown-it-py
@@ -255,6 +255,8 @@ pandocfilters==1.5.1
     # via nbconvert
 parso==0.8.4
     # via jedi
+patchelf==0.17.2.1
+    # via maturin
 pexpect==4.9.0
     # via ipython
 pillow==10.3.0

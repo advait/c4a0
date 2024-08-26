@@ -104,7 +104,7 @@ def score(
     base_dir: str = "training",
     solver_path: str = "/home/advait/connect4/c4solver",
     book_path: str = "/home/advait/connect4/7x6.book",
-    cache_path: str = "./solution_cache.pkl",
+    solutions_path: str = "./solutions.db",
 ):
     """Score the model"""
     gens = TrainingGen.load_all(base_dir)
@@ -114,7 +114,7 @@ def score(
         if not games:
             continue
         print(f"Scoring: {gen.gen_n}")
-        score = games.score_policies(solver_path, book_path, cache_path)  # type: ignore
+        score = games.score_policies(solver_path, book_path, solutions_path)  # type: ignore
         print(f"Score: {score}")
 
 
