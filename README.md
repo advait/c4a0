@@ -84,3 +84,15 @@ MCTS relies on outputs from the NN. The output of MCTS helps train the next gene
 ### Self Play [`rust/src/self_play.rs`](https://github.com/advait/c4a0/blob/master/rust/src/self_play.rs?ts=2)
 
 Uses rust multi-threading to parallelize self play (training data generation).
+
+### Solver [`rust/src/solver.rs`](https://github.com/advait/c4a0/blob/master/rust/src/solver.rs?ts=2)
+
+Connect Four is a perfectly solved game. See Pascal Pons's [great
+writeup](http://blog.gamesolver.org/) on how to build a perfect solver. We can use these solutions
+to objectively measure our NN's performance. Importantly we **never train on these solutions**,
+instead only using our self-play data to improve the NN's performance.
+
+`solver.rs` contains the stdin/out interface to learn the objective solutions to our training
+positions. Because solutions are expensive to compute, we cache them in a local
+[rocksdb](https://docs.rs/rocksdb/latest/rocksdb/) database (solutions.db). We then measure our
+training positions to see how often they recommend optimal moves as determined by the solver.
