@@ -45,7 +45,7 @@ class TrainingGen(BaseModel):
     def gen_folder(self, base_dir: str) -> str:
         return TrainingGen._gen_folder(self.created_at, base_dir)
 
-    def save(
+    def save_all(
         self,
         base_dir: str,
         games: Optional[PlayGamesResult],
@@ -65,6 +65,14 @@ class TrainingGen(BaseModel):
         model_path = os.path.join(gen_dir, "model.pkl")
         with open(model_path, "wb") as f:
             pickle.dump(model, f)
+
+    def save_metadata(self, base_dir: str):
+        gen_dir = self.gen_folder(base_dir)
+        os.makedirs(gen_dir, exist_ok=True)
+
+        metadata_path = os.path.join(gen_dir, "metadata.json")
+        with open(metadata_path, "w") as f:
+            f.write(self.model_dump_json(indent=2))
 
     @staticmethod
     def load(base_dir: str, created_at: datetime) -> "TrainingGen":
@@ -122,7 +130,7 @@ class TrainingGen(BaseModel):
                 training_batch_size=training_batch_size,
             )
             model = ConnectFourNet(model_config)
-            gen.save(base_dir, None, model)
+            gen.save_all(base_dir, None, model)
             return gen
 
     def get_games(self, base_dir: str) -> Optional[PlayGamesResult]:
@@ -224,7 +232,7 @@ def train_single_gen(
         val_loss=trainer.callback_metrics["val_loss"].item(),
         solver_score=solver_score,
     )
-    gen.save(base_dir, games, best_model_cb.get_best_model())
+    gen.save_all(base_dir, games, best_model_cb.get_best_model())
     return gen
 
 

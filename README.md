@@ -1,248 +1,86 @@
 # c4a0: Connect Four Alpha-Zero
 
-An alpha-zero-style Connect Four neural network trained via self play.
-- c4.py: Connect four game logic
-- nn.py: Neural net architecture
-- mcts.py: Monte carlo tree search implementation
-- self_play.py: Multiprocessing self play training sample generation
-- training_py: Generational training implementation
-- tournament.py: Round-robin multi-model tournament implementation
+![CI](https://github.com/advait/c4a0/actions/workflows/ci.yaml/badge.svg?ts=2)
+
+An Alpha-Zero-style Connect Four engine trained entirely via self play.
+
+The game logic, Monte Carlo Tree Search, and multi-threaded self play engine is written in rust
+[here](https://github.com/advait/c4a0/tree/master/rust).
+
+The NN is written in Python/PyTorch [here](https://github.com/advait/c4a0/tree/master/src/c4a0?ts=2)
+and interfaces with rust via [PyO3](https://pyo3.rs/v0.22.2/)
+
+![Terminal UI](https://private-user-images.githubusercontent.com/504011/360721720-0267002e-2778-4fd5-a9f4-62aa4644fe84.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3MjQ3ODAwMDQsIm5iZiI6MTcyNDc3OTcwNCwicGF0aCI6Ii81MDQwMTEvMzYwNzIxNzIwLTAyNjcwMDJlLTI3NzgtNGZkNS1hOWY0LTYyYWE0NjQ0ZmU4NC5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjQwODI3JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI0MDgyN1QxNzI4MjRaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT0yZGU2ZGQwMzc0ZDEzODdiY2ZmNGQyZDMwMWYzY2QzZTFkMGYxMDU5NjhiMzhlNzRhMjdhOGY2Y2I3Mjc0YjE2JlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZhY3Rvcl9pZD0wJmtleV9pZD0wJnJlcG9faWQ9MCJ9.lmjviibD8LtnRb2t-KjxXhxcRNCAxFziADMfl_ZEh2k)
 
 ## Usage
 
-`poetry install --no-root` to install deps.
+1. Install [rye](https://rye.astral.sh/) for python dep/env management
+```
+curl -sSf https://rye.astral.sh/get | bash
+```
 
-`poetry run src/main.py train` to train:
-- Stores training state in training/ folder
+2. Install deps and create virtual env:
+```
+rye sync --no-lock
+```
 
-`poetry run src/main.py tournament --gen-id 22 --gen-id 21 --gen-id 18`:
-- Runs a tournament with the given generations
+3. Compile rust code
+```
+maturin develop --release
+```
+
+4. Train a network
+```
+rye run python src/c4a0/main.py train --max-gens=10
+```
+
+5. Play against the network
+```
+rye run python src/c4a0/main.py ui --model=best
+```
+
+6. (Optional) Download a [connect four solver](https://github.com/PascalPons/connect4?ts=2) to
+   objectively measure training progress:
+```
+git clone https://github.com/PascalPons/connect4.git solver
+cd solver
+make
+# Download opening book to speed up solutions
+wget https://github.com/PascalPons/connect4/releases/download/book/7x6.book
+```
+
+Now pass the solver paths to `train`, `score` and other commands:
+```
+rye run python src/c4a0/main.py score --solver_path=solver/c4solver --book-path=solver/7x6.book
+```
 
 ## Results
-After training for ~12 hours with an RTX 3090, we achieved the following results:
-- Number of generations trained: 22
-- Total training positions: 2,361,492
+After 9 generations of training (approx ~15 min on an RTX 3090) we achieve the following results:
 
-### Final ELO table
+![Training Results](https://private-user-images.githubusercontent.com/504011/361914883-727773f6-0db3-4fcb-b7a4-00b2c4b9c155.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3MjQ3ODAzMzMsIm5iZiI6MTcyNDc4MDAzMywicGF0aCI6Ii81MDQwMTEvMzYxOTE0ODgzLTcyNzc3M2Y2LTBkYjMtNGZjYi1iN2E0LTAwYjJjNGI5YzE1NS5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjQwODI3JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI0MDgyN1QxNzMzNTNaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT1lZGI5Y2ZkMGJlZDNkZDZlYzRiN2Y5MDUxMWI3Mjg1N2JiY2ZmZmM5NGJiZjQ4YzA1ZDFmYmYwODgwYjhhZThmJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZhY3Rvcl9pZD0wJmtleV9pZD0wJnJlcG9faWQ9MCJ9.m5bsLXHWC4WYQQaUgz-QWz_RERsoHxzhKruqqjy_uGg)
 
-|    | Player  |   ELO    |   Rank |
-|---:|:--------|---------:|-------:|
-|  0 | gen20   |  1811.67 |      1 |
-|  1 | gen4    |  1594.95 |      2 |
-|  2 | gen15   |  1563.46 |      3 |
-|  3 | gen11   |  1557.35 |      4 |
-|  4 | gen22   |  1546.2  |      5 |
-|  5 | gen12   |  1543.55 |      6 |
-|  6 | gen14   |  1543.14 |      7 |
-|  7 | gen13   |  1541.27 |      8 |
-|  8 | gen16   |  1532.4  |      9 |
-|  9 | gen17   |  1516.62 |     10 |
-| 10 | gen10   |  1513.8  |     11 |
-| 11 | gen18   |  1510.89 |     12 |
-| 12 | gen2    |  1503.38 |     13 |
-| 13 | gen19   |  1500.64 |     14 |
-| 14 | gen8    |  1496.41 |     15 |
-| 15 | gen7    |  1487.36 |     16 |
-| 16 | gen6    |  1464.17 |     17 |
-| 17 | gen5    |  1443.68 |     18 |
-| 18 | gen3    |  1417.44 |     19 |
-| 19 | gen21   |  1393.73 |     20 |
-| 20 | gen1    |  1385.84 |     21 |
-| 21 | uniform |  1385.49 |     22 |
-| 22 | gen9    |  1378.7  |     23 |
-| 23 | random  |  1367.88 |     24 |
+## Architecture
 
-### Training gen 1 from 0. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen1     |      46 |
-| uniform  |      41 |
-| random   |      33 |
+### PyTorch NN [`src/c4a0/nn.py`](https://github.com/advait/c4a0/blob/master/src/c4a0/nn.py?ts=2)
 
-### Training gen 2 from 1. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen2     |   107.5 |
-| gen1     |    45.5 |
-| uniform  |    45   |
-| random   |    42   |
+A resnet-style CNN that takes in as input a baord position and outputs a Policy (probability
+distribution over moves weighted by promise) and Q Value (predicted win/loss value [-1, 1]).
 
-### Training gen 3 from 2. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen2     |   129   |
-| gen3     |   113   |
-| gen1     |    70.5 |
-| random   |    52.5 |
-| uniform  |    35   |
+Various NN hyperparameters can are sweepable via the `nn-sweep` command.
 
-### Training gen 4 from 2. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen4     |   135   |
-| gen2     |    94   |
-| gen3     |    92.5 |
-| gen1     |    48   |
-| random   |    30.5 |
+### Connect Four Game Logic [`rust/src/c4r.rs`](https://github.com/advait/c4a0/blob/master/rust/src/c4r.rs?ts=2)
 
-### Training gen 5 from 4. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen2     |     100 |
-| gen4     |     100 |
-| gen3     |     100 |
-| gen5     |      70 |
-| gen1     |      30 |
+Implements compact bitboard representation of board state (`Pos`) and all connect four rules
+and game logic.
 
-### Training gen 6 from 2. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen3     |     100 |
-| gen6     |     100 |
-| gen4     |      80 |
-| gen2     |      80 |
-| gen5     |      40 |
+### Monte Carlo Tree Search (MCTS) [`rust/src/mcts.rs`](https://github.com/advait/c4a0/blob/master/rust/src/mcts.rs?ts=2)
 
-### Training gen 7 from 3. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen4     |     120 |
-| gen6     |     100 |
-| gen7     |      80 |
-| gen3     |      60 |
-| gen2     |      40 |
+Implements Monte Carlo Tree Search - the core algorithm behind Alpha-Zero. Probabalistically
+explores potential game pathways and optimally hones in on the optimal move to play from any
+position.
 
-### Training gen 8 from 4. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen4     |     120 |
-| gen8     |      90 |
-| gen6     |      80 |
-| gen7     |      70 |
-| gen3     |      40 |
+MCTS relies on outputs from the NN. The output of MCTS helps train the next generation's NN.
 
-### Training gen 9 from 4. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen4     |     120 |
-| gen8     |      90 |
-| gen9     |      80 |
-| gen6     |      60 |
-| gen7     |      50 |
+### Self Play [`rust/src/self_play.rs`](https://github.com/advait/c4a0/blob/master/rust/src/self_play.rs?ts=2)
 
-### Training gen 10 from 4. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen8     |     100 |
-| gen9     |     100 |
-| gen10    |      80 |
-| gen4     |      80 |
-| gen6     |      40 |
-
-### Training gen 11 from 8. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen11    |     130 |
-| gen8     |      80 |
-| gen9     |      70 |
-| gen10    |      60 |
-| gen4     |      60 |
-
-### Training gen 12 from 11. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen12    |     120 |
-| gen11    |     110 |
-| gen8     |      80 |
-| gen9     |      50 |
-| gen10    |      40 |
-
-### Training gen 13 from 12. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen12    |     130 |
-| gen13    |     120 |
-| gen11    |      70 |
-| gen8     |      70 |
-| gen9     |      10 |
-
-### Training gen 14 from 12. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen12    |     110 |
-| gen13    |     100 |
-| gen14    |      80 |
-| gen11    |      80 |
-| gen8     |      30 |
-
-### Training gen 15 from 12. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen15    |     110 |
-| gen11    |      80 |
-| gen12    |      80 |
-| gen13    |      80 |
-| gen14    |      50 |
-
-### Training gen 16 from 15. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen15    |     100 |
-| gen12    |      80 |
-| gen13    |      80 |
-| gen16    |      80 |
-| gen11    |      60 |
-
-### Training gen 17 from 15. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen15    |     110 |
-| gen12    |     100 |
-| gen16    |      70 |
-| gen17    |      70 |
-| gen13    |      50 |
-
-### Training gen 18 from 15. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen12    |     100 |
-| gen15    |     100 |
-| gen16    |      70 |
-| gen17    |      70 |
-| gen18    |      60 |
-
-### Training gen 19 from 12. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen12    |      90 |
-| gen15    |      90 |
-| gen17    |      80 |
-| gen19    |      80 |
-| gen16    |      60 |
-
-### Training gen 20 from 12. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen20    |     120 |
-| gen12    |      80 |
-| gen17    |      70 |
-| gen15    |      70 |
-| gen19    |      60 |
-
-### Training gen 21 from 20. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen20    |     130 |
-| gen15    |      90 |
-| gen12    |      80 |
-| gen21    |      50 |
-| gen17    |      50 |
-
-### Training gen 22 from 20. Tournament results:
-| Player   |   Score |
-|----------|---------|
-| gen20    |     150 |
-| gen22    |      80 |
-| gen15    |      80 |
-| gen12    |      60 |
-| gen21    |      30 |
+Uses rust multi-threading to parallelize self play (training data generation).
