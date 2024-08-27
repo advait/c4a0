@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 import warnings
 
 from loguru import logger
@@ -24,9 +24,10 @@ app = typer.Typer()
 def train(
     base_dir: str = "training",
     device: str = str(get_torch_device()),
-    n_self_play_games: int = 2000,
-    n_mcts_iterations: int = 150,
-    c_exploration: float = 1.4,
+    # These parameters were chosen based on the results of the nn_sweep and mcts_sweep
+    n_self_play_games: int = 1709,
+    n_mcts_iterations: int = 1471,
+    c_exploration: float = 6.6,
     c_ply_penalty: float = 0.01,
     self_play_batch_size: int = 2000,
     training_batch_size: int = 2000,
@@ -36,8 +37,13 @@ def train(
     n_value_layers: int = 2,
     lr_schedule: List[float] = [0, 2e-3, 10, 8e-4],
     l2_reg: float = 4e-4,
+    max_gens: Optional[int] = None,
+    solver_path: Optional[str] = None,
+    book_path: Optional[str] = None,
+    solutions_path: str = "./solutions.db",
 ):
     """Trains a model via self-play."""
+
     model_config = ModelConfig(
         n_residual_blocks=n_residual_blocks,
         conv_filter_size=conv_filter_size,
@@ -46,6 +52,18 @@ def train(
         lr_schedule=parse_lr_schedule(lr_schedule),
         l2_reg=l2_reg,
     )
+
+    if solver_path and book_path:
+        logger.info("Using solver")
+        solver_config = SolverConfig(
+            solver_path=solver_path,
+            book_path=book_path,
+            solutions_path=solutions_path,
+        )
+    else:
+        logger.info("Solver not provided, skipping solutions")
+        solver_config = None
+
     training_loop(
         base_dir=base_dir,
         device=torch.device(device),
@@ -56,6 +74,8 @@ def train(
         self_play_batch_size=self_play_batch_size,
         training_batch_size=training_batch_size,
         model_config=model_config,
+        max_gens=max_gens,
+        solver_config=solver_config,
     )
 
 
@@ -101,12 +121,14 @@ def mcts_sweep(
     c_ply_penalty: float = 0.01,
     self_play_batch_size: int = 2000,
     training_batch_size: int = 2000,
+    # These NN parameters were chosen based on the results of the nn_sweep
     n_residual_blocks: int = 1,
     conv_filter_size: int = 32,
     n_policy_layers: int = 4,
     n_value_layers: int = 2,
     lr_schedule: List[float] = [0, 2e-3],
     l2_reg: float = 4e-4,
+    # End NN parameters
     base_training_dir: str = "training-sweeps",
     optuna_db_path: str = "optuna.db",
     n_trials: int = 100,
@@ -172,21 +194,25 @@ def mcts_sweep(
 
 @app.command()
 def score(
+    solver_path: str,
+    book_path: str,
     base_dir: str = "training",
-    solver_path: str = "/home/advait/connect4/c4solver",
-    book_path: str = "/home/advait/connect4/7x6.book",
     solutions_path: str = "./solutions.db",
 ):
-    """Score the model"""
+    """Scores the training generations using the given solver."""
     gens = TrainingGen.load_all(base_dir)
     for gen in gens:
-        print(f"Getting games for: {gen.gen_n}")
+        logger.info("Getting games for: {}", gen.gen_n)
         games = gen.get_games(base_dir)  # type: ignore
         if not games:
             continue
-        print(f"Scoring: {gen.gen_n}")
+        if gen.solver_score is not None:
+            logger.info(f"Gen already has score: {gen.solver_score}")
+            continue
         score = games.score_policies(solver_path, book_path, solutions_path)  # type: ignore
-        print(f"Score: {score}")
+        gen.solver_score = score
+        gen.save_metadata(base_dir)
+        logger.info("Gen {} has score: {}", gen.gen_n, score)
 
 
 if __name__ == "__main__":

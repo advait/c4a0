@@ -6,7 +6,9 @@ __pycache__/
 
 training/
 training-sweeps/
+solver/
+
 *.bak
+*.db
 *.log
 *.pkl
-*.db
