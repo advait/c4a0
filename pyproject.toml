@@ -17,8 +17,9 @@ dependencies = [
     "matplotlib>=3.8.2",
     "maturin[patchelf]>=1.7.1",
     "loguru>=0.7.2",
-    "wandb>=0.17.5",
     "typer>=0.12.3",
+    "optuna>=3.6.1",
+    "optuna-dashboard>=0.16.0",
 ]
 readme = "README.md"
 requires-python = ">= 3.11"
