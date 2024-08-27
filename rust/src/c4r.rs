@@ -308,6 +308,15 @@ impl Pos {
             .collect()
     }
 
+    /// Returns a [Pos] from a list of moves. Panics if the moves are invalid.
+    pub fn from_moves(moves: &[Move]) -> Pos {
+        let mut pos = Pos::default();
+        for &mov in moves {
+            pos = pos.make_move(mov).unwrap();
+        }
+        pos
+    }
+
     /// Helper function for [Self::to_moves] that attempts to recursively remove pieces from the top
     /// of the `temp` board until it is empty, then returns the [Move]s representing the removals.
     ///
@@ -442,7 +451,7 @@ impl From<&Vec<Move>> for Pos {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use proptest::prelude::*;
 
@@ -452,8 +461,8 @@ mod tests {
             self.make_move(col).unwrap()
         }
 
-        fn test_moves(&self, cols: &[usize]) -> Pos {
-            let mut pos = self.clone();
+        fn test_moves(self, cols: &[usize]) -> Pos {
+            let mut pos = self;
             for col in cols {
                 pos = pos.test_move(*col)
             }
@@ -478,7 +487,7 @@ mod tests {
 
     #[test]
     fn row_win() {
-        let pos = Pos::default().test_moves(&[0, 0, 1, 1, 2, 2, 3]);
+        let pos = Pos::from_moves(&[0, 0, 1, 1, 2, 2, 3]);
 
         // Because the board is inverted, the last move results in the opponent winning
         assert_eq!(pos.is_terminal_state(), Some(TerminalState::OpponentWin));
@@ -486,13 +495,13 @@ mod tests {
 
     #[test]
     fn col_win() {
-        let pos = Pos::default().test_moves(&[6, 0, 6, 0, 6, 0, 6]);
+        let pos = Pos::from_moves(&[6, 0, 6, 0, 6, 0, 6]);
         assert_eq!(pos.is_terminal_state(), Some(TerminalState::OpponentWin));
     }
 
     #[test]
     fn draw() {
-        let pos = Pos::default().test_moves(&[
+        let pos = Pos::from_moves(&[
             // Fill first three rows with alternating moves
             0, 1, 2, 3, 4, 5, // First row
             0, 1, 2, 3, 4, 5, // Second row
@@ -511,7 +520,7 @@ mod tests {
 
     #[test]
     fn to_str() {
-        let pos = Pos::default().test_moves(&[
+        let pos = Pos::from_moves(&[
             0, 1, 2, 3, 4, 5, // First row
             0, 1, 2, 3, 4, 5, // Second row
             0, 1, 2, 3, 4, 5, // Third row
@@ -591,7 +600,7 @@ mod tests {
 
     #[test]
     fn flip_h_symmetrical() {
-        let pos = Pos::default().test_move(3).test_move(3).test_move(3);
+        let pos = Pos::from_moves(&[3, 3, 3]);
         let flipped = pos.flip_h();
         assert_eq!(pos, flipped);
         assert_eq!(pos, flipped.flip_h());
@@ -601,7 +610,7 @@ mod tests {
         /// Strategy to generate random connect four positions. We start with a Vec of random
         /// columns to play in and play them in order. If any moves are invalid, we ignore them.
         /// This allows proptest's shrinking to undo moves to find the smallest failing case.
-        fn random_pos()(moves in prop::collection::vec(0..Pos::N_COLS, 0..500)) -> Pos {
+        pub fn random_pos()(moves in prop::collection::vec(0..Pos::N_COLS, 0..500)) -> Pos {
             let mut pos = Pos::default();
 
             for &mov in &moves {

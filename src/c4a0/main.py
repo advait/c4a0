@@ -99,6 +99,25 @@ def ui(
     )
 
 
+@app.command()
+def score(
+    base_dir: str = "training",
+    solver_path: str = "/home/advait/connect4/c4solver",
+    book_path: str = "/home/advait/connect4/7x6.book",
+    solutions_path: str = "./solutions.db",
+):
+    """Score the model"""
+    gens = TrainingGen.load_all(base_dir)
+    for gen in gens:
+        print(f"Getting games for: {gen.gen_n}")
+        games = gen.get_games(base_dir)  # type: ignore
+        if not games:
+            continue
+        print(f"Scoring: {gen.gen_n}")
+        score = games.score_policies(solver_path, book_path, solutions_path)  # type: ignore
+        print(f"Score: {score}")
+
+
 if __name__ == "__main__":
     # Disable unnecessary pytorch warnings
     warnings.filterwarnings("ignore", ".*does not have many workers.*")
