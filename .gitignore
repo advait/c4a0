@@ -4,6 +4,7 @@
 __pycache__/
 .ruff_cache/
 
+lightning_logs/
 training/
 training-sweeps/
 solver/

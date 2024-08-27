@@ -25,8 +25,8 @@ def train(
     base_dir: str = "training",
     device: str = str(get_torch_device()),
     # These parameters were chosen based on the results of the nn_sweep and mcts_sweep
-    n_self_play_games: int = 1709,
-    n_mcts_iterations: int = 1471,
+    n_self_play_games: int = 1700,
+    n_mcts_iterations: int = 1400,
     c_exploration: float = 6.6,
     c_ply_penalty: float = 0.01,
     self_play_batch_size: int = 2000,
@@ -82,8 +82,8 @@ def train(
 @app.command()
 def ui(
     base_dir: str = "training",
-    max_mcts_iters: int = 100,
-    c_exploration: float = 1.4,
+    max_mcts_iters: int = 1400,
+    c_exploration: float = 6.6,
     c_ply_penalty: float = 0.01,
     model: str = "best",
 ):

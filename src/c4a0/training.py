@@ -196,6 +196,7 @@ def train_single_gen(
             solver_config.book_path,
             solver_config.solutions_path,
         )
+        logger.info("Solver score: {}", solver_score)
     else:
         logger.info("Skipping scoring against solver")
         solver_score = None
