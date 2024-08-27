@@ -6,7 +6,7 @@ import copy
 from datetime import datetime
 import os
 import pickle
-from typing import List, NewType, Optional, Tuple
+from typing import Dict, List, NewType, Optional, Tuple
 
 from loguru import logger
 from pydantic import BaseModel
@@ -14,7 +14,6 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping
 import torch
 from torch.utils.data import DataLoader
-from pytorch_lightning.loggers import WandbLogger
 
 from c4a0.nn import ConnectFourNet, ModelConfig
 from c4a0.utils import BestModelCheckpoint
@@ -36,6 +35,8 @@ class TrainingGen(BaseModel):
     self_play_batch_size: int
     training_batch_size: int
     parent: Optional[datetime] = None
+    val_loss: Optional[float] = None
+    solver_score: Optional[float] = None
 
     @staticmethod
     def _gen_folder(created_at: datetime, base_dir: str) -> str:
@@ -137,6 +138,12 @@ class TrainingGen(BaseModel):
             return model
 
 
+class SolverConfig(BaseModel):
+    solver_path: str
+    book_path: str
+    solutions_path: str
+
+
 def train_single_gen(
     base_dir: str,
     device: torch.device,
@@ -147,6 +154,7 @@ def train_single_gen(
     c_ply_penalty: float,
     self_play_batch_size: int,
     training_batch_size: int,
+    solver_config: Optional[SolverConfig] = None,
 ) -> TrainingGen:
     """
     Trains a new generation from the given parent.
@@ -157,10 +165,7 @@ def train_single_gen(
     gen_n = parent.gen_n + 1
     logger.info(f"Beginning new generation {gen_n} from {parent.gen_n}")
 
-    wandb_logger = WandbLogger(project="c4a0")
-    experiment = wandb_logger.experiment
-    experiment.config
-    # TODO: add experiment metadata
+    # TODO: log experiment metadata in MLFlow
 
     # Self play
     model = parent.get_model(base_dir)
@@ -174,6 +179,18 @@ def train_single_gen(
         c_ply_penalty,
         lambda player_id, pos: model.forward_numpy(pos),  # type: ignore
     )
+
+    # Optionally judge generated policies against solver
+    if solver_config is not None:
+        logger.info("Scoring policies against solver")
+        solver_score = games.score_policies(
+            solver_config.solver_path,
+            solver_config.book_path,
+            solver_config.solutions_path,
+        )
+    else:
+        logger.info("Skipping scoring against solver")
+        solver_score = None
 
     # Training
     logger.info("Beginning training")
@@ -189,7 +206,6 @@ def train_single_gen(
             best_model_cb,
             EarlyStopping(monitor="val_loss", patience=10, mode="min"),
         ],
-        logger=wandb_logger,
     )
     trainer.gen_n = gen_n  # type: ignore
     model.train()  # Switch batch normalization to train mode for training bn params
@@ -205,6 +221,8 @@ def train_single_gen(
         self_play_batch_size=self_play_batch_size,
         training_batch_size=training_batch_size,
         parent=parent.created_at,
+        val_loss=trainer.callback_metrics["val_loss"].item(),
+        solver_score=solver_score,
     )
     gen.save(base_dir, games, best_model_cb.get_best_model())
     return gen
@@ -220,7 +238,9 @@ def training_loop(
     self_play_batch_size: int,
     training_batch_size: int,
     model_config: ModelConfig,
-):
+    max_gens: Optional[int] = None,
+    solver_config: Optional[SolverConfig] = None,
+) -> TrainingGen:
     """Main training loop. Sequentially trains generation after generation."""
     logger.info("Beginning training loop")
     logger.info("device: {}", device)
@@ -231,6 +251,10 @@ def training_loop(
     logger.info("self_play_batch_size: {}", self_play_batch_size)
     logger.info("training_batch_size: {}", training_batch_size)
     logger.info("model_config: \n{}", model_config.model_dump_json(indent=2))
+    logger.info("max_gens: {}", max_gens)
+    logger.info(
+        "solver_config: {}", solver_config and solver_config.model_dump_json(indent=2)
+    )
 
     gen = TrainingGen.load_latest_with_default(
         base_dir=base_dir,
@@ -253,7 +277,10 @@ def training_loop(
             c_ply_penalty=c_ply_penalty,
             self_play_batch_size=self_play_batch_size,
             training_batch_size=training_batch_size,
+            solver_config=solver_config,
         )
+        if max_gens is not None and gen.gen_n >= max_gens:
+            return gen
 
 
 SampleTensor = NewType(
@@ -306,3 +333,17 @@ class SampleDataModule(pl.LightningDataModule):
             self.validation_data,  # type: ignore
             batch_size=self.batch_size,
         )
+
+
+def parse_lr_schedule(floats: List[float]) -> Dict[int, float]:
+    """Parses an lr_schedule sequence like "0 2e-3 10 8e-4" into a dict of {0: 2e-3, 10: 8e-4}."""
+    assert len(floats) % 2 == 0, "lr_schedule must have an even number of elements"
+    schedule = {}
+    for i in range(0, len(floats), 2):
+        threshold = int(floats[i])
+        assert (
+            threshold == floats[i]
+        ), "lr_schedule must alternate between gen_id (int) and lr (float)"
+        lr = floats[i + 1]
+        schedule[threshold] = lr
+    return schedule

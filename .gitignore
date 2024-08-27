@@ -4,11 +4,8 @@
 __pycache__/
 .ruff_cache/
 
-checkpoints/
-lightning_logs/
-wandb/
-samples/
 training/
+training-sweeps/
 *.bak
 *.log
 *.pkl
