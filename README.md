@@ -10,32 +10,38 @@ The game logic, Monte Carlo Tree Search, and multi-threaded self play engine is 
 The NN is written in Python/PyTorch [here](https://github.com/advait/c4a0/tree/master/src/c4a0?ts=2)
 and interfaces with rust via [PyO3](https://pyo3.rs/v0.22.2/)
 
-![Terminal UI](https://private-user-images.githubusercontent.com/504011/360721720-0267002e-2778-4fd5-a9f4-62aa4644fe84.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3MjQ3ODAwMDQsIm5iZiI6MTcyNDc3OTcwNCwicGF0aCI6Ii81MDQwMTEvMzYwNzIxNzIwLTAyNjcwMDJlLTI3NzgtNGZkNS1hOWY0LTYyYWE0NjQ0ZmU4NC5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjQwODI3JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI0MDgyN1QxNzI4MjRaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT0yZGU2ZGQwMzc0ZDEzODdiY2ZmNGQyZDMwMWYzY2QzZTFkMGYxMDU5NjhiMzhlNzRhMjdhOGY2Y2I3Mjc0YjE2JlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZhY3Rvcl9pZD0wJmtleV9pZD0wJnJlcG9faWQ9MCJ9.lmjviibD8LtnRb2t-KjxXhxcRNCAxFziADMfl_ZEh2k)
+![Terminal UI](https://raw.githubusercontent.com/advait/c4a0/refs/heads/master/images/tui.png)
 
 ## Usage
 
-1. Install [rye](https://rye.astral.sh/) for python dep/env management
+1. Install clang
+```sh
+# Instructions for Ubuntu/Debian (other OSs may vary)
+sudo apt install clang
 ```
+
+2. Install [rye](https://rye.astral.sh/) for python dep/env management
+```sh
 curl -sSf https://rye.astral.sh/get | bash
 ```
 
-2. Install deps and create virtual env:
-```
+3. Install deps and create virtual env:
+```sh
 rye sync --no-lock
 ```
 
-3. Compile rust code
-```
-maturin develop --release
+4. Compile rust code
+```sh
+rye run maturin develop --release
 ```
 
 4. Train a network
-```
+```sh
 rye run python src/c4a0/main.py train --max-gens=10
 ```
 
 5. Play against the network
-```
+```sh
 rye run python src/c4a0/main.py ui --model=best
 ```
 
@@ -57,7 +63,7 @@ rye run python src/c4a0/main.py score --solver_path=solver/c4solver --book-path=
 ## Results
 After 9 generations of training (approx ~15 min on an RTX 3090) we achieve the following results:
 
-![Training Results](https://private-user-images.githubusercontent.com/504011/361914883-727773f6-0db3-4fcb-b7a4-00b2c4b9c155.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3MjQ3ODAzMzMsIm5iZiI6MTcyNDc4MDAzMywicGF0aCI6Ii81MDQwMTEvMzYxOTE0ODgzLTcyNzc3M2Y2LTBkYjMtNGZjYi1iN2E0LTAwYjJjNGI5YzE1NS5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjQwODI3JTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI0MDgyN1QxNzMzNTNaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT1lZGI5Y2ZkMGJlZDNkZDZlYzRiN2Y5MDUxMWI3Mjg1N2JiY2ZmZmM5NGJiZjQ4YzA1ZDFmYmYwODgwYjhhZThmJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCZhY3Rvcl9pZD0wJmtleV9pZD0wJnJlcG9faWQ9MCJ9.m5bsLXHWC4WYQQaUgz-QWz_RERsoHxzhKruqqjy_uGg)
+![Training Results](https://raw.githubusercontent.com/advait/c4a0/refs/heads/master/images/learning.png)
 
 ## Architecture
 
