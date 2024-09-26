@@ -3,11 +3,6 @@
 from pathlib import Path
 import sys
 
-# Ensure that the parent directory of this file exists on Python path
-parent_dir = Path(__file__).resolve().parent.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
-
 from typing import List, Optional
 import warnings
 
@@ -16,13 +11,23 @@ import optuna
 import torch
 import typer
 
-from c4a0.nn import ModelConfig
-from c4a0.sweep import perform_hparam_sweep
-from c4a0.tournament import ModelID, RandomPlayer, UniformPlayer
-from c4a0.training import SolverConfig, TrainingGen, parse_lr_schedule, training_loop
-from c4a0.utils import get_torch_device
+# Ensure that the parent directory of this file exists on Python path
+parent_dir = Path(__file__).resolve().parent.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
 
-import c4a0_rust  # type: ignore
+from c4a0.nn import ModelConfig  # noqa: E402
+from c4a0.sweep import perform_hparam_sweep  # noqa: E402
+from c4a0.tournament import ModelID, RandomPlayer, UniformPlayer  # noqa: E402
+from c4a0.training import (  # noqa: E402
+    SolverConfig,
+    TrainingGen,
+    parse_lr_schedule,
+    training_loop,
+)
+from c4a0.utils import get_torch_device  # noqa: E402
+
+import c4a0_rust  # noqa: E402
 
 app = typer.Typer()
 
@@ -225,6 +230,5 @@ def score(
 if __name__ == "__main__":
     # Disable unnecessary pytorch warnings
     warnings.filterwarnings("ignore", ".*does not have many workers.*")
-
 
     app()
