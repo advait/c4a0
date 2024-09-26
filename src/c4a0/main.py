@@ -1,6 +1,13 @@
 #!/usr/bin/env python
 
 from pathlib import Path
+import sys
+
+# Ensure that the parent directory of this file exists on Python path
+parent_dir = Path(__file__).resolve().parent.parent
+if str(parent_dir) not in sys.path:
+    sys.path.insert(0, str(parent_dir))
+
 from typing import List, Optional
 import warnings
 
@@ -218,4 +225,6 @@ def score(
 if __name__ == "__main__":
     # Disable unnecessary pytorch warnings
     warnings.filterwarnings("ignore", ".*does not have many workers.*")
+
+
     app()
