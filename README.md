@@ -57,7 +57,7 @@ wget https://github.com/PascalPons/connect4/releases/download/book/7x6.book
 
 Now pass the solver paths to `train`, `score` and other commands:
 ```
-rye run python src/c4a0/main.py score --solver_path=solver/c4solver --book-path=solver/7x6.book
+rye run python src/c4a0/main.py score solver/c4solver solver/7x6.book
 ```
 
 ## Results
