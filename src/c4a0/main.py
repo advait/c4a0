@@ -87,7 +87,7 @@ def train(
 
 
 @app.command()
-def ui(
+def play(
     base_dir: str = "training",
     max_mcts_iters: int = 1400,
     c_exploration: float = 6.6,

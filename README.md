@@ -42,7 +42,7 @@ rye run python src/c4a0/main.py train --max-gens=10
 
 5. Play against the network
 ```sh
-rye run python src/c4a0/main.py ui --model=best
+rye run python src/c4a0/main.py play --model=best
 ```
 
 6. (Optional) Download a [connect four solver](https://github.com/PascalPons/connect4?ts=2) to
