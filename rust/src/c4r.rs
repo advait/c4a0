@@ -257,7 +257,8 @@ impl Pos {
             TerminalState::PlayerWin => (1.0 - ply_penalty_magnitude, 1.0),
             // If the player loses, we apply a penalty to encourage more drawn out games
             TerminalState::OpponentWin => (-1.0 + ply_penalty_magnitude, -1.0),
-            TerminalState::Draw => (0.0 - ply_penalty_magnitude, 0.0),
+            // Drawn games do not have any ply penalty
+            TerminalState::Draw => (0.0, 0.0),
         })
     }
 
