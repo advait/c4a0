@@ -20,29 +20,30 @@ and interfaces with rust via [PyO3](https://pyo3.rs/v0.22.2/)
 sudo apt install clang
 ```
 
-2. Install [rye](https://rye.astral.sh/) for python dep/env management
+2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) for python dep/env management
 ```sh
-curl -sSf https://rye.astral.sh/get | bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 3. Install deps and create virtual env:
 ```sh
-rye sync --no-lock
+uv sync
 ```
 
 4. Compile rust code
 ```sh
-rye run maturin develop --release
+uv run python -m ensurepip --upgrade
+uv run maturin develop --release
 ```
 
 4. Train a network
 ```sh
-rye run python src/c4a0/main.py train --max-gens=10
+uv run python src/c4a0/main.py train --max-gens=10
 ```
 
 5. Play against the network
 ```sh
-rye run python src/c4a0/main.py play --model=best
+uv run python src/c4a0/main.py play --model=best
 ```
 
 6. (Optional) Download a [connect four solver](https://github.com/PascalPons/connect4?ts=2) to
@@ -57,7 +58,7 @@ wget https://github.com/PascalPons/connect4/releases/download/book/7x6.book
 
 Now pass the solver paths to `train`, `score` and other commands:
 ```
-rye run python src/c4a0/main.py score solver/c4solver solver/7x6.book
+uv run python src/c4a0/main.py score solver/c4solver solver/7x6.book
 ```
 
 ## Results
