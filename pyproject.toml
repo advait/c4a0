@@ -28,7 +28,7 @@ requires-python = ">= 3.11"
 requires = ["maturin>=1,<2"]
 build-backend = "maturin"
 
-[tool.rye]
+[tool.uv]
 managed = true
 dev-dependencies = [
   "pytest>=7.4.3",
@@ -37,6 +37,7 @@ dev-dependencies = [
   "jupyterlab>=4.0.10",
   "pandas>=2.1.4",
   "rankit>=0.3.3",
+  "ruff>=0.6.8",
 ]
 
 [tool.pyright]

@@ -22,10 +22,8 @@ jobs:
         run: cargo test
 
       # Python actions
-      - name: Install the latest version of rye
-        uses: eifinger/setup-rye@v3
-      - run: rye sync
-      - run: rye lint
-      #- run: rye run pyright
-      #- run: rye run pytest
-      - run: rye run maturin build --release
+      - uses: actions/setup-python@v4
+      - uses: yezz123/setup-uv@v4
+      - run: uv sync
+      - run: uv run ruff check
+      - run: uv run maturin build --release
