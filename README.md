@@ -32,18 +32,17 @@ uv sync
 
 4. Compile rust code
 ```sh
-uv run python -m ensurepip --upgrade
 uv run maturin develop --release
 ```
 
 4. Train a network
 ```sh
-uv run python src/c4a0/main.py train --max-gens=10
+uv run src/c4a0/main.py train --max-gens=10
 ```
 
 5. Play against the network
 ```sh
-uv run python src/c4a0/main.py play --model=best
+uv run src/c4a0/main.py play --model=best
 ```
 
 6. (Optional) Download a [connect four solver](https://github.com/PascalPons/connect4?ts=2) to
