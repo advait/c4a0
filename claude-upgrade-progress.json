@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T20:45:00Z",
+  "last_updated": "2026-06-29T20:50:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -21,7 +21,6 @@
   },
   "current": null,
   "pending_slices": [
-    "small-python",
     "small-rust",
     "medium-rust",
     "native-boundary",
@@ -30,7 +29,8 @@
     "toolchains"
   ],
   "completed_slices": [
-    "dev-tooling"
+    "dev-tooling",
+    "small-python"
   ],
   "dependencies": [],
   "completed": [
@@ -255,7 +255,8 @@
     "reason": ""
   },
   "notes": [
-    "Migrated tool.uv.dev-dependencies to dependency-groups.dev; mise run ci passed."
+    "Migrated tool.uv.dev-dependencies to dependency-groups.dev; mise run ci passed.",
+    "Slice 2 small-python completed; mise run ci passed after Typer update."
   ],
   "slice_validations": [
     {
@@ -263,6 +264,12 @@
       "command": "mise run ci",
       "result": "passed",
       "timestamp": "2026-06-29T19:55:00Z"
+    },
+    {
+      "slice": "small-python",
+      "command": "mise run ci",
+      "result": "passed",
+      "timestamp": "2026-06-29T20:50:00Z"
     }
   ]
 }

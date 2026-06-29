@@ -285,6 +285,7 @@ mise exec -- uv add 'typer>=0.26.8'
 mise exec -- uv run python src/c4a0/main.py --help
 mise run test:python
 mise run train:smoke
+mise run ci
 ```
 
 ---
@@ -294,3 +295,4 @@ mise run train:smoke
 - Baseline CI passed locally and remotely on `chore/mise-ci-packaging` before dependency work began.
 - Dependency upgrades are being performed on `chore/dependency-upgrades`.
 - Slice 1 (dev/tooling) completed: `pyright`, `ruff`, `maturin`, `pytest`, and `pytest-asyncio` updated; final `mise run ci` passed.
+- Slice 2 (small Python libraries) completed: `einops`, `tqdm`, `tensorboardX`, `tensorboard`, `pydantic`, `tabulate`, `matplotlib`, `optuna`, `optuna-dashboard`, and `typer` updated; final `mise run ci` passed.
