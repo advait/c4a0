@@ -215,12 +215,14 @@ def train_single_gen(
             best_model_cb,
             EarlyStopping(monitor="val_loss", patience=10, mode="min"),
         ],
+        num_sanity_val_steps=0,
     )
     trainer.gen_n = gen_n  # type: ignore
     model.train()  # Switch batch normalization to train mode for training bn params
     trainer.fit(model, data_module)
     logger.info("Finished training")
 
+    best_model = best_model_cb.get_best_model()
     gen = TrainingGen(
         created_at=datetime.now(),
         gen_n=parent.gen_n + 1,
@@ -230,10 +232,10 @@ def train_single_gen(
         self_play_batch_size=self_play_batch_size,
         training_batch_size=training_batch_size,
         parent=parent.created_at,
-        val_loss=trainer.callback_metrics["val_loss"].item(),
+        val_loss=best_model_cb.best_score,
         solver_score=solver_score,
     )
-    gen.save_all(base_dir, games, best_model_cb.get_best_model())
+    gen.save_all(base_dir, games, best_model)
     return gen
 
 
@@ -350,9 +352,9 @@ def parse_lr_schedule(floats: List[float]) -> Dict[int, float]:
     schedule = {}
     for i in range(0, len(floats), 2):
         threshold = int(floats[i])
-        assert (
-            threshold == floats[i]
-        ), "lr_schedule must alternate between gen_id (int) and lr (float)"
+        assert threshold == floats[i], (
+            "lr_schedule must alternate between gen_id (int) and lr (float)"
+        )
         lr = floats[i + 1]
         schedule[threshold] = lr
     return schedule

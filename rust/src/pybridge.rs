@@ -107,18 +107,15 @@ impl PlayGamesResult {
     /// Splits the results into training and test datasets.
     /// Ensures that whole games end up in either the training set or test set.
     /// Expects `train_frac` to be in [0, 1].
-    fn split_train_test(
-        &mut self,
-        train_frac: f32,
-        seed: u64,
-    ) -> PyResult<(Vec<Sample>, Vec<Sample>)> {
+    fn split_train_test(&self, train_frac: f32, seed: u64) -> PyResult<(Vec<Sample>, Vec<Sample>)> {
         let mut rng = StdRng::seed_from_u64(seed);
-        self.results.shuffle(&mut rng);
-        let n_train = (self.results.len() as f32 * train_frac).round() as usize;
-        let (train, test) = self.results.split_at(n_train);
+        let mut results = self.results.clone();
+        results.shuffle(&mut rng);
+        let n_train = (results.len() as f32 * train_frac).round() as usize;
+        let (train, test) = results.split_at(n_train);
         Ok((
-            train.into_iter().flat_map(|r| r.samples.clone()).collect(),
-            test.into_iter().flat_map(|r| r.samples.clone()).collect(),
+            train.iter().flat_map(|r| r.samples.clone()).collect(),
+            test.iter().flat_map(|r| r.samples.clone()).collect(),
         ))
     }
 

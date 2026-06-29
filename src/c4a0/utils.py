@@ -66,6 +66,9 @@ class BestModelCheckpoint(Callback, Generic[M]):
             trainer (Trainer): The PyTorch Lightning trainer instance.
             pl_module (LightningModule): The current PyTorch Lightning module.
         """
+        if trainer.sanity_checking:
+            return
+
         current_score = trainer.callback_metrics.get(self.monitor)
         if current_score is None:
             return

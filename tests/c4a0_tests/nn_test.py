@@ -86,3 +86,25 @@ def test_loss_of_nonzero():
     loss = model.training_step(training_batch, 0)
     loss = loss.detach().item()
     assert loss > 0.0
+
+
+@pytest.mark.filterwarnings("ignore:You are trying to `self.log()`*")
+def test_loss_logs_both_value_components(monkeypatch):
+    """Value diagnostics should expose both value heads, not just q_penalty."""
+    model = make_model()
+    logged_names: list[str] = []
+
+    def capture_log(name, *args, **kwargs):
+        logged_names.append(name)
+
+    monkeypatch.setattr(model, "log", capture_log)
+    pos = starting_pos()
+    policy = torch.ones((1, N_COLS)) / N_COLS
+    q_penalty = torch.zeros((1,))
+    q_no_penalty = torch.ones((1,))
+
+    model.training_step((pos, policy, q_penalty, q_no_penalty), 0)
+
+    assert "train_q_penalty_mse" in logged_names
+    assert "train_q_no_penalty_mse" in logged_names
+    assert "train_value_mse" in logged_names

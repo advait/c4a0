@@ -171,9 +171,13 @@ class ConnectFourNet(pl.LightningModule):
         )
         loss = policy_loss + q_penalty_loss + q_no_penalty_loss
 
+        value_loss = q_penalty_loss + q_no_penalty_loss
+
         self.log(f"{log_prefix}_loss", loss, prog_bar=True)
         self.log(f"{log_prefix}_policy_kl_div", policy_loss)
-        self.log(f"{log_prefix}_value_mse", q_penalty_loss)
+        self.log(f"{log_prefix}_q_penalty_mse", q_penalty_loss)
+        self.log(f"{log_prefix}_q_no_penalty_mse", q_no_penalty_loss)
+        self.log(f"{log_prefix}_value_mse", value_loss)
         return loss
 
 
