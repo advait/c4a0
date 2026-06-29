@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T20:15:00Z",
+  "last_updated": "2026-06-29T20:20:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 9,
+    "updated": 10,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -157,6 +157,22 @@
         "mise run test:python"
       ],
       "timestamp": "2026-06-29T20:15:00Z"
+    },
+    {
+      "name": "pydantic",
+      "from": "2.10.6",
+      "to": "2.13.4",
+      "breaking_changes": [
+        "Minor-version v2 behavior changes possible; no v1-to-v2 migration."
+      ],
+      "fixes_applied": [
+        "Raised dependency lower bound to pydantic>=2.13.4."
+      ],
+      "tests": [
+        "mise run test:python",
+        "mise run train:smoke"
+      ],
+      "timestamp": "2026-06-29T20:20:00Z"
     }
   ],
   "failed": [],

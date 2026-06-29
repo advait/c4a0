@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 9 |
+| **Updated** | 10 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -137,6 +137,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:python` passed.
 
+### pydantic: 2.10.6 → 2.13.4
+
+**Changelog:** Official Pydantic changelog / release notes reviewed.
+
+**Breaking changes:** Minor-version upgrade within v2; behavior changes possible but no v1→v2-style migration. Current `BaseModel` usage remains compatible.
+
+**Migration applied:** Raised dependency lower bound to `pydantic>=2.13.4`; `uv.lock` resolved `pydantic==2.13.4` and `pydantic-core==2.46.4`.
+
+**Tests:** ✓ `mise run test:python` passed; ✓ `mise run train:smoke` passed.
+
 ---
 
 ## Skipped
@@ -204,6 +214,10 @@ mise run test:python
 mise exec -- uv add tensorboard --upgrade-package tensorboard
 mise exec -- uv add 'tensorboard>=2.20.0'
 mise run test:python
+mise exec -- uv add pydantic --upgrade-package pydantic
+mise exec -- uv add 'pydantic>=2.13.4'
+mise run test:python
+mise run train:smoke
 ```
 
 ---
