@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T21:25:00Z",
+  "last_updated": "2026-06-29T21:30:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 20,
+    "updated": 21,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -314,6 +314,19 @@
         "mise run test:rust"
       ],
       "timestamp": "2026-06-29T21:25:00Z"
+    },
+    {
+      "name": "serde",
+      "from": "1.0.204",
+      "to": "1.0.228",
+      "breaking_changes": [],
+      "fixes_applied": [
+        "Raised Rust dependency lower bound to serde = { version = \"1.0.228\", features = [\"derive\"] }."
+      ],
+      "tests": [
+        "mise run test:rust"
+      ],
+      "timestamp": "2026-06-29T21:30:00Z"
     }
   ],
   "failed": [],

@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 20 |
+| **Updated** | 21 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -249,6 +249,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:rust` passed.
 
+### serde: 1.0.204 → 1.0.228
+
+**Changelog:** Official crate docs / release search reviewed; no per-version upstream changelog found for the exact range.
+
+**Breaking changes:** None identified within Serde 1.0.x for current derive/CBOR serialization usage.
+
+**Migration applied:** Raised Rust dependency lower bound to `serde = { version = "1.0.228", features = ["derive"] }`. `Cargo.lock` had already resolved `serde==1.0.228` during the `env_logger` resolver step.
+
+**Tests:** ✓ `mise run test:rust` passed.
+
 ---
 
 ## Skipped
@@ -351,6 +361,8 @@ mise run lint
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p num_cpus --precise 1.17.0
 mise run test:rust
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p parking_lot --precise 0.12.5
+mise run test:rust
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p serde --precise 1.0.228
 mise run test:rust
 ```
 
