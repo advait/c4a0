@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 10 |
+| **Updated** | 11 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -147,6 +147,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:python` passed; ✓ `mise run train:smoke` passed.
 
+### tabulate: 0.9.0 → 0.10.0
+
+**Changelog:** PyPI/upstream search reviewed; no trustworthy upstream changelog found for this exact range.
+
+**Breaking changes:** None identified from available sources; project usage is limited to tournament table formatting.
+
+**Migration applied:** Raised dependency lower bound to `tabulate>=0.10.0`; `uv.lock` resolved `tabulate==0.10.0`.
+
+**Tests:** ✓ `mise run test:python` passed.
+
 ---
 
 ## Skipped
@@ -218,6 +228,9 @@ mise exec -- uv add pydantic --upgrade-package pydantic
 mise exec -- uv add 'pydantic>=2.13.4'
 mise run test:python
 mise run train:smoke
+mise exec -- uv add tabulate --upgrade-package tabulate
+mise exec -- uv add 'tabulate>=0.10.0'
+mise run test:python
 ```
 
 ---
