@@ -460,3 +460,4 @@ mise exec -- uv lock --check
 - Slice 2 (small Python libraries) completed: `einops`, `tqdm`, `tensorboardX`, `tensorboard`, `pydantic`, `tabulate`, `matplotlib`, `optuna`, `optuna-dashboard`, and `typer` updated; final `mise run ci` passed.
 - Slice 3 (small Rust crates) completed: `crossbeam-channel`, `log`, `env_logger`, `num_cpus`, `parking_lot`, `serde`, `proptest`, and `indicatif` updated; final `mise run ci` passed.
 - Slice 4 (medium-risk Rust crates) completed: `rand`, `ratatui`, and `rocksdb` updated; final `mise run ci` passed.
+- Slice 5 (native boundary) completed: Python `numpy`, Rust `pyo3`, and Rust `numpy` updated together; final `mise run ci` passed.
