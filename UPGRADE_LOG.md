@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 25 |
+| **Updated** | 26 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -299,6 +299,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:rust` passed.
 
+### rocksdb: 0.22.0 → 0.24.0
+
+**Changelog:** Official crate changelog / docs.rs source reviewed.
+
+**Breaking changes:** None identified for current simple `Options`/`DB` cache usage; update includes native `librocksdb-sys`/bindgen changes.
+
+**Migration applied:** Raised Rust dependency to `rocksdb = "0.24.0"`; `Cargo.lock` resolved `rocksdb==0.24.0`, `librocksdb-sys==0.17.3+10.4.2`, and `bindgen==0.72.1`.
+
+**Tests:** ✓ `mise run test:rust` passed; ✓ `mise run test:python` passed.
+
 ---
 
 ## Skipped
@@ -416,6 +426,9 @@ mise run test:python
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p ratatui --precise 0.30.2
 mise run test:rust  # initially failed: Ratatui 0.30 API changes
 mise run test:rust
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p rocksdb --precise 0.24.0
+mise run test:rust
+mise run test:python
 ```
 
 ---
