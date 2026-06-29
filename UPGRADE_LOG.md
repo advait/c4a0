@@ -429,6 +429,7 @@ mise run test:rust
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p rocksdb --precise 0.24.0
 mise run test:rust
 mise run test:python
+mise run ci
 ```
 
 ---
@@ -440,3 +441,4 @@ mise run test:python
 - Slice 1 (dev/tooling) completed: `pyright`, `ruff`, `maturin`, `pytest`, and `pytest-asyncio` updated; final `mise run ci` passed.
 - Slice 2 (small Python libraries) completed: `einops`, `tqdm`, `tensorboardX`, `tensorboard`, `pydantic`, `tabulate`, `matplotlib`, `optuna`, `optuna-dashboard`, and `typer` updated; final `mise run ci` passed.
 - Slice 3 (small Rust crates) completed: `crossbeam-channel`, `log`, `env_logger`, `num_cpus`, `parking_lot`, `serde`, `proptest`, and `indicatif` updated; final `mise run ci` passed.
+- Slice 4 (medium-risk Rust crates) completed: `rand`, `ratatui`, and `rocksdb` updated; final `mise run ci` passed.
