@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 21 |
+| **Updated** | 22 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -259,6 +259,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:rust` passed.
 
+### proptest: 1.5.0 → 1.11.0
+
+**Changelog:** Official crate changelog / docs.rs source reviewed.
+
+**Breaking changes:** Range includes MSRV increases and config-precedence behavior changes; current tests use standard `proptest!`, strategies, and assertions and remained compatible.
+
+**Migration applied:** Raised Rust dev dependency to `proptest = "1.11.0"`; `Cargo.lock` resolved `proptest==1.11.0` and refreshed its test-only dependency graph, including a separate `rand 0.9` stack for proptest.
+
+**Tests:** ✓ `mise run test:rust` passed.
+
 ---
 
 ## Skipped
@@ -363,6 +373,8 @@ mise run test:rust
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p parking_lot --precise 0.12.5
 mise run test:rust
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p serde --precise 1.0.228
+mise run test:rust
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p proptest --precise 1.11.0
 mise run test:rust
 ```
 

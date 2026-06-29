@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T21:30:00Z",
+  "last_updated": "2026-06-29T21:35:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 21,
+    "updated": 22,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -327,6 +327,21 @@
         "mise run test:rust"
       ],
       "timestamp": "2026-06-29T21:30:00Z"
+    },
+    {
+      "name": "proptest",
+      "from": "1.5.0",
+      "to": "1.11.0",
+      "breaking_changes": [
+        "MSRV increases and config-precedence behavior changes in the range; current proptest macro/strategy usage remained compatible."
+      ],
+      "fixes_applied": [
+        "Raised Rust dev dependency to proptest = \"1.11.0\"; test-only dependency graph refreshed."
+      ],
+      "tests": [
+        "mise run test:rust"
+      ],
+      "timestamp": "2026-06-29T21:35:00Z"
     }
   ],
   "failed": [],
