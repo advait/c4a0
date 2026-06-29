@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 0 |
+| **Updated** | 1 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -37,7 +37,17 @@ Slices:
 
 ## Successfully Updated
 
-_To be filled as dependencies are updated._
+### pyright: 1.1.396 → 1.1.411
+
+**Changelog:** GitHub releases / PyPI metadata reviewed via web search.
+
+**Breaking changes:** None found in release-note search for 1.1.396 → 1.1.411.
+
+**Notable changes:** Type checker bug fixes and inference/narrowing improvements across patch releases.
+
+**Migration applied:** Raised dev dependency lower bound to `pyright>=1.1.411`; `uv.lock` resolved `pyright==1.1.411`. First `uv add` also normalized `uv.lock` to the newer uv lock revision with upload-time metadata.
+
+**Tests:** ✓ `mise run typecheck` passed with 0 errors, 0 warnings.
 
 ---
 
@@ -78,6 +88,9 @@ _To be filled after audits._
 ```bash
 mise exec -- uv lock --check
 mise run ci
+mise exec -- uv add --dev pyright --upgrade-package pyright
+mise exec -- uv add --dev 'pyright>=1.1.411'
+mise run typecheck
 ```
 
 ---
