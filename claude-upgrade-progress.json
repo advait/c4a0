@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T20:30:00Z",
+  "last_updated": "2026-06-29T20:35:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 12,
+    "updated": 13,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -201,6 +201,19 @@
         "mise run test:python"
       ],
       "timestamp": "2026-06-29T20:30:00Z"
+    },
+    {
+      "name": "optuna",
+      "from": "4.2.1",
+      "to": "4.9.0",
+      "breaking_changes": [],
+      "fixes_applied": [
+        "Raised dependency lower bound to optuna>=4.9.0."
+      ],
+      "tests": [
+        "mise run test:python"
+      ],
+      "timestamp": "2026-06-29T20:35:00Z"
     }
   ],
   "failed": [],

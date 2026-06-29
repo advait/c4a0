@@ -18,7 +18,7 @@ dependencies = [
   "maturin>=1.14.1",
   "loguru>=0.7.3",
   "typer>=0.15.2",
-  "optuna>=4.2.1",
+  "optuna>=4.9.0",
   "optuna-dashboard>=0.17.0",
 ]
 readme = "README.md"

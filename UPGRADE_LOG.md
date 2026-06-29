@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 12 |
+| **Updated** | 13 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -167,6 +167,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:python` passed.
 
+### optuna: 4.2.1 → 4.9.0
+
+**Changelog:** Official GitHub release notes / docs reviewed.
+
+**Breaking changes:** No new major-version migration identified within the 4.x line for this range.
+
+**Migration applied:** Raised dependency lower bound to `optuna>=4.9.0`; `uv.lock` resolved `optuna==4.9.0`.
+
+**Tests:** ✓ `mise run test:python` passed.
+
 ---
 
 ## Skipped
@@ -243,6 +253,9 @@ mise exec -- uv add 'tabulate>=0.10.0'
 mise run test:python
 mise exec -- uv add matplotlib --upgrade-package matplotlib
 mise exec -- uv add 'matplotlib>=3.11.0'
+mise run test:python
+mise exec -- uv add optuna --upgrade-package optuna
+mise exec -- uv add 'optuna>=4.9.0'
 mise run test:python
 ```
 
