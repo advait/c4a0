@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Print a directory containing libclang for bindgen.
+"""Print libclang paths for bindgen.
 
 GitHub runners usually provide libclang under /usr/lib/llvm-*/lib. Some local
 machines may have LLVM installed by mise under /opt/mise/installs/clang.
@@ -8,6 +8,7 @@ This helper keeps mise.toml portable without pinning a flaky clang plugin.
 
 from __future__ import annotations
 
+import argparse
 import glob
 from pathlib import Path
 
@@ -28,10 +29,41 @@ def version_key(path: Path) -> tuple[int, ...]:
     return tuple(parts)
 
 
-candidates = sorted(
-    {Path(match).resolve() for pattern in PATTERNS for match in glob.glob(pattern)},
-    key=version_key,
-)
+def find_libclang_dir() -> Path | None:
+    candidates = sorted(
+        {Path(match).resolve() for pattern in PATTERNS for match in glob.glob(pattern)},
+        key=version_key,
+    )
+    if candidates:
+        return candidates[-1].parent
+    return None
 
-if candidates:
-    print(candidates[-1].parent)
+
+def find_clang_resource_include(libclang_dir: Path) -> Path | None:
+    candidates = sorted(
+        libclang_dir.glob("clang/*/include/stdbool.h"),
+        key=version_key,
+    )
+    if candidates:
+        return candidates[-1].parent
+    return None
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--bindgen-extra-clang-args",
+    action="store_true",
+    help="Print BINDGEN_EXTRA_CLANG_ARGS for Clang's bundled C headers.",
+)
+args = parser.parse_args()
+
+libclang_dir = find_libclang_dir()
+if not libclang_dir:
+    raise SystemExit(0)
+
+if args.bindgen_extra_clang_args:
+    include_dir = find_clang_resource_include(libclang_dir)
+    if include_dir:
+        print(f"-isystem {include_dir}")
+else:
+    print(libclang_dir)

@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 17 |
+| **Updated** | 18 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -217,6 +217,18 @@ Slices:
 
 **Tests:** ✓ `mise run test:rust` passed.
 
+### env_logger: 0.11.5 → 0.11.11
+
+**Changelog:** Official crate docs/release search reviewed.
+
+**Breaking changes:** None identified for current `Builder::from_env(Env::default().default_filter_or(...)).init()` usage.
+
+**Migration applied:** Raised Rust dependency to `env_logger = "0.11.11"`; `Cargo.lock` resolved the new `env_logger` dependency graph. This resolver step also refreshed several transitives, including `env_filter`, regex crates, and `serde` lock entries.
+
+**Fixes applied:** Initial `mise run test:rust` failed while rebuilding `librocksdb-sys` because bindgen could not find Clang's `stdbool.h`. Added portable `BINDGEN_EXTRA_CLANG_ARGS` discovery to `scripts/find-libclang.py`/`mise.toml` so bindgen receives Clang's bundled C header include path.
+
+**Tests:** ✓ `python3 scripts/find-libclang.py --bindgen-extra-clang-args` printed the resource include arg; ✓ `mise run test:rust` passed; ✓ `mise run lint` passed.
+
 ---
 
 ## Skipped
@@ -310,6 +322,12 @@ mise exec -- cargo update --manifest-path rust/Cargo.toml -p crossbeam-channel -
 mise run test:rust
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p log --precise 0.4.33
 mise run test:rust
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p env_logger --precise 0.11.11
+mise run test:rust  # initially failed: librocksdb-sys bindgen could not find stdbool.h
+BINDGEN_EXTRA_CLANG_ARGS='-isystem /opt/mise/installs/clang/LLVM-19.1.7-Linux-X64/lib/clang/19/include' mise run test:rust
+python3 scripts/find-libclang.py --bindgen-extra-clang-args
+mise run test:rust
+mise run lint
 ```
 
 ---

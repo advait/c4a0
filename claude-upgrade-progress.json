@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T21:05:00Z",
+  "last_updated": "2026-06-29T21:15:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 17,
+    "updated": 18,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -270,6 +270,22 @@
         "mise run test:rust"
       ],
       "timestamp": "2026-06-29T21:05:00Z"
+    },
+    {
+      "name": "env_logger",
+      "from": "0.11.5",
+      "to": "0.11.11",
+      "breaking_changes": [],
+      "fixes_applied": [
+        "Raised Rust dependency to env_logger = \"0.11.11\".",
+        "Added BINDGEN_EXTRA_CLANG_ARGS discovery via scripts/find-libclang.py and mise.toml after librocksdb-sys bindgen could not find stdbool.h."
+      ],
+      "tests": [
+        "python3 scripts/find-libclang.py --bindgen-extra-clang-args",
+        "mise run test:rust",
+        "mise run lint"
+      ],
+      "timestamp": "2026-06-29T21:15:00Z"
     }
   ],
   "failed": [],
@@ -282,7 +298,8 @@
   },
   "notes": [
     "Migrated tool.uv.dev-dependencies to dependency-groups.dev; mise run ci passed.",
-    "Slice 2 small-python completed; mise run ci passed after Typer update."
+    "Slice 2 small-python completed; mise run ci passed after Typer update.",
+    "env_logger update initially exposed a librocksdb-sys bindgen stdbool.h include issue; fixed with portable BINDGEN_EXTRA_CLANG_ARGS discovery."
   ],
   "slice_validations": [
     {
