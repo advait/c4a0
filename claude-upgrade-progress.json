@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T23:45:00Z",
+  "last_updated": "2026-06-29T23:50:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 35,
+    "updated": 36,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0,
@@ -587,6 +587,28 @@
         "mise run test:python"
       ],
       "timestamp": "2026-06-29T23:45:00Z"
+    },
+    {
+      "name": "python-toolchain",
+      "from": "3.11.6",
+      "to": "3.11.15",
+      "breaking_changes": [
+        "No feature-level migration expected within the Python 3.11 patch line.",
+        "Python 3.11.15 is a source-only security bugfix release in the 3.11 security-fixes-only phase."
+      ],
+      "fixes_applied": [
+        "Updated .python-version to 3.11.15.",
+        "Added python = \"3.11.15\" to mise.toml so mise local/CI execution uses the same Python patch version.",
+        "Allowed uv to recreate .venv with Python 3.11.15."
+      ],
+      "tests": [
+        "mise exec -- python --version",
+        "mise exec -- uv run python --version",
+        "mise exec -- uv sync --frozen",
+        "mise run test:python",
+        "mise exec -- uv lock --check"
+      ],
+      "timestamp": "2026-06-29T23:50:00Z"
     }
   ],
   "failed": [],
@@ -613,7 +635,8 @@
     "rankit 0.3.3 and loguru 0.7.3 are already at the latest stable versions found; no manifest changes required.",
     "Slice 7 notebook-experiment completed; mise run ci passed after JupyterLab and pandas updates and rankit/loguru latest-stable checks.",
     "Direct dependency audit found TensorBoard 2.21.0 after the earlier TensorBoard 2.20 update; refreshed to 2.21.0 and focused validation passed.",
-    "uv toolchain updated from 0.11.7 to 0.11.25; version check, uv lock check, and Python tests passed."
+    "uv toolchain updated from 0.11.7 to 0.11.25; version check, uv lock check, and Python tests passed.",
+    "Python toolchain updated from 3.11.6 to 3.11.15 and pinned in mise; uv recreated the venv and Python tests plus uv lock check passed."
   ],
   "slice_validations": [
     {

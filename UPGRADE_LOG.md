@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 35 |
+| **Updated** | 36 |
 | **Already current** | 2 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
@@ -362,6 +362,16 @@ Slices:
 
 **Tests:** ✓ `mise exec -- uv --version` printed `uv 0.11.25`; ✓ `mise exec -- uv lock --check` passed; ✓ `mise run test:python` passed.
 
+### Python toolchain: 3.11.6 → 3.11.15
+
+**Changelog:** Official Python 3.11.15 release page and Python Insider security-release announcement reviewed.
+
+**Breaking changes:** No feature-level migration expected within Python 3.11. Python 3.11 is in security-fixes-only mode and 3.11.15 is a source-only security bugfix release; it includes email/header injection hardening, HTTP/cookie/control-character validation, XML/libexpat CVE fixes, denial-of-service hardening, HTML parser hardening, and SSL/core memory-safety fixes.
+
+**Migration applied:** Updated `.python-version` from `3.11.6` to `3.11.15` and added `python = "3.11.15"` to `mise.toml` so mise-managed local/CI execution uses the same Python patch version. `uv` recreated `.venv` with Python 3.11.15.
+
+**Tests:** ✓ `mise exec -- python --version` printed `Python 3.11.15`; ✓ `mise exec -- uv run python --version` printed `Python 3.11.15`; ✓ `mise exec -- uv sync --frozen` recreated the venv successfully; ✓ `mise run test:python` passed; ✓ `mise exec -- uv lock --check` passed.
+
 ---
 
 ## Already Current
@@ -557,6 +567,12 @@ mise install uv@0.11.25
 mise exec -- uv --version
 mise exec -- uv lock --check
 mise run test:python
+mise install python@3.11.15
+mise exec -- python --version
+mise exec -- uv run python --version
+mise exec -- uv sync --frozen
+mise run test:python
+mise exec -- uv lock --check
 ```
 
 ---
