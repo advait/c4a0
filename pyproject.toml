@@ -6,7 +6,7 @@ authors = [{ name = "Advait Shinde", email = "advait.shinde@gmail.com" }]
 dependencies = [
   "pytorch-lightning>=2.5.0",
   "numpy>=2.2.3",
-  "einops>=0.8.1",
+  "einops>=0.8.2",
   "torchmetrics>=1.6.2",
   "tensorboardx>=2.6.2.2",
   "tensorboard>=2.19.0",

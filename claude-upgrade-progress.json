@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T19:55:00Z",
+  "last_updated": "2026-06-29T20:00:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 5,
+    "updated": 6,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -105,6 +105,19 @@
         "mise run test:python"
       ],
       "timestamp": "2026-06-29T19:45:00Z"
+    },
+    {
+      "name": "einops",
+      "from": "0.8.1",
+      "to": "0.8.2",
+      "breaking_changes": [],
+      "fixes_applied": [
+        "Raised dependency lower bound to einops>=0.8.2."
+      ],
+      "tests": [
+        "mise run test:python"
+      ],
+      "timestamp": "2026-06-29T20:00:00Z"
     }
   ],
   "failed": [],

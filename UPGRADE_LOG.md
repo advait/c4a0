@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 5 |
+| **Updated** | 6 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -97,6 +97,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:python` passed.
 
+### einops: 0.8.1 → 0.8.2
+
+**Changelog:** PyPI/changelog search reviewed.
+
+**Breaking changes:** None found for core `rearrange` usage; Python minimum remains compatible with project Python 3.11.
+
+**Migration applied:** Raised dependency lower bound to `einops>=0.8.2`; `uv.lock` resolved `einops==0.8.2`.
+
+**Tests:** ✓ `mise run test:python` passed.
+
 ---
 
 ## Skipped
@@ -151,6 +161,9 @@ mise run test:python
 mise exec -- uv add --dev pytest --upgrade-package pytest
 mise exec -- uv add --dev 'pytest>=9.1.1'
 mise exec -- uv add --dev 'pytest-asyncio>=1.4.0'
+mise run test:python
+mise exec -- uv add einops --upgrade-package einops
+mise exec -- uv add 'einops>=0.8.2'
 mise run test:python
 ```
 
