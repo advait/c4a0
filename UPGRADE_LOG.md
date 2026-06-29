@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 29 |
+| **Updated** | 32 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -319,6 +319,18 @@ Slices:
 
 **Tests:** ✓ `mise run test:rust` passed; ✓ `mise run test:python` passed; ✓ `mise run train:smoke` passed; ✓ `mise exec -- uv lock --check` passed.
 
+### ML stack: torch 2.4.1 → 2.12.1; pytorch-lightning 2.5.0.post0 → 2.6.5; torchmetrics 1.6.2 → 1.9.0
+
+**Changelog:** Official PyTorch 2.6/2.12 release notes and CUDA support matrix, PyTorch `torch.load` docs, PyTorch Lightning 2.6 changelog/version policy, and TorchMetrics 1.9 changelog reviewed.
+
+**Breaking changes:** PyTorch changed `torch.load` default behavior to `weights_only=True` starting in 2.6 and PyPI wheels now resolve CUDA 13.0-era dependencies in the 2.12 line; CUDA 12.8 wheels are deprecated and older NVIDIA GPU architectures may require the separate CUDA 12.6 wheel. Lightning minor releases can contain backwards-incompatible changes with deprecations, but the current `Trainer`, `LightningModule`, `LightningDataModule`, callback, and metric usage remained compatible. TorchMetrics 1.9 drops Python 3.9 support and includes breaking changes for metrics not used here, such as Dice/PSNR; current `KLDivergence(log_prob=True)` and `MeanSquaredError()` usage remained compatible.
+
+**Migration applied:** Added `torch>=2.12.1` as a direct dependency because project code imports `torch` directly; raised `pytorch-lightning>=2.6.5` and `torchmetrics>=1.9.0`. No project source changes were required. The lockfile replaced the previous CUDA 12 transitive package set with the PyTorch 2.12 CUDA 13 package set and updated `lightning-utilities`/`triton` transitively.
+
+**Fixes applied:** Initial focused test runs failed on local imports with missing `libcudnn.so.9` and then `libnccl.so.2` after the CUDA package namespace changed from the old `*-cu12` packages to the CUDA 13 packages. Reinstalled `nvidia-cudnn-cu13` and `nvidia-nccl-cu13` in the local venv; the lockfile itself was already correct and subsequent frozen sync/test runs succeeded.
+
+**Tests:** ✓ version import check printed `torch 2.12.1+cu130`, `pytorch_lightning 2.6.5`, and `torchmetrics 1.9.0`; ✓ `mise run test:python` passed; ✓ `mise run train:smoke` passed; ✓ `mise run typecheck` passed; ✓ `mise exec -- uv lock --check` passed.
+
 ---
 
 ## Skipped
@@ -447,6 +459,15 @@ mise exec -- cargo update --manifest-path rust/Cargo.toml -p numpy --precise 0.2
 mise run test:rust
 mise run test:python
 mise run train:smoke
+mise exec -- uv lock --check
+mise exec -- uv lock --dry-run --upgrade-package torch --upgrade-package pytorch-lightning --upgrade-package torchmetrics
+mise exec -- uv add 'torch>=2.12.1' 'pytorch-lightning>=2.6.5' 'torchmetrics>=1.9.0' --upgrade-package torch --upgrade-package pytorch-lightning --upgrade-package torchmetrics
+mise run test:python  # initially failed: local venv missing CUDA 13 cudnn/nccl shared libs after namespace transition
+mise exec -- uv sync --frozen --reinstall-package nvidia-cudnn-cu13
+mise exec -- uv sync --frozen --reinstall-package nvidia-cudnn-cu13 --reinstall-package nvidia-nccl-cu13
+mise run test:python
+mise run train:smoke
+mise run typecheck
 mise exec -- uv lock --check
 ```
 

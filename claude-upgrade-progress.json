@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T22:45:00Z",
+  "last_updated": "2026-06-29T23:05:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 29,
+    "updated": 32,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -460,6 +460,65 @@
         "mise exec -- uv lock --check"
       ],
       "timestamp": "2026-06-29T22:35:00Z"
+    },
+    {
+      "name": "torch",
+      "from": "2.4.1",
+      "to": "2.12.1",
+      "breaking_changes": [
+        "torch.load defaults to weights_only=True in newer PyTorch; project source has no direct torch.load usage.",
+        "PyPI wheels resolve CUDA 13.0-era dependencies; older GPU architectures may require the separate CUDA 12.6 wheel."
+      ],
+      "fixes_applied": [
+        "Added torch>=2.12.1 as a direct dependency because project code imports torch directly.",
+        "Reinstalled nvidia-cudnn-cu13 and nvidia-nccl-cu13 locally after the old cu12 namespace uninstall removed shared library files during the transition."
+      ],
+      "tests": [
+        "version import check",
+        "mise run test:python",
+        "mise run train:smoke",
+        "mise run typecheck",
+        "mise exec -- uv lock --check"
+      ],
+      "timestamp": "2026-06-29T23:05:00Z"
+    },
+    {
+      "name": "pytorch-lightning",
+      "from": "2.5.0.post0",
+      "to": "2.6.5",
+      "breaking_changes": [
+        "Lightning minor releases can include backwards-incompatible changes with deprecations; no current Trainer/LightningModule/DataModule/callback API migration was required."
+      ],
+      "fixes_applied": [
+        "Raised dependency lower bound to pytorch-lightning>=2.6.5."
+      ],
+      "tests": [
+        "version import check",
+        "mise run test:python",
+        "mise run train:smoke",
+        "mise run typecheck",
+        "mise exec -- uv lock --check"
+      ],
+      "timestamp": "2026-06-29T23:05:00Z"
+    },
+    {
+      "name": "torchmetrics",
+      "from": "1.6.2",
+      "to": "1.9.0",
+      "breaking_changes": [
+        "TorchMetrics 1.9 drops Python 3.9 support and includes breaking changes for metrics not used here; current KLDivergence and MeanSquaredError usage remained compatible."
+      ],
+      "fixes_applied": [
+        "Raised dependency lower bound to torchmetrics>=1.9.0."
+      ],
+      "tests": [
+        "version import check",
+        "mise run test:python",
+        "mise run train:smoke",
+        "mise run typecheck",
+        "mise exec -- uv lock --check"
+      ],
+      "timestamp": "2026-06-29T23:05:00Z"
     }
   ],
   "failed": [],
@@ -477,7 +536,8 @@
     "Slice 3 small-rust completed; mise run ci passed after indicatif update.",
     "Slice 4 medium-rust completed; mise run ci passed after rocksdb update.",
     "Native boundary milestone updated Python numpy, PyO3, and rust-numpy together; PyO3/rust-numpy API migration completed and focused tests passed.",
-    "Slice 5 native-boundary completed; mise run ci passed after Python numpy + Rust PyO3/rust-numpy updates."
+    "Slice 5 native-boundary completed; mise run ci passed after Python numpy + Rust PyO3/rust-numpy updates.",
+    "ML-stack milestone focused validation passed for torch, pytorch-lightning, and torchmetrics; full slice CI pending."
   ],
   "slice_validations": [
     {

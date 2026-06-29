@@ -4,10 +4,10 @@ version = "0.1.0"
 description = ""
 authors = [{ name = "Advait Shinde", email = "advait.shinde@gmail.com" }]
 dependencies = [
-  "pytorch-lightning>=2.5.0",
+  "pytorch-lightning>=2.6.5",
   "numpy>=2.4.6",
   "einops>=0.8.2",
-  "torchmetrics>=1.6.2",
+  "torchmetrics>=1.9.0",
   "tensorboardx>=2.6.5",
   "tensorboard>=2.20.0",
   "tqdm>=4.68.3",
@@ -20,6 +20,7 @@ dependencies = [
   "typer>=0.26.8",
   "optuna>=4.9.0",
   "optuna-dashboard>=0.20.0",
+  "torch>=2.12.1",
 ]
 readme = "README.md"
 requires-python = ">= 3.11"
