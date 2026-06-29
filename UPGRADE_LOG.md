@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 15 |
+| **Updated** | 16 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -197,6 +197,16 @@ Slices:
 
 **Tests:** ✓ `python src/c4a0/main.py --help` rendered CLI commands; ✓ `mise run test:python` passed; ✓ `mise run train:smoke` passed.
 
+### crossbeam-channel: 0.5.13 → 0.5.15
+
+**Changelog:** Official crate changelog / docs.rs source reviewed.
+
+**Breaking changes:** None identified; release notes indicate patch-level fixes.
+
+**Migration applied:** Raised Rust dependency to `crossbeam-channel = "0.5.15"`; `Cargo.lock` resolved `crossbeam-channel==0.5.15`.
+
+**Tests:** ✓ `mise run test:rust` passed.
+
 ---
 
 ## Skipped
@@ -286,6 +296,8 @@ mise exec -- uv run python src/c4a0/main.py --help
 mise run test:python
 mise run train:smoke
 mise run ci
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p crossbeam-channel --precise 0.5.15
+mise run test:rust
 ```
 
 ---

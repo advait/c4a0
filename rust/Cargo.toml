@@ -12,7 +12,7 @@ pyo3 = { version = "0.21.2", features = ["extension-module"] }
 approx = "0.5.1"
 more-asserts = "0.3.1"
 crossbeam = "0.8.4"
-crossbeam-channel = "0.5.13"
+crossbeam-channel = "0.5.15"
 num_cpus = "1.16.0"
 rand = "0.8.5"
 indicatif = "0.17.8"
