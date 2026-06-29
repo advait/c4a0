@@ -4,13 +4,12 @@ min_version = "2026.1.6"
 dir = "{{config_root}}"
 
 [tools]
-clang = "LLVM-19.1.7-Linux-X64"
 rust = "stable"
 uv = "0.11.7"
 
 [env]
-LIBCLANG_PATH = "{{ exec(command='mise where clang') | trim }}/lib"
-LD_LIBRARY_PATH = "{{ exec(command='mise where clang') | trim }}/lib:{{ env.LD_LIBRARY_PATH | default(value='') }}"
+LIBCLANG_PATH = "{{ exec(command='python3 scripts/find-libclang.py') | trim }}"
+LD_LIBRARY_PATH = "{{ exec(command='python3 scripts/find-libclang.py') | trim }}:{{ env.LD_LIBRARY_PATH | default(value='') }}"
 UV_LINK_MODE = "copy"
 
 # Bootstrap

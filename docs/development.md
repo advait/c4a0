@@ -13,7 +13,7 @@ Use [`mise`](https://mise.jdx.dev/) as the project entrypoint. `mise.toml` pins 
 
 - `uv` for Python dependency management
 - Rust stable, including `cargo`
-- `clang`/`libclang` for Rust crates that use bindgen, including RocksDB bindings
+- `libclang` for Rust crates that use bindgen, including RocksDB bindings
 
 Install mise once, then from the repo root run:
 
@@ -22,7 +22,7 @@ mise trust
 mise install
 ```
 
-`mise.toml` sets `LIBCLANG_PATH`/`LD_LIBRARY_PATH` from the mise-managed clang install, so developers and CI do not need manual clang environment exports.
+`mise.toml` sets `LIBCLANG_PATH`/`LD_LIBRARY_PATH` using `scripts/find-libclang.py`. GitHub runners normally provide `/usr/lib/llvm-*/lib/libclang.so`; local machines can use a system LLVM/libclang or an existing mise LLVM install.
 
 ## Common tasks
 
