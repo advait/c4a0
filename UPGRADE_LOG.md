@@ -13,7 +13,7 @@
 |--------|-------|
 | **Total dependencies considered** | 45 |
 | **Updated** | 36 |
-| **Already current** | 2 |
+| **Already current** | 3 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -392,6 +392,14 @@ Slices:
 
 **Validation:** ✓ `mise exec -- uv pip list --outdated` did not list `loguru`; ✓ importlib metadata check printed `loguru 0.7.3`.
 
+### Rust toolchain: stable (rustc 1.96.0)
+
+**Research:** Project already uses `rust = "stable"` in `mise.toml`; direct Rust dependency audit found no newer stable direct crate versions pending.
+
+**Action:** Kept the Rust toolchain on `stable` instead of pinning a dated version.
+
+**Validation:** ✓ `mise exec -- rustc --version` printed `rustc 1.96.0`; ✓ `mise exec -- cargo --version` printed `cargo 1.96.0`; ✓ `mise run ci` passed.
+
 ---
 
 ## Skipped
@@ -573,6 +581,9 @@ mise exec -- uv run python --version
 mise exec -- uv sync --frozen
 mise run test:python
 mise exec -- uv lock --check
+mise exec -- rustc --version
+mise exec -- cargo --version
+mise run ci
 ```
 
 ---
@@ -588,3 +599,4 @@ mise exec -- uv lock --check
 - Slice 5 (native boundary) completed: Python `numpy`, Rust `pyo3`, and Rust `numpy` updated together; final `mise run ci` passed.
 - Slice 6 (ML stack) completed: `torch`, `pytorch-lightning`, and `torchmetrics` updated together; final `mise run ci` passed. `train:smoke` still prints an upstream PyTorch Lightning `_pytree.LeafSpec` deprecation warning under PyTorch 2.12; no project call site was identified.
 - Slice 7 (notebook/experiment tooling) completed: `jupyterlab` and `pandas` updated; `rankit` and `loguru` were already latest stable; final `mise run ci` passed.
+- Slice 8 (toolchains) completed: `uv` and Python patch versions updated; Rust stable validated as `rustc 1.96.0`; final `mise run ci` passed.

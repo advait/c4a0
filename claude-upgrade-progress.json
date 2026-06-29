@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T23:50:00Z",
+  "last_updated": "2026-06-29T23:55:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -18,12 +18,10 @@
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0,
-    "already_current": 2
+    "already_current": 3
   },
   "current": null,
-  "pending_slices": [
-    "toolchains"
-  ],
+  "pending_slices": [],
   "completed_slices": [
     "dev-tooling",
     "small-python",
@@ -31,7 +29,8 @@
     "medium-rust",
     "native-boundary",
     "ml-stack",
-    "notebook-experiment"
+    "notebook-experiment",
+    "toolchains"
   ],
   "dependencies": [],
   "completed": [
@@ -636,7 +635,8 @@
     "Slice 7 notebook-experiment completed; mise run ci passed after JupyterLab and pandas updates and rankit/loguru latest-stable checks.",
     "Direct dependency audit found TensorBoard 2.21.0 after the earlier TensorBoard 2.20 update; refreshed to 2.21.0 and focused validation passed.",
     "uv toolchain updated from 0.11.7 to 0.11.25; version check, uv lock check, and Python tests passed.",
-    "Python toolchain updated from 3.11.6 to 3.11.15 and pinned in mise; uv recreated the venv and Python tests plus uv lock check passed."
+    "Python toolchain updated from 3.11.6 to 3.11.15 and pinned in mise; uv recreated the venv and Python tests plus uv lock check passed.",
+    "Slice 8 toolchains completed; rustc/cargo stable reported 1.96.0 and full mise run ci passed after uv/Python toolchain updates."
   ],
   "slice_validations": [
     {
@@ -680,6 +680,12 @@
       "command": "mise run ci",
       "result": "passed",
       "timestamp": "2026-06-29T23:35:00Z"
+    },
+    {
+      "slice": "toolchains",
+      "command": "mise run ci",
+      "result": "passed",
+      "timestamp": "2026-06-29T23:55:00Z"
     }
   ],
   "already_current": [
@@ -704,6 +710,18 @@
         "importlib.metadata version check printed loguru 0.7.3"
       ],
       "timestamp": "2026-06-29T23:30:00Z"
+    },
+    {
+      "name": "rust-toolchain",
+      "version": "stable (rustc 1.96.0)",
+      "reason": "Project uses mise rust = \"stable\"; direct Rust dependencies were already latest stable, and current stable toolchain compiled/tests successfully.",
+      "action": "Kept rust = \"stable\" in mise.toml.",
+      "validation": [
+        "mise exec -- rustc --version printed rustc 1.96.0",
+        "mise exec -- cargo --version printed cargo 1.96.0",
+        "mise run ci passed"
+      ],
+      "timestamp": "2026-06-29T23:55:00Z"
     }
   ]
 }
