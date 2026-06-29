@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T19:45:00Z",
+  "last_updated": "2026-06-29T19:55:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -21,7 +21,6 @@
   },
   "current": null,
   "pending_slices": [
-    "dev-tooling",
     "small-python",
     "small-rust",
     "medium-rust",
@@ -30,7 +29,9 @@
     "notebook-experiment",
     "toolchains"
   ],
-  "completed_slices": [],
+  "completed_slices": [
+    "dev-tooling"
+  ],
   "dependencies": [],
   "completed": [
     {
@@ -116,5 +117,13 @@
   },
   "notes": [
     "Migrated tool.uv.dev-dependencies to dependency-groups.dev; mise run ci passed."
+  ],
+  "slice_validations": [
+    {
+      "slice": "dev-tooling",
+      "command": "mise run ci",
+      "result": "passed",
+      "timestamp": "2026-06-29T19:55:00Z"
+    }
   ]
 }

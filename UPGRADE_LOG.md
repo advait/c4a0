@@ -160,3 +160,4 @@ mise run test:python
 
 - Baseline CI passed locally and remotely on `chore/mise-ci-packaging` before dependency work began.
 - Dependency upgrades are being performed on `chore/dependency-upgrades`.
+- Slice 1 (dev/tooling) completed: `pyright`, `ruff`, `maturin`, `pytest`, and `pytest-asyncio` updated; final `mise run ci` passed.
