@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 11 |
+| **Updated** | 12 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -157,6 +157,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:python` passed.
 
+### matplotlib: 3.10.1 → 3.11.0
+
+**Changelog:** Official Matplotlib release/API-change notes reviewed.
+
+**Breaking changes:** Official API-change notes exist for 3.11.0; project source/tests do not directly use Matplotlib, only an exploratory notebook imports pyplot.
+
+**Migration applied:** Raised dependency lower bound to `matplotlib>=3.11.0`; `uv.lock` resolved `matplotlib==3.11.0`.
+
+**Tests:** ✓ `mise run test:python` passed.
+
 ---
 
 ## Skipped
@@ -230,6 +240,9 @@ mise run test:python
 mise run train:smoke
 mise exec -- uv add tabulate --upgrade-package tabulate
 mise exec -- uv add 'tabulate>=0.10.0'
+mise run test:python
+mise exec -- uv add matplotlib --upgrade-package matplotlib
+mise exec -- uv add 'matplotlib>=3.11.0'
 mise run test:python
 ```
 

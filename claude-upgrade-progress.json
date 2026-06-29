@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T20:25:00Z",
+  "last_updated": "2026-06-29T20:30:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 11,
+    "updated": 12,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -186,6 +186,21 @@
         "mise run test:python"
       ],
       "timestamp": "2026-06-29T20:25:00Z"
+    },
+    {
+      "name": "matplotlib",
+      "from": "3.10.1",
+      "to": "3.11.0",
+      "breaking_changes": [
+        "Official API-change notes exist for 3.11.0; project source/tests do not directly use Matplotlib."
+      ],
+      "fixes_applied": [
+        "Raised dependency lower bound to matplotlib>=3.11.0."
+      ],
+      "tests": [
+        "mise run test:python"
+      ],
+      "timestamp": "2026-06-29T20:30:00Z"
     }
   ],
   "failed": [],
