@@ -482,3 +482,4 @@ mise exec -- uv lock --check
 - Slice 3 (small Rust crates) completed: `crossbeam-channel`, `log`, `env_logger`, `num_cpus`, `parking_lot`, `serde`, `proptest`, and `indicatif` updated; final `mise run ci` passed.
 - Slice 4 (medium-risk Rust crates) completed: `rand`, `ratatui`, and `rocksdb` updated; final `mise run ci` passed.
 - Slice 5 (native boundary) completed: Python `numpy`, Rust `pyo3`, and Rust `numpy` updated together; final `mise run ci` passed.
+- Slice 6 (ML stack) completed: `torch`, `pytorch-lightning`, and `torchmetrics` updated together; final `mise run ci` passed. `train:smoke` still prints an upstream PyTorch Lightning `_pytree.LeafSpec` deprecation warning under PyTorch 2.12; no project call site was identified.

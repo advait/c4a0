@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T23:05:00Z",
+  "last_updated": "2026-06-29T23:15:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -21,7 +21,6 @@
   },
   "current": null,
   "pending_slices": [
-    "ml-stack",
     "notebook-experiment",
     "toolchains"
   ],
@@ -30,7 +29,8 @@
     "small-python",
     "small-rust",
     "medium-rust",
-    "native-boundary"
+    "native-boundary",
+    "ml-stack"
   ],
   "dependencies": [],
   "completed": [
@@ -537,7 +537,9 @@
     "Slice 4 medium-rust completed; mise run ci passed after rocksdb update.",
     "Native boundary milestone updated Python numpy, PyO3, and rust-numpy together; PyO3/rust-numpy API migration completed and focused tests passed.",
     "Slice 5 native-boundary completed; mise run ci passed after Python numpy + Rust PyO3/rust-numpy updates.",
-    "ML-stack milestone focused validation passed for torch, pytorch-lightning, and torchmetrics; full slice CI pending."
+    "ML-stack milestone focused validation passed for torch, pytorch-lightning, and torchmetrics; full slice CI pending.",
+    "Slice 6 ml-stack completed; mise run ci passed after torch + pytorch-lightning + torchmetrics updates.",
+    "ML-stack CI still emits an upstream PyTorch Lightning _pytree.LeafSpec deprecation warning under PyTorch 2.12; no project call site identified."
   ],
   "slice_validations": [
     {
@@ -569,6 +571,12 @@
       "command": "mise run ci",
       "result": "passed",
       "timestamp": "2026-06-29T22:45:00Z"
+    },
+    {
+      "slice": "ml-stack",
+      "command": "mise run ci",
+      "result": "passed",
+      "timestamp": "2026-06-29T23:15:00Z"
     }
   ]
 }
