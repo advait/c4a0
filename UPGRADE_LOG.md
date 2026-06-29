@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 7 |
+| **Updated** | 8 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -117,6 +117,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:python` passed.
 
+### tensorboardX: 2.6.2.2 → 2.6.5
+
+**Changelog:** PyPI/version search reviewed; no clear official changelog found for this exact range.
+
+**Breaking changes:** None identified in available search results.
+
+**Migration applied:** Raised dependency lower bound to `tensorboardx>=2.6.5`; `uv.lock` resolved `tensorboardx==2.6.5`.
+
+**Tests:** ✓ `mise run test:python` passed.
+
 ---
 
 ## Skipped
@@ -177,6 +187,9 @@ mise exec -- uv add 'einops>=0.8.2'
 mise run test:python
 mise exec -- uv add tqdm --upgrade-package tqdm
 mise exec -- uv add 'tqdm>=4.68.3'
+mise run test:python
+mise exec -- uv add tensorboardx --upgrade-package tensorboardx
+mise exec -- uv add 'tensorboardx>=2.6.5'
 mise run test:python
 ```
 
