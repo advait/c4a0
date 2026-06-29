@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T23:15:00Z",
+  "last_updated": "2026-06-29T23:20:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 32,
+    "updated": 33,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -519,6 +519,24 @@
         "mise exec -- uv lock --check"
       ],
       "timestamp": "2026-06-29T23:05:00Z"
+    },
+    {
+      "name": "jupyterlab",
+      "from": "4.3.5",
+      "to": "4.6.1",
+      "breaking_changes": [
+        "No project-impacting breaking changes identified in the official JupyterLab 4.6 changelog; project has no custom JupyterLab extensions or direct JupyterLab API usage."
+      ],
+      "fixes_applied": [
+        "Raised project and dev dependency lower bounds to jupyterlab>=4.6.1.",
+        "Accepted resolver updates to jupyter-events 0.12.1, jupyter-server 2.20.0, jupyterlab-server 2.28.0, and added jupyter-builder 1.0.2."
+      ],
+      "tests": [
+        "mise exec -- uv run jupyter lab --version",
+        "mise run test:python",
+        "mise exec -- uv lock --check"
+      ],
+      "timestamp": "2026-06-29T23:20:00Z"
     }
   ],
   "failed": [],
@@ -539,7 +557,8 @@
     "Slice 5 native-boundary completed; mise run ci passed after Python numpy + Rust PyO3/rust-numpy updates.",
     "ML-stack milestone focused validation passed for torch, pytorch-lightning, and torchmetrics; full slice CI pending.",
     "Slice 6 ml-stack completed; mise run ci passed after torch + pytorch-lightning + torchmetrics updates.",
-    "ML-stack CI still emits an upstream PyTorch Lightning _pytree.LeafSpec deprecation warning under PyTorch 2.12; no project call site identified."
+    "ML-stack CI still emits an upstream PyTorch Lightning _pytree.LeafSpec deprecation warning under PyTorch 2.12; no project call site identified.",
+    "JupyterLab updated to 4.6.1; version check, Python tests, and uv lock check passed."
   ],
   "slice_validations": [
     {

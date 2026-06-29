@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 32 |
+| **Updated** | 33 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -331,6 +331,16 @@ Slices:
 
 **Tests:** ✓ version import check printed `torch 2.12.1+cu130`, `pytorch_lightning 2.6.5`, and `torchmetrics 1.9.0`; ✓ `mise run test:python` passed; ✓ `mise run train:smoke` passed; ✓ `mise run typecheck` passed; ✓ `mise exec -- uv lock --check` passed.
 
+### jupyterlab: 4.3.5 → 4.6.1
+
+**Changelog:** Official JupyterLab 4.6 changelog reviewed.
+
+**Breaking changes:** No project-impacting breaking changes identified. Official 4.6 notes include UI/layout customization changes and extension compatibility context; this project does not ship custom JupyterLab extensions or call JupyterLab APIs directly.
+
+**Migration applied:** Raised project and dev dependency lower bounds to `jupyterlab>=4.6.1`; `uv.lock` resolved `jupyterlab==4.6.1`, `jupyter-events==0.12.1`, `jupyter-server==2.20.0`, `jupyterlab-server==2.28.0`, and added `jupyter-builder==1.0.2`.
+
+**Tests:** ✓ `mise exec -- uv run jupyter lab --version` printed `4.6.1`; ✓ `mise run test:python` passed; ✓ `mise exec -- uv lock --check` passed.
+
 ---
 
 ## Skipped
@@ -468,6 +478,11 @@ mise exec -- uv sync --frozen --reinstall-package nvidia-cudnn-cu13 --reinstall-
 mise run test:python
 mise run train:smoke
 mise run typecheck
+mise exec -- uv lock --check
+mise exec -- uv add 'jupyterlab>=4.6.1' --upgrade-package jupyterlab
+mise exec -- uv add --dev 'jupyterlab>=4.6.1' --upgrade-package jupyterlab
+mise exec -- uv run jupyter lab --version
+mise run test:python
 mise exec -- uv lock --check
 ```
 
