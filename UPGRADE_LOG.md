@@ -13,6 +13,7 @@
 |--------|-------|
 | **Total dependencies considered** | 45 |
 | **Updated** | 34 |
+| **Already current** | 2 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -353,6 +354,26 @@ Slices:
 
 ---
 
+## Already Current
+
+### rankit: 0.3.3
+
+**Research:** PyPI package page/release history reviewed; 0.3.3 is the latest stable PyPI release found.
+
+**Action:** No version change required; kept `rankit>=0.3.3`.
+
+**Validation:** ✓ `mise exec -- uv pip list --outdated` did not list `rankit`; ✓ importlib metadata check printed `rankit 0.3.3`.
+
+### loguru: 0.7.3
+
+**Research:** PyPI package page and official Loguru changelog reviewed; 0.7.3 is the latest stable release found. The 0.7.3 changelog is bug fixes/performance improvements, and the project is already on this release.
+
+**Action:** No version change required; kept `loguru>=0.7.3`.
+
+**Validation:** ✓ `mise exec -- uv pip list --outdated` did not list `loguru`; ✓ importlib metadata check printed `loguru 0.7.3`.
+
+---
+
 ## Skipped
 
 _To be filled._
@@ -501,6 +522,13 @@ print(pd.__version__)
 PY
 mise run test:python
 mise exec -- uv lock --check
+mise exec -- uv pip list --outdated | rg '^(rankit|loguru)\s' || true
+mise exec -- uv run python - <<'PY'
+import importlib.metadata
+print('rankit', importlib.metadata.version('rankit'))
+print('loguru', importlib.metadata.version('loguru'))
+PY
+mise run ci
 ```
 
 ---
@@ -515,3 +543,4 @@ mise exec -- uv lock --check
 - Slice 4 (medium-risk Rust crates) completed: `rand`, `ratatui`, and `rocksdb` updated; final `mise run ci` passed.
 - Slice 5 (native boundary) completed: Python `numpy`, Rust `pyo3`, and Rust `numpy` updated together; final `mise run ci` passed.
 - Slice 6 (ML stack) completed: `torch`, `pytorch-lightning`, and `torchmetrics` updated together; final `mise run ci` passed. `train:smoke` still prints an upstream PyTorch Lightning `_pytree.LeafSpec` deprecation warning under PyTorch 2.12; no project call site was identified.
+- Slice 7 (notebook/experiment tooling) completed: `jupyterlab` and `pandas` updated; `rankit` and `loguru` were already latest stable; final `mise run ci` passed.

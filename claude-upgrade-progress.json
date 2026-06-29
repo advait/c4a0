@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T23:25:00Z",
+  "last_updated": "2026-06-29T23:35:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -17,11 +17,11 @@
     "updated": 34,
     "skipped": 0,
     "failed": 0,
-    "requires_refactor": 0
+    "requires_refactor": 0,
+    "already_current": 2
   },
   "current": null,
   "pending_slices": [
-    "notebook-experiment",
     "toolchains"
   ],
   "completed_slices": [
@@ -30,7 +30,8 @@
     "small-rust",
     "medium-rust",
     "native-boundary",
-    "ml-stack"
+    "ml-stack",
+    "notebook-experiment"
   ],
   "dependencies": [],
   "completed": [
@@ -579,7 +580,9 @@
     "Slice 6 ml-stack completed; mise run ci passed after torch + pytorch-lightning + torchmetrics updates.",
     "ML-stack CI still emits an upstream PyTorch Lightning _pytree.LeafSpec deprecation warning under PyTorch 2.12; no project call site identified.",
     "JupyterLab updated to 4.6.1; version check, Python tests, and uv lock check passed.",
-    "pandas updated to 3.0.3; project has no direct pandas imports, and Python tests plus uv lock check passed."
+    "pandas updated to 3.0.3; project has no direct pandas imports, and Python tests plus uv lock check passed.",
+    "rankit 0.3.3 and loguru 0.7.3 are already at the latest stable versions found; no manifest changes required.",
+    "Slice 7 notebook-experiment completed; mise run ci passed after JupyterLab and pandas updates and rankit/loguru latest-stable checks."
   ],
   "slice_validations": [
     {
@@ -617,6 +620,36 @@
       "command": "mise run ci",
       "result": "passed",
       "timestamp": "2026-06-29T23:15:00Z"
+    },
+    {
+      "slice": "notebook-experiment",
+      "command": "mise run ci",
+      "result": "passed",
+      "timestamp": "2026-06-29T23:35:00Z"
+    }
+  ],
+  "already_current": [
+    {
+      "name": "rankit",
+      "version": "0.3.3",
+      "reason": "PyPI package page/release history shows 0.3.3 as the latest stable release found.",
+      "action": "No version change required; kept rankit>=0.3.3.",
+      "validation": [
+        "mise exec -- uv pip list --outdated did not list rankit",
+        "importlib.metadata version check printed rankit 0.3.3"
+      ],
+      "timestamp": "2026-06-29T23:30:00Z"
+    },
+    {
+      "name": "loguru",
+      "version": "0.7.3",
+      "reason": "PyPI package page and official Loguru changelog show 0.7.3 as the latest stable release found; project already uses it.",
+      "action": "No version change required; kept loguru>=0.7.3.",
+      "validation": [
+        "mise exec -- uv pip list --outdated did not list loguru",
+        "importlib.metadata version check printed loguru 0.7.3"
+      ],
+      "timestamp": "2026-06-29T23:30:00Z"
     }
   ]
 }
