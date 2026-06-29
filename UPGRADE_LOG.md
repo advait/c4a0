@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 13 |
+| **Updated** | 14 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -177,6 +177,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:python` passed.
 
+### optuna-dashboard: 0.17.0 → 0.20.0
+
+**Changelog:** Official GitHub releases / package metadata reviewed.
+
+**Breaking changes:** None explicitly identified in release-note search.
+
+**Migration applied:** Raised dependency lower bound to `optuna-dashboard>=0.20.0`; `uv.lock` resolved `optuna-dashboard==0.20.0`. Transitive packages `scikit-learn`, `joblib`, and `threadpoolctl` were removed from the lock by the new dependency graph.
+
+**Tests:** ✓ `mise run test:python` passed.
+
 ---
 
 ## Skipped
@@ -256,6 +266,9 @@ mise exec -- uv add 'matplotlib>=3.11.0'
 mise run test:python
 mise exec -- uv add optuna --upgrade-package optuna
 mise exec -- uv add 'optuna>=4.9.0'
+mise run test:python
+mise exec -- uv add optuna-dashboard --upgrade-package optuna-dashboard
+mise exec -- uv add 'optuna-dashboard>=0.20.0'
 mise run test:python
 ```
 

@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T20:35:00Z",
+  "last_updated": "2026-06-29T20:40:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 13,
+    "updated": 14,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -214,6 +214,19 @@
         "mise run test:python"
       ],
       "timestamp": "2026-06-29T20:35:00Z"
+    },
+    {
+      "name": "optuna-dashboard",
+      "from": "0.17.0",
+      "to": "0.20.0",
+      "breaking_changes": [],
+      "fixes_applied": [
+        "Raised dependency lower bound to optuna-dashboard>=0.20.0; transitive scikit-learn/joblib/threadpoolctl removed by resolver."
+      ],
+      "tests": [
+        "mise run test:python"
+      ],
+      "timestamp": "2026-06-29T20:40:00Z"
     }
   ],
   "failed": [],

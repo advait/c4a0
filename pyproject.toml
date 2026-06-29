@@ -19,7 +19,7 @@ dependencies = [
   "loguru>=0.7.3",
   "typer>=0.15.2",
   "optuna>=4.9.0",
-  "optuna-dashboard>=0.17.0",
+  "optuna-dashboard>=0.20.0",
 ]
 readme = "README.md"
 requires-python = ">= 3.11"
