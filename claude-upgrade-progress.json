@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T20:40:00Z",
+  "last_updated": "2026-06-29T20:45:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 14,
+    "updated": 15,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -227,6 +227,23 @@
         "mise run test:python"
       ],
       "timestamp": "2026-06-29T20:40:00Z"
+    },
+    {
+      "name": "typer",
+      "from": "0.15.2",
+      "to": "0.26.8",
+      "breaking_changes": [
+        "No major-version migration identified; CLI/help rendering can change across Typer/Click/Rich releases."
+      ],
+      "fixes_applied": [
+        "Raised dependency lower bound to typer>=0.26.8; accepted resolver changes adding annotated-doc and removing click from Typer dependency graph."
+      ],
+      "tests": [
+        "python src/c4a0/main.py --help",
+        "mise run test:python",
+        "mise run train:smoke"
+      ],
+      "timestamp": "2026-06-29T20:45:00Z"
     }
   ],
   "failed": [],

@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 14 |
+| **Updated** | 15 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -187,6 +187,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:python` passed.
 
+### typer: 0.15.2 → 0.26.8
+
+**Changelog:** Official Typer release notes reviewed.
+
+**Breaking changes:** No major-version migration identified, but CLI/help rendering can change across Typer/Click/Rich releases.
+
+**Migration applied:** Raised dependency lower bound to `typer>=0.26.8`; `uv.lock` resolved `typer==0.26.8`, added `annotated-doc`, and removed the direct `click` transitive package from Typer’s dependency graph.
+
+**Tests:** ✓ `python src/c4a0/main.py --help` rendered CLI commands; ✓ `mise run test:python` passed; ✓ `mise run train:smoke` passed.
+
 ---
 
 ## Skipped
@@ -270,6 +280,11 @@ mise run test:python
 mise exec -- uv add optuna-dashboard --upgrade-package optuna-dashboard
 mise exec -- uv add 'optuna-dashboard>=0.20.0'
 mise run test:python
+mise exec -- uv add typer --upgrade-package typer
+mise exec -- uv add 'typer>=0.26.8'
+mise exec -- uv run python src/c4a0/main.py --help
+mise run test:python
+mise run train:smoke
 ```
 
 ---

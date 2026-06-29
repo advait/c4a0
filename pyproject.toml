@@ -17,7 +17,7 @@ dependencies = [
   "matplotlib>=3.11.0",
   "maturin>=1.14.1",
   "loguru>=0.7.3",
-  "typer>=0.15.2",
+  "typer>=0.26.8",
   "optuna>=4.9.0",
   "optuna-dashboard>=0.20.0",
 ]
