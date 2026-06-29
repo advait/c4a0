@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 16 |
+| **Updated** | 17 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -207,6 +207,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:rust` passed.
 
+### log: 0.4.22 → 0.4.33
+
+**Changelog:** Official crate changelog / docs.rs source reviewed.
+
+**Breaking changes:** None identified for normal logging macro usage.
+
+**Migration applied:** Raised Rust dependency to `log = "0.4.33"`; `Cargo.lock` resolved `log==0.4.33`.
+
+**Tests:** ✓ `mise run test:rust` passed.
+
 ---
 
 ## Skipped
@@ -297,6 +307,8 @@ mise run test:python
 mise run train:smoke
 mise run ci
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p crossbeam-channel --precise 0.5.15
+mise run test:rust
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p log --precise 0.4.33
 mise run test:rust
 ```
 
