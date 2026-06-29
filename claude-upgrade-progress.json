@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T21:35:00Z",
+  "last_updated": "2026-06-29T21:40:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 22,
+    "updated": 23,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -342,6 +342,21 @@
         "mise run test:rust"
       ],
       "timestamp": "2026-06-29T21:35:00Z"
+    },
+    {
+      "name": "indicatif",
+      "from": "0.17.8",
+      "to": "0.18.5",
+      "breaking_changes": [
+        "0.18.0 is a documented breaking point; current progress-bar usage compiled without migration."
+      ],
+      "fixes_applied": [
+        "Raised Rust dependency to indicatif = \"0.18.5\"; progress-bar transitive graph refreshed."
+      ],
+      "tests": [
+        "mise run test:rust"
+      ],
+      "timestamp": "2026-06-29T21:40:00Z"
     }
   ],
   "failed": [],

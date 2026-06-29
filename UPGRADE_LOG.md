@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 22 |
+| **Updated** | 23 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -269,6 +269,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:rust` passed.
 
+### indicatif: 0.17.8 → 0.18.5
+
+**Changelog:** Official crate docs/release search reviewed.
+
+**Breaking changes:** 0.18.0 is a documented breaking point. Current `MultiProgress`, `ProgressBar`, and `ProgressStyle` usage compiled without migration.
+
+**Migration applied:** Raised Rust dependency to `indicatif = "0.18.5"`; `Cargo.lock` resolved `indicatif==0.18.5` and refreshed progress-bar transitives such as `console`, `unicode-width`, and `unit-prefix`.
+
+**Tests:** ✓ `mise run test:rust` passed.
+
 ---
 
 ## Skipped
@@ -375,6 +385,8 @@ mise run test:rust
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p serde --precise 1.0.228
 mise run test:rust
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p proptest --precise 1.11.0
+mise run test:rust
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p indicatif --precise 0.18.5
 mise run test:rust
 ```
 
