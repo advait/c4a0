@@ -388,6 +388,7 @@ mise exec -- cargo update --manifest-path rust/Cargo.toml -p proptest --precise 
 mise run test:rust
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p indicatif --precise 0.18.5
 mise run test:rust
+mise run ci
 ```
 
 ---
@@ -398,3 +399,4 @@ mise run test:rust
 - Dependency upgrades are being performed on `chore/dependency-upgrades`.
 - Slice 1 (dev/tooling) completed: `pyright`, `ruff`, `maturin`, `pytest`, and `pytest-asyncio` updated; final `mise run ci` passed.
 - Slice 2 (small Python libraries) completed: `einops`, `tqdm`, `tensorboardX`, `tensorboard`, `pydantic`, `tabulate`, `matplotlib`, `optuna`, `optuna-dashboard`, and `typer` updated; final `mise run ci` passed.
+- Slice 3 (small Rust crates) completed: `crossbeam-channel`, `log`, `env_logger`, `num_cpus`, `parking_lot`, `serde`, `proptest`, and `indicatif` updated; final `mise run ci` passed.

@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T21:40:00Z",
+  "last_updated": "2026-06-29T21:45:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -21,7 +21,6 @@
   },
   "current": null,
   "pending_slices": [
-    "small-rust",
     "medium-rust",
     "native-boundary",
     "ml-stack",
@@ -30,7 +29,8 @@
   ],
   "completed_slices": [
     "dev-tooling",
-    "small-python"
+    "small-python",
+    "small-rust"
   ],
   "dependencies": [],
   "completed": [
@@ -370,7 +370,8 @@
   "notes": [
     "Migrated tool.uv.dev-dependencies to dependency-groups.dev; mise run ci passed.",
     "Slice 2 small-python completed; mise run ci passed after Typer update.",
-    "env_logger update initially exposed a librocksdb-sys bindgen stdbool.h include issue; fixed with portable BINDGEN_EXTRA_CLANG_ARGS discovery."
+    "env_logger update initially exposed a librocksdb-sys bindgen stdbool.h include issue; fixed with portable BINDGEN_EXTRA_CLANG_ARGS discovery.",
+    "Slice 3 small-rust completed; mise run ci passed after indicatif update."
   ],
   "slice_validations": [
     {
@@ -384,6 +385,12 @@
       "command": "mise run ci",
       "result": "passed",
       "timestamp": "2026-06-29T20:50:00Z"
+    },
+    {
+      "slice": "small-rust",
+      "command": "mise run ci",
+      "result": "passed",
+      "timestamp": "2026-06-29T21:45:00Z"
     }
   ]
 }
