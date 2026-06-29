@@ -35,7 +35,9 @@ module-name = "c4a0_rust._native"
 
 [tool.uv]
 managed = true
-dev-dependencies = [
+
+[dependency-groups]
+dev = [
   "pytest>=8.3.5",
   "pytest-asyncio>=0.25.3",
   "pyright>=1.1.396",

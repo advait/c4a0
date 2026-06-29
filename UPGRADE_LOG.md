@@ -63,6 +63,7 @@ _To be filled._
 
 | Package | Warning | Fix Applied |
 |---------|---------|-------------|
+| uv/pyproject | `tool.uv.dev-dependencies` is deprecated | Moved dev dependencies to `[dependency-groups].dev`; `mise run ci` passed. |
 
 ---
 
@@ -75,7 +76,8 @@ _To be filled after audits._
 ## Commands Used
 
 ```bash
-# Baseline and per-update validation commands will be appended here.
+mise exec -- uv lock --check
+mise run ci
 ```
 
 ---
