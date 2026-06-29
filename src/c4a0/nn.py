@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torchmetrics
 import pytorch_lightning as pl
+from torch.optim.adam import Adam
 from einops import rearrange
 
 from c4a0_rust import N_COLS, N_ROWS  # type: ignore
@@ -123,9 +124,9 @@ class ConnectFourNet(pl.LightningModule):
         pos = torch.from_numpy(x).to(self.device)
         with torch.no_grad():
             policy, q_penalty, q_no_penalty = self.forward(pos)
-        policy = policy.cpu().numpy()
-        q_penalty = q_penalty.cpu().numpy()
-        q_no_penalty = q_no_penalty.cpu().numpy()
+        policy = np.ascontiguousarray(policy.cpu().numpy())
+        q_penalty = np.ascontiguousarray(q_penalty.cpu().numpy())
+        q_no_penalty = np.ascontiguousarray(q_no_penalty.cpu().numpy())
         return policy, q_penalty, q_no_penalty
 
     def _calculate_conv_output_size(self):
@@ -147,7 +148,7 @@ class ConnectFourNet(pl.LightningModule):
             lr = gen_rate
 
         logger.info("using lr {} for gen_n {}", lr, gen_n)
-        optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=self.l2_reg)
+        optimizer = Adam(self.parameters(), lr=lr, weight_decay=self.l2_reg)
         return optimizer
 
     def training_step(self, batch, batch_idx):

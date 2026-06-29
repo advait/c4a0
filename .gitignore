@@ -3,6 +3,11 @@
 .pytest_cache/
 __pycache__/
 .ruff_cache/
+.venv/
+.mise/
+mise.local.toml
+mise.*.local.toml
+*.so
 
 lightning_logs/
 training/

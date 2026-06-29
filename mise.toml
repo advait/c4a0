@@ -1,0 +1,111 @@
+min_version = "2026.1.6"
+
+[task_config]
+dir = "{{config_root}}"
+
+[tools]
+clang = "LLVM-19.1.7-Linux-X64"
+rust = "stable"
+uv = "0.11.7"
+
+[env]
+LIBCLANG_PATH = "{{ exec(command='mise where clang') | trim }}/lib"
+LD_LIBRARY_PATH = "{{ exec(command='mise where clang') | trim }}/lib:{{ env.LD_LIBRARY_PATH | default(value='') }}"
+UV_LINK_MODE = "copy"
+
+# Bootstrap
+
+[tasks.install]
+description = "Install Python dependencies and build the editable package with uv"
+run = "uv sync --frozen"
+sources = [
+  "pyproject.toml",
+  "uv.lock",
+  "rust/Cargo.toml",
+  "rust/Cargo.lock",
+  "rust/src/**/*",
+  "src/**/*",
+]
+outputs = [".venv/pyvenv.cfg"]
+
+[tasks."install:update"]
+description = "Install dependencies and allow uv.lock updates"
+run = "uv sync"
+sources = ["pyproject.toml", "uv.lock"]
+outputs = [".venv/pyvenv.cfg"]
+
+# Build
+
+[tasks.build]
+description = "Build/install the optimized PyO3 extension into the uv environment"
+depends = ["install"]
+run = "uv run maturin develop --release"
+
+# Validation
+
+[tasks.check]
+description = "Run lint, typecheck, Rust tests, and Python tests"
+run = [
+  { task = "lint" },
+  { task = "typecheck" },
+  { task = "test:rust" },
+  { task = "test:python" },
+]
+
+[tasks.lint]
+description = "Run Ruff lint checks"
+depends = ["install"]
+run = "uv run ruff check"
+
+[tasks.typecheck]
+description = "Run Pyright type checks"
+depends = ["install"]
+run = "uv run pyright"
+
+[tasks.test]
+description = "Run all Rust and Python tests"
+depends = ["test:rust", "test:python"]
+
+[tasks."test:rust"]
+description = "Run Rust unit and property tests"
+dir = "{{config_root}}/rust"
+run = "cargo test"
+
+[tasks."test:python"]
+description = "Run Python tests"
+depends = ["build"]
+run = "uv run pytest -q"
+
+[tasks.ci]
+description = "Run the full CI validation suite"
+run = [
+  { task = "lint" },
+  { task = "typecheck" },
+  { task = "test:rust" },
+  { task = "test:python" },
+  { task = "train:smoke" },
+]
+
+# Training / app lifecycle
+
+[tasks."train:smoke"]
+description = "Run a fast CPU end-to-end smoke training job"
+depends = ["build"]
+run = '''
+rm -rf training/ci-smoke
+uv run python src/c4a0/main.py train \
+  --base-dir training/ci-smoke \
+  --device cpu \
+  --n-self-play-games 4 \
+  --n-mcts-iterations 4 \
+  --self-play-batch-size 16 \
+  --training-batch-size 16 \
+  --n-residual-blocks 1 \
+  --conv-filter-size 8 \
+  --n-policy-layers 1 \
+  --n-value-layers 1 \
+  --lr-schedule 0 \
+  --lr-schedule 0.001 \
+  --l2-reg 0 \
+  --max-gens 1
+'''

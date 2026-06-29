@@ -28,6 +28,11 @@ requires-python = ">= 3.11"
 requires = ["maturin>=1,<2"]
 build-backend = "maturin"
 
+[tool.maturin]
+python-source = "src"
+python-packages = ["c4a0", "c4a0_rust"]
+module-name = "c4a0_rust._native"
+
 [tool.uv]
 managed = true
 dev-dependencies = [

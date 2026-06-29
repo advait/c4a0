@@ -86,11 +86,12 @@ class TournamentResult:
     games: Optional[c4a0_rust.PlayGamesResult] = None
 
     def get_scores(self) -> List[Tuple[ModelID, float]]:
+        assert self.games is not None, "tournament has not been played"
         scores: Dict[ModelID, float] = defaultdict(lambda: 0.0)
-        for result in self.games.results:  # type: ignore
+        for result in self.games.results:
             player0_score = result.player0_score()
-            scores[result.metadata.player0_id] += player0_score
-            scores[result.metadata.player1_id] += 1 - player0_score
+            scores[ModelID(result.metadata.player0_id)] += player0_score
+            scores[ModelID(result.metadata.player1_id)] += 1 - player0_score
 
         ret = list(scores.items())
         ret.sort(key=lambda x: x[1], reverse=True)
@@ -114,8 +115,9 @@ def play_tournament(
     batch_size: int,
     mcts_iterations: int,
     exploration_constant: float,
+    c_ply_penalty: float = 0.01,
 ) -> TournamentResult:
-    """Players a round-robin tournament, returning the total score of each player."""
+    """Plays a round-robin tournament, returning the total score of each player."""
     assert games_per_match % 2 == 0, "games_per_match must be even"
 
     gen_id_to_player = {player.model_id: player for player in players}
@@ -132,8 +134,9 @@ def play_tournament(
         batch_size,
         mcts_iterations,
         exploration_constant,
-        lambda player_id, pos: gen_id_to_player[player_id].forward_numpy(pos),
+        c_ply_penalty,
+        lambda player_id, pos: gen_id_to_player[ModelID(player_id)].forward_numpy(pos),
     )
-    logger.info(f"Finished tournament with {len(tournament.games.results)} games")  # type: ignore
+    logger.info(f"Finished tournament with {len(tournament.games.results)} games")
 
     return tournament

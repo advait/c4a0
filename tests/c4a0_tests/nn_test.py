@@ -1,45 +1,65 @@
 import pytest
 import torch
 
-from c4a0.c4 import N_COLS, N_ROWS, STARTING_POS
-from c4a0.nn import ConnectFourNet
+from c4a0.nn import ConnectFourNet, ModelConfig
+from c4a0.training import parse_lr_schedule
+from c4a0_rust import BUF_N_CHANNELS, N_COLS, N_ROWS
+
+
+def make_model() -> ConnectFourNet:
+    return ConnectFourNet(
+        ModelConfig(
+            n_residual_blocks=1,
+            conv_filter_size=8,
+            n_policy_layers=1,
+            n_value_layers=1,
+            lr_schedule=parse_lr_schedule([0, 1e-3]),
+            l2_reg=0.0,
+        )
+    )
+
+
+def starting_pos() -> torch.Tensor:
+    return torch.zeros((1, BUF_N_CHANNELS, N_ROWS, N_COLS), dtype=torch.float32)
 
 
 def test_random_nn_works():
-    model = ConnectFourNet()
-    pos = torch.from_numpy(STARTING_POS).float().unsqueeze(0)
+    model = make_model()
+    pos = starting_pos()
     model.eval()
     with torch.no_grad():
-        policy_logprobs, value = model(pos)
+        policy_logprobs, q_penalty, q_no_penalty = model(pos)
 
     policy = torch.exp(policy_logprobs).squeeze(0).numpy()
-    value = value.squeeze(0).item()
+    q_penalty = q_penalty.squeeze(0).item()
+    q_no_penalty = q_no_penalty.squeeze(0).item()
 
     assert len(policy) == N_COLS
     assert policy.sum().item() == pytest.approx(1.0, abs=1e-5)
-    assert -1.0 <= value <= 1.0
+    assert -1.0 <= q_penalty <= 1.0
+    assert -1.0 <= q_no_penalty <= 1.0
 
 
 @pytest.mark.filterwarnings("ignore:You are trying to `self.log()`*")
 def test_loss_of_zero():
     """Using the model output as training labels should result in a loss of zero."""
-    model = ConnectFourNet()
-    pos = torch.from_numpy(STARTING_POS).float().unsqueeze(0)
+    model = make_model()
+    pos = starting_pos()
     model.eval()
     with torch.no_grad():
-        policy_logprobs, value = model(pos)
+        policy_logprobs, q_penalty, q_no_penalty = model(pos)
         policy = torch.exp(policy_logprobs)
-        value = value.squeeze(0)
 
-    assert pos.shape == (1, N_ROWS, N_COLS)
+    assert pos.shape == (1, BUF_N_CHANNELS, N_ROWS, N_COLS)
     assert policy.shape == (1, N_COLS)
-    assert value.shape == (1,)
+    assert q_penalty.shape == (1,)
+    assert q_no_penalty.shape == (1,)
 
     training_batch = (
-        [0],
         pos,
         policy,
-        value,
+        q_penalty,
+        q_no_penalty,
     )
     loss = model.training_step(training_batch, 0)
     loss = loss.detach().item()
@@ -49,16 +69,18 @@ def test_loss_of_zero():
 @pytest.mark.filterwarnings("ignore:You are trying to `self.log()`*")
 def test_loss_of_nonzero():
     """Using random label data should result in a > 0 loss."""
-    model = ConnectFourNet()
-    pos = torch.from_numpy(STARTING_POS).float().unsqueeze(0)
+    model = make_model()
+    pos = starting_pos()
     policy = torch.rand((1, N_COLS))
-    value = torch.rand((1,))
+    policy = policy / policy.sum(dim=1, keepdim=True)
+    q_penalty = torch.rand((1,))
+    q_no_penalty = torch.rand((1,))
 
     training_batch = (
-        [0],
         pos,
         policy,
-        value,
+        q_penalty,
+        q_no_penalty,
     )
     model.eval()
     loss = model.training_step(training_batch, 0)

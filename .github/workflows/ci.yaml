@@ -1,10 +1,7 @@
 name: c4a0 CI
 
 on:
-  # Triggers the workflow on push events for all branches
   push:
-
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 jobs:
@@ -14,16 +11,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Rust actions
-      - name: install rust
-        run: rustup update stable && rustup default stable
-      - name: cargo test
-        working-directory: rust
-        run: cargo test
+      - name: Install tools with mise
+        uses: jdx/mise-action@v3
+        with:
+          version: 2026.1.6
+          install: true
+          cache: true
 
-      # Python actions
-      - uses: actions/setup-python@v4
-      - uses: yezz123/setup-uv@v4
-      - run: uv sync
-      - run: uv run ruff check
-      - run: uv run maturin build --release
+      - name: Run CI tasks
+        run: mise run ci
