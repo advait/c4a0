@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 19 |
+| **Updated** | 20 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -239,6 +239,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:rust` passed.
 
+### parking_lot: 0.12.3 → 0.12.5
+
+**Changelog:** Official crate changelog / docs.rs source reviewed.
+
+**Breaking changes:** None identified for current `Mutex`/`MutexGuard` usage. Noted compatibility change: 0.12.5 raises MSRV, but the project uses modern stable Rust.
+
+**Migration applied:** Raised Rust dependency to `parking_lot = "0.12.5"`; `Cargo.lock` resolved `parking_lot==0.12.5` and refreshed `lock_api`/`parking_lot_core`.
+
+**Tests:** ✓ `mise run test:rust` passed.
+
 ---
 
 ## Skipped
@@ -339,6 +349,8 @@ python3 scripts/find-libclang.py --bindgen-extra-clang-args
 mise run test:rust
 mise run lint
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p num_cpus --precise 1.17.0
+mise run test:rust
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p parking_lot --precise 0.12.5
 mise run test:rust
 ```
 

@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T21:20:00Z",
+  "last_updated": "2026-06-29T21:25:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 19,
+    "updated": 20,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -299,6 +299,21 @@
         "mise run test:rust"
       ],
       "timestamp": "2026-06-29T21:20:00Z"
+    },
+    {
+      "name": "parking_lot",
+      "from": "0.12.3",
+      "to": "0.12.5",
+      "breaking_changes": [
+        "0.12.5 raises MSRV; project uses modern stable Rust."
+      ],
+      "fixes_applied": [
+        "Raised Rust dependency to parking_lot = \"0.12.5\"; transitive lock_api/parking_lot_core refreshed."
+      ],
+      "tests": [
+        "mise run test:rust"
+      ],
+      "timestamp": "2026-06-29T21:25:00Z"
     }
   ],
   "failed": [],
