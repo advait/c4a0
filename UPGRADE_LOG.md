@@ -584,6 +584,8 @@ mise exec -- uv lock --check
 mise exec -- rustc --version
 mise exec -- cargo --version
 mise run ci
+mise env --dotenv
+mise run ci
 ```
 
 ---
@@ -600,3 +602,4 @@ mise run ci
 - Slice 6 (ML stack) completed: `torch`, `pytorch-lightning`, and `torchmetrics` updated together; final `mise run ci` passed. `train:smoke` still prints an upstream PyTorch Lightning `_pytree.LeafSpec` deprecation warning under PyTorch 2.12; no project call site was identified.
 - Slice 7 (notebook/experiment tooling) completed: `jupyterlab` and `pandas` updated; `rankit` and `loguru` were already latest stable; final `mise run ci` passed.
 - Slice 8 (toolchains) completed: `uv` and Python patch versions updated; Rust stable validated as `rustc 1.96.0`; final `mise run ci` passed.
+- After merging to `master`, remote CI initially failed while exporting mise env because `python3` in `mise.toml` libclang discovery could recurse through the mise Python shim. Switched those env-template commands to `/usr/bin/python3`; `mise env --dotenv` and `mise run ci` passed locally before pushing the fix.

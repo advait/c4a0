@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T23:55:00Z",
+  "last_updated": "2026-06-29T23:58:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -636,7 +636,8 @@
     "Direct dependency audit found TensorBoard 2.21.0 after the earlier TensorBoard 2.20 update; refreshed to 2.21.0 and focused validation passed.",
     "uv toolchain updated from 0.11.7 to 0.11.25; version check, uv lock check, and Python tests passed.",
     "Python toolchain updated from 3.11.6 to 3.11.15 and pinned in mise; uv recreated the venv and Python tests plus uv lock check passed.",
-    "Slice 8 toolchains completed; rustc/cargo stable reported 1.96.0 and full mise run ci passed after uv/Python toolchain updates."
+    "Slice 8 toolchains completed; rustc/cargo stable reported 1.96.0 and full mise run ci passed after uv/Python toolchain updates.",
+    "Post-merge master CI initially failed exporting mise env due python3 shim recursion in libclang discovery; switched mise.toml env templates to /usr/bin/python3 and local mise env --dotenv plus mise run ci passed."
   ],
   "slice_validations": [
     {
@@ -686,6 +687,12 @@
       "command": "mise run ci",
       "result": "passed",
       "timestamp": "2026-06-29T23:55:00Z"
+    },
+    {
+      "slice": "toolchains-master-ci-fix",
+      "command": "mise run ci",
+      "result": "passed locally after /usr/bin/python3 libclang-discovery fix",
+      "timestamp": "2026-06-29T23:58:00Z"
     }
   ],
   "already_current": [

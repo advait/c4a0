@@ -9,9 +9,9 @@ rust = "stable"
 uv = "0.11.25"
 
 [env]
-LIBCLANG_PATH = "{{ exec(command='python3 scripts/find-libclang.py') | trim }}"
-LD_LIBRARY_PATH = "{{ exec(command='python3 scripts/find-libclang.py') | trim }}:{{ env.LD_LIBRARY_PATH | default(value='') }}"
-BINDGEN_EXTRA_CLANG_ARGS = "{{ exec(command='python3 scripts/find-libclang.py --bindgen-extra-clang-args') | trim }}"
+LIBCLANG_PATH = "{{ exec(command='/usr/bin/python3 scripts/find-libclang.py') | trim }}"
+LD_LIBRARY_PATH = "{{ exec(command='/usr/bin/python3 scripts/find-libclang.py') | trim }}:{{ env.LD_LIBRARY_PATH | default(value='') }}"
+BINDGEN_EXTRA_CLANG_ARGS = "{{ exec(command='/usr/bin/python3 scripts/find-libclang.py --bindgen-extra-clang-args') | trim }}"
 UV_LINK_MODE = "copy"
 
 # Bootstrap
