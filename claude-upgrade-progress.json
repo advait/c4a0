@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T21:45:00Z",
+  "last_updated": "2026-06-29T21:55:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 23,
+    "updated": 24,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -357,6 +357,23 @@
         "mise run test:rust"
       ],
       "timestamp": "2026-06-29T21:40:00Z"
+    },
+    {
+      "name": "rand",
+      "from": "0.8.5",
+      "to": "0.10.1",
+      "breaking_changes": [
+        "Distribution APIs moved from rand::distributions to rand::distr; WeightedIndex path changed."
+      ],
+      "fixes_applied": [
+        "Raised Rust dependency to rand = \"0.10.1\".",
+        "Updated MCTS import to rand::distr::{weighted::WeightedIndex, Distribution}."
+      ],
+      "tests": [
+        "mise run test:rust",
+        "mise run test:python"
+      ],
+      "timestamp": "2026-06-29T21:55:00Z"
     }
   ],
   "failed": [],

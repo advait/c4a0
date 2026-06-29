@@ -5,7 +5,7 @@ use std::{
 };
 
 use rand::{
-    distributions::{Distribution, WeightedIndex},
+    distr::{weighted::WeightedIndex, Distribution},
     rngs::StdRng,
     SeedableRng,
 };

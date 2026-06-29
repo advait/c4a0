@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 23 |
+| **Updated** | 24 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -279,6 +279,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:rust` passed.
 
+### rand: 0.8.5 → 0.10.1
+
+**Changelog:** Official rand 0.9/0.10 migration guides and changelog reviewed.
+
+**Breaking changes:** Distribution APIs moved; `rand::distributions::{Distribution, WeightedIndex}` no longer exists.
+
+**Migration applied:** Raised Rust dependency to `rand = "0.10.1"`; `Cargo.lock` resolved the direct rand stack to `rand==0.10.1`. Updated MCTS import to `rand::distr::{weighted::WeightedIndex, Distribution}`. A separate `rand 0.9` stack remains transitively for `proptest`.
+
+**Tests:** ✓ `mise run test:rust` passed; ✓ `mise run test:python` passed.
+
 ---
 
 ## Skipped
@@ -389,6 +399,10 @@ mise run test:rust
 mise exec -- cargo update --manifest-path rust/Cargo.toml -p indicatif --precise 0.18.5
 mise run test:rust
 mise run ci
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p rand@0.8.5 --precise 0.10.1
+mise run test:rust  # initially failed: rand::distributions moved
+mise run test:rust
+mise run test:python
 ```
 
 ---
