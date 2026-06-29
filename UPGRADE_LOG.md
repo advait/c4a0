@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 18 |
+| **Updated** | 19 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -229,6 +229,16 @@ Slices:
 
 **Tests:** ✓ `python3 scripts/find-libclang.py --bindgen-extra-clang-args` printed the resource include arg; ✓ `mise run test:rust` passed; ✓ `mise run lint` passed.
 
+### num_cpus: 1.16.0 → 1.17.0
+
+**Changelog:** Official crate changelog / docs.rs source reviewed.
+
+**Breaking changes:** None identified; 1.17.0 notes list small platform/dependency fixes.
+
+**Migration applied:** Raised Rust dependency to `num_cpus = "1.17.0"`; `Cargo.lock` resolved `num_cpus==1.17.0` and refreshed transitive `hermit-abi`.
+
+**Tests:** ✓ `mise run test:rust` passed.
+
 ---
 
 ## Skipped
@@ -328,6 +338,8 @@ BINDGEN_EXTRA_CLANG_ARGS='-isystem /opt/mise/installs/clang/LLVM-19.1.7-Linux-X6
 python3 scripts/find-libclang.py --bindgen-extra-clang-args
 mise run test:rust
 mise run lint
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p num_cpus --precise 1.17.0
+mise run test:rust
 ```
 
 ---

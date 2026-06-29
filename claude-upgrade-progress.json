@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T21:15:00Z",
+  "last_updated": "2026-06-29T21:20:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 18,
+    "updated": 19,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -286,6 +286,19 @@
         "mise run lint"
       ],
       "timestamp": "2026-06-29T21:15:00Z"
+    },
+    {
+      "name": "num_cpus",
+      "from": "1.16.0",
+      "to": "1.17.0",
+      "breaking_changes": [],
+      "fixes_applied": [
+        "Raised Rust dependency to num_cpus = \"1.17.0\"; transitive hermit-abi refreshed."
+      ],
+      "tests": [
+        "mise run test:rust"
+      ],
+      "timestamp": "2026-06-29T21:20:00Z"
     }
   ],
   "failed": [],
