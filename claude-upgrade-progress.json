@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T22:20:00Z",
+  "last_updated": "2026-06-29T22:35:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 26,
+    "updated": 29,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -406,6 +406,60 @@
         "mise run test:python"
       ],
       "timestamp": "2026-06-29T22:15:00Z"
+    },
+    {
+      "name": "numpy-python",
+      "from": "2.2.3",
+      "to": "2.4.6",
+      "breaking_changes": [
+        "NumPy 2.4.6 is a bugfix release in the 2.x line; native boundary validated with PyO3/rust-numpy updates."
+      ],
+      "fixes_applied": [
+        "Raised Python dependency lower bound to numpy>=2.4.6."
+      ],
+      "tests": [
+        "mise run test:rust",
+        "mise run test:python",
+        "mise run train:smoke",
+        "mise exec -- uv lock --check"
+      ],
+      "timestamp": "2026-06-29T22:35:00Z"
+    },
+    {
+      "name": "pyo3",
+      "from": "0.21.2",
+      "to": "0.29.0",
+      "breaking_changes": [
+        "Removed/renamed PyObject alias, Python::with_gil/allow_threads, to_object, PyBytes::new_bound, and older call/conversion APIs; module free-threaded default changed."
+      ],
+      "fixes_applied": [
+        "Migrated to Py<PyAny>, clone().unbind(), Python::attach/detach, PyBytes::new, call, from_py_object pyclasses, and #[pymodule(gil_used = true)]."
+      ],
+      "tests": [
+        "mise run test:rust",
+        "mise run test:python",
+        "mise run train:smoke",
+        "mise exec -- uv lock --check"
+      ],
+      "timestamp": "2026-06-29T22:35:00Z"
+    },
+    {
+      "name": "numpy-rust",
+      "from": "0.21.0",
+      "to": "0.29.0",
+      "breaking_changes": [
+        "rust-numpy helper names changed; _bound constructors/conversions replaced by from_array/from_slice/into_pyarray."
+      ],
+      "fixes_applied": [
+        "Updated PyArray constructors/conversions to rust-numpy 0.29 APIs."
+      ],
+      "tests": [
+        "mise run test:rust",
+        "mise run test:python",
+        "mise run train:smoke",
+        "mise exec -- uv lock --check"
+      ],
+      "timestamp": "2026-06-29T22:35:00Z"
     }
   ],
   "failed": [],
@@ -421,7 +475,8 @@
     "Slice 2 small-python completed; mise run ci passed after Typer update.",
     "env_logger update initially exposed a librocksdb-sys bindgen stdbool.h include issue; fixed with portable BINDGEN_EXTRA_CLANG_ARGS discovery.",
     "Slice 3 small-rust completed; mise run ci passed after indicatif update.",
-    "Slice 4 medium-rust completed; mise run ci passed after rocksdb update."
+    "Slice 4 medium-rust completed; mise run ci passed after rocksdb update.",
+    "Native boundary milestone updated Python numpy, PyO3, and rust-numpy together; PyO3/rust-numpy API migration completed and focused tests passed."
   ],
   "slice_validations": [
     {

@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 26 |
+| **Updated** | 29 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -309,6 +309,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:rust` passed; ✓ `mise run test:python` passed.
 
+### native boundary: Python numpy 2.2.3 → 2.4.6; pyo3 0.21.2 → 0.29.0; Rust numpy 0.21.0 → 0.29.0
+
+**Changelog:** Official PyO3 migration guide/changelog, rust-numpy changelog, and NumPy release notes reviewed.
+
+**Breaking changes:** PyO3 removed `PyObject` alias, `Python::with_gil`, `Python::allow_threads`, `to_object`, `PyBytes::new_bound`, and older `call_bound`/conversion patterns; rust-numpy renamed `_bound` helpers back to `from_array`, `from_slice`, and `into_pyarray`; PyO3 0.28+ defaults modules toward free-threaded Python support unless `gil_used` is declared.
+
+**Migration applied:** Raised Python dependency to `numpy>=2.4.6`; raised Rust dependencies to `pyo3 = "0.29.0"` and `numpy = "0.29.0"`. Replaced `PyObject` with `Py<PyAny>`, `to_object` with `clone().unbind()`, `allow_threads` with `detach`, `with_gil` with `attach`, `call_bound` with `call`, and `PyBytes::new_bound` with `PyBytes::new`. Updated rust-numpy constructors/conversions to `from_array`, `from_slice`, and `into_pyarray`. Added `from_py_object` to cloneable pyclasses that are extracted from Python to preserve behavior and silence the migration warning. Marked the extension module `#[pymodule(gil_used = true)]` to preserve existing GIL-required behavior rather than implicitly claiming free-threaded support.
+
+**Tests:** ✓ `mise run test:rust` passed; ✓ `mise run test:python` passed; ✓ `mise run train:smoke` passed; ✓ `mise exec -- uv lock --check` passed.
+
 ---
 
 ## Skipped
@@ -430,6 +440,14 @@ mise exec -- cargo update --manifest-path rust/Cargo.toml -p rocksdb --precise 0
 mise run test:rust
 mise run test:python
 mise run ci
+mise exec -- uv add numpy --upgrade-package numpy
+mise exec -- uv add 'numpy>=2.4.6'  # initially failed until PyO3/rust-numpy API migration was applied
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p pyo3 --precise 0.29.0
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p numpy --precise 0.29.0
+mise run test:rust
+mise run test:python
+mise run train:smoke
+mise exec -- uv lock --check
 ```
 
 ---

@@ -30,14 +30,14 @@ pub fn play_games<'py>(
     let reqs: Vec<GameMetadata> = reqs.extract().expect("error extracting reqs");
 
     let eval_pos = PyEvalPos {
-        py_eval_pos_cb: py_eval_pos_cb.to_object(py),
+        py_eval_pos_cb: py_eval_pos_cb.clone().unbind(),
     };
 
     let results = {
-        // Start background processing threads while releasing the GIL with allow_threads.
+        // Start background processing threads while detaching from Python.
         // This allows other python threads (e.g. pytorch) to continue while we generate training
-        // samples. When we need to call the py_eval_pos callback, we will re-acquire the GIL.
-        py.allow_threads(move || {
+        // samples. When we need to call the py_eval_pos callback, we will re-attach.
+        py.detach(move || {
             self_play(
                 eval_pos,
                 reqs,
@@ -56,7 +56,7 @@ pub fn play_games<'py>(
 /// Note we explicitly spcify pyclass(module="c4a0_rust") as the module name is required in
 /// order for pickling to work.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[pyclass(module = "c4a0_rust")]
+#[pyclass(module = "c4a0_rust", from_py_object)]
 pub struct PlayGamesResult {
     #[pyo3(get)]
     pub results: Vec<GameResult>,
@@ -70,9 +70,9 @@ impl PlayGamesResult {
         PlayGamesResult { results: vec![] }
     }
 
-    fn to_cbor(&self, py: Python) -> PyResult<PyObject> {
+    fn to_cbor<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         let cbor = serde_cbor::to_vec(self).map_err(pyify_err)?;
-        Ok(PyBytes::new_bound(py, &cbor).into())
+        Ok(PyBytes::new(py, &cbor))
     }
 
     #[staticmethod]
@@ -81,20 +81,19 @@ impl PlayGamesResult {
     }
 
     /// Used for pickling serialization.
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         self.to_cbor(py)
     }
 
     /// Used for pickling deserialization.
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let cbor: &[u8] = state.extract(py)?;
-        *self = Self::from_cbor(py, cbor)?;
+    fn __setstate__(&mut self, state: &[u8]) -> PyResult<()> {
+        *self = serde_cbor::from_slice(state).map_err(pyify_err)?;
         Ok(())
     }
 
     /// Combine two PlayGamesResult objects.
-    fn __add__<'py>(&mut self, py: Python<'py>, other: PyObject) -> PyResult<Self> {
-        let other = other.extract::<PlayGamesResult>(py)?;
+    fn __add__(&mut self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let other = other.extract::<PlayGamesResult>()?;
         Ok(PlayGamesResult {
             results: self
                 .results
@@ -163,16 +162,16 @@ impl PlayGamesResult {
 
 /// [EvalPosT] implementation that calls the `py_eval_pos_cb` python callback.
 struct PyEvalPos {
-    py_eval_pos_cb: PyObject,
+    py_eval_pos_cb: Py<PyAny>,
 }
 
 impl EvalPosT for PyEvalPos {
     /// Evaluates a batch of positions by calling the [Self::py_eval_pos_cb] callback.
     /// This is intended to be a pytorch model that runs on the GPU. Because this is a python
-    /// call we need to first re-acquire the GIL to call this function from a background thread
-    /// before performing the callback.
+    /// call we need to first attach to Python from a background thread before performing the
+    /// callback.
     fn eval_pos(&self, model_id: ModelID, pos: Vec<Pos>) -> Vec<EvalPosResult> {
-        Python::with_gil(|py| {
+        Python::attach(|py| {
             let batch_size = pos.len();
             let pos_batch = create_pos_batch(py, &pos);
 
@@ -182,7 +181,7 @@ impl EvalPosT for PyEvalPos {
                 PyReadonlyArray1<f32>,
             ) = (&self
                 .py_eval_pos_cb
-                .call_bound(py, (model_id, pos_batch), None)
+                .call(py, (model_id, pos_batch), None)
                 .expect("Failed to call py_eval_pos_cb"))
                 .extract(py)
                 .expect("Failed to extract result");
@@ -221,7 +220,7 @@ fn create_pos_batch<'py>(py: Python<'py>, positions: &Vec<Pos>) -> Bound<'py, Py
         buffer,
     )
     .expect("Failed to create Array4 from buffer")
-    .into_pyarray_bound(py)
+    .into_pyarray(py)
 }
 
 /// Convert a slice of probabilities into a [Policy].
@@ -241,11 +240,11 @@ pub fn run_tui<'py>(
     c_ply_penalty: f32,
 ) -> PyResult<()> {
     let eval_pos = PyEvalPos {
-        py_eval_pos_cb: py_eval_pos_cb.to_object(py),
+        py_eval_pos_cb: py_eval_pos_cb.clone().unbind(),
     };
 
-    // Start the TUI while releasing the GIL with allow_threads.
-    py.allow_threads(move || {
+    // Start the TUI while detaching from Python.
+    py.detach(move || {
         let mut terminal = tui::init()?;
         let mut app = tui::App::new(eval_pos, max_mcts_iters, c_exploration, c_ply_penalty);
         app.run(&mut terminal)?;

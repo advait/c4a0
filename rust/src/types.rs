@@ -35,7 +35,7 @@ pub struct EvalPosResult {
 
 /// Metadata about a game.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[pyclass]
+#[pyclass(from_py_object)]
 pub struct GameMetadata {
     #[pyo3(get)]
     pub game_id: u64,
@@ -61,7 +61,7 @@ impl GameMetadata {
 
 /// The finished result of a game.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[pyclass]
+#[pyclass(from_py_object)]
 pub struct GameResult {
     #[pyo3(get)]
     pub metadata: GameMetadata,
@@ -101,7 +101,7 @@ impl GameResult {
 
 /// A training sample generated via self-play.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[pyclass]
+#[pyclass(from_py_object)]
 pub struct Sample {
     pub pos: Pos,
     pub policy: Policy,
@@ -136,12 +136,12 @@ impl Sample {
         let pos =
             Array3::from_shape_vec([Pos::BUF_N_CHANNELS, Pos::N_ROWS, Pos::N_COLS], pos_buffer)
                 .unwrap();
-        let pos = PyArray3::from_array_bound(py, &pos);
-        let policy = PyArray1::from_slice_bound(py, &self.policy);
+        let pos = PyArray3::from_array(py, &pos);
+        let policy = PyArray1::from_slice(py, &self.policy);
         let q_penalty = Array0::from_elem([] /* shape */, self.q_penalty);
-        let q_penalty = PyArray0::from_array_bound(py, &q_penalty);
+        let q_penalty = PyArray0::from_array(py, &q_penalty);
         let q_no_penalty = Array0::from_elem([] /* shape */, self.q_no_penalty);
-        let q_no_penalty = PyArray0::from_array_bound(py, &q_no_penalty);
+        let q_no_penalty = PyArray0::from_array(py, &q_no_penalty);
 
         (pos, policy, q_penalty, q_no_penalty)
     }

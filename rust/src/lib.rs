@@ -20,7 +20,7 @@ use types::{GameMetadata, GameResult, Sample};
 /// Maturin installs this extension as `c4a0_rust._native`; the Python
 /// `c4a0_rust` package re-exports the native API for backwards-compatible
 /// top-level imports.
-#[pymodule]
+#[pymodule(gil_used = true)]
 #[pyo3(name = "_native")]
 fn c4a0_rust(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
