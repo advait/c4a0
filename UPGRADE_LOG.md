@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 34 |
+| **Updated** | 35 |
 | **Already current** | 2 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
@@ -352,6 +352,16 @@ Slices:
 
 **Tests:** ✓ pandas import/version check printed `3.0.3`; ✓ `mise run test:python` passed; ✓ `mise exec -- uv lock --check` passed.
 
+### uv toolchain: 0.11.7 → 0.11.25
+
+**Changelog:** Official uv changelog / release notes reviewed for 0.11.7 → 0.11.25.
+
+**Breaking changes:** None identified for this project’s `uv sync`, `uv lock --check`, `uv run`, and `uv add` workflow. Notable security hardening: uv 0.11.25 updates tar handling and may reject malformed or ambiguous source distributions that earlier uv accepted.
+
+**Migration applied:** Raised the mise tool pin to `uv = "0.11.25"`; local `mise install uv@0.11.25` installed the prebuilt binary and verified GitHub attestations. No lockfile change was needed for the uv version change itself.
+
+**Tests:** ✓ `mise exec -- uv --version` printed `uv 0.11.25`; ✓ `mise exec -- uv lock --check` passed; ✓ `mise run test:python` passed.
+
 ---
 
 ## Already Current
@@ -543,6 +553,10 @@ PY
 mise run test:python
 mise run train:smoke
 mise exec -- uv lock --check
+mise install uv@0.11.25
+mise exec -- uv --version
+mise exec -- uv lock --check
+mise run test:python
 ```
 
 ---

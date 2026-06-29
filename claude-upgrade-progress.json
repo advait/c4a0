@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T23:40:00Z",
+  "last_updated": "2026-06-29T23:45:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 34,
+    "updated": 35,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0,
@@ -568,6 +568,25 @@
         "mise exec -- uv lock --check"
       ],
       "timestamp": "2026-06-29T23:25:00Z"
+    },
+    {
+      "name": "uv-toolchain",
+      "from": "0.11.7",
+      "to": "0.11.25",
+      "breaking_changes": [
+        "No project-impacting breaking change identified for uv sync/lock/run/add workflow.",
+        "uv 0.11.25 hardens tar handling and may reject malformed or ambiguous source distributions previously accepted."
+      ],
+      "fixes_applied": [
+        "Raised mise uv tool pin to uv = \"0.11.25\".",
+        "Installed uv@0.11.25 locally with mise; GitHub attestations were verified by mise."
+      ],
+      "tests": [
+        "mise exec -- uv --version",
+        "mise exec -- uv lock --check",
+        "mise run test:python"
+      ],
+      "timestamp": "2026-06-29T23:45:00Z"
     }
   ],
   "failed": [],
@@ -593,7 +612,8 @@
     "pandas updated to 3.0.3; project has no direct pandas imports, and Python tests plus uv lock check passed.",
     "rankit 0.3.3 and loguru 0.7.3 are already at the latest stable versions found; no manifest changes required.",
     "Slice 7 notebook-experiment completed; mise run ci passed after JupyterLab and pandas updates and rankit/loguru latest-stable checks.",
-    "Direct dependency audit found TensorBoard 2.21.0 after the earlier TensorBoard 2.20 update; refreshed to 2.21.0 and focused validation passed."
+    "Direct dependency audit found TensorBoard 2.21.0 after the earlier TensorBoard 2.20 update; refreshed to 2.21.0 and focused validation passed.",
+    "uv toolchain updated from 0.11.7 to 0.11.25; version check, uv lock check, and Python tests passed."
   ],
   "slice_validations": [
     {
