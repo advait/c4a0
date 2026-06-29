@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 33 |
+| **Updated** | 34 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -341,6 +341,16 @@ Slices:
 
 **Tests:** ✓ `mise exec -- uv run jupyter lab --version` printed `4.6.1`; ✓ `mise run test:python` passed; ✓ `mise exec -- uv lock --check` passed.
 
+### pandas: 2.2.3 → 3.0.3
+
+**Changelog:** Official pandas 3.0.0 and 3.0.3 release notes reviewed.
+
+**Breaking changes:** pandas 3.0 raises the supported Python floor to 3.11, enables Copy-on-Write by default, removes prior deprecations, switches default timezone handling from `pytz` to standard-library `zoneinfo`, and changes optional/conditional timezone dependencies. No project source imports pandas directly; it is used as notebook/experiment tooling.
+
+**Migration applied:** Raised dev dependency lower bound to `pandas>=3.0.3`; `uv.lock` resolved `pandas==3.0.3`, removed unconditional `pytz`, made `tzdata` platform-conditional, and refreshed resolver markers.
+
+**Tests:** ✓ pandas import/version check printed `3.0.3`; ✓ `mise run test:python` passed; ✓ `mise exec -- uv lock --check` passed.
+
 ---
 
 ## Skipped
@@ -482,6 +492,13 @@ mise exec -- uv lock --check
 mise exec -- uv add 'jupyterlab>=4.6.1' --upgrade-package jupyterlab
 mise exec -- uv add --dev 'jupyterlab>=4.6.1' --upgrade-package jupyterlab
 mise exec -- uv run jupyter lab --version
+mise run test:python
+mise exec -- uv lock --check
+mise exec -- uv add --dev 'pandas>=3.0.3' --upgrade-package pandas
+mise exec -- uv run python - <<'PY'
+import pandas as pd
+print(pd.__version__)
+PY
 mise run test:python
 mise exec -- uv lock --check
 ```

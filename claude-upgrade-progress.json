@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T23:20:00Z",
+  "last_updated": "2026-06-29T23:25:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 33,
+    "updated": 34,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -537,6 +537,26 @@
         "mise exec -- uv lock --check"
       ],
       "timestamp": "2026-06-29T23:20:00Z"
+    },
+    {
+      "name": "pandas",
+      "from": "2.2.3",
+      "to": "3.0.3",
+      "breaking_changes": [
+        "pandas 3.0 requires Python 3.11+; project requires/runs Python 3.11.",
+        "Copy-on-Write is enabled by default; prior deprecations were removed; default timezone handling moves from pytz to zoneinfo.",
+        "Project source/tests do not import pandas directly; dependency is notebook/experiment tooling."
+      ],
+      "fixes_applied": [
+        "Raised dev dependency lower bound to pandas>=3.0.3.",
+        "Accepted resolver changes removing unconditional pytz, making tzdata platform-conditional, and refreshing uv resolution markers."
+      ],
+      "tests": [
+        "pandas import/version check",
+        "mise run test:python",
+        "mise exec -- uv lock --check"
+      ],
+      "timestamp": "2026-06-29T23:25:00Z"
     }
   ],
   "failed": [],
@@ -558,7 +578,8 @@
     "ML-stack milestone focused validation passed for torch, pytorch-lightning, and torchmetrics; full slice CI pending.",
     "Slice 6 ml-stack completed; mise run ci passed after torch + pytorch-lightning + torchmetrics updates.",
     "ML-stack CI still emits an upstream PyTorch Lightning _pytree.LeafSpec deprecation warning under PyTorch 2.12; no project call site identified.",
-    "JupyterLab updated to 4.6.1; version check, Python tests, and uv lock check passed."
+    "JupyterLab updated to 4.6.1; version check, Python tests, and uv lock check passed.",
+    "pandas updated to 3.0.3; project has no direct pandas imports, and Python tests plus uv lock check passed."
   ],
   "slice_validations": [
     {

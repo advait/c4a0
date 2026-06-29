@@ -43,7 +43,7 @@ dev = [
   "pytest-asyncio>=1.4.0",
   "pyright>=1.1.411",
   "jupyterlab>=4.6.1",
-  "pandas>=2.1.4",
+  "pandas>=3.0.3",
   "rankit>=0.3.3",
   "ruff>=0.15.20",
 ]
