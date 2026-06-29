@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 6 |
+| **Updated** | 7 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -107,6 +107,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:python` passed.
 
+### tqdm: 4.67.1 → 4.68.3
+
+**Changelog:** Release-history/PyPI search reviewed.
+
+**Breaking changes:** None found in available release-history search for this project’s progress-bar usage.
+
+**Migration applied:** Raised dependency lower bound to `tqdm>=4.68.3`; `uv.lock` resolved `tqdm==4.68.3`.
+
+**Tests:** ✓ `mise run test:python` passed.
+
 ---
 
 ## Skipped
@@ -164,6 +174,9 @@ mise exec -- uv add --dev 'pytest-asyncio>=1.4.0'
 mise run test:python
 mise exec -- uv add einops --upgrade-package einops
 mise exec -- uv add 'einops>=0.8.2'
+mise run test:python
+mise exec -- uv add tqdm --upgrade-package tqdm
+mise exec -- uv add 'tqdm>=4.68.3'
 mise run test:python
 ```
 
