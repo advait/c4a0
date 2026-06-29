@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T19:25:00Z",
+  "last_updated": "2026-06-29T19:30:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 1,
+    "updated": 2,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -45,6 +45,21 @@
         "mise run typecheck"
       ],
       "timestamp": "2026-06-29T19:25:00Z"
+    },
+    {
+      "name": "ruff",
+      "from": "0.9.9",
+      "to": "0.15.20",
+      "breaking_changes": [
+        "Ruff pre-1.0 minor releases can include lint/config behavior changes per versioning docs."
+      ],
+      "fixes_applied": [
+        "Raised dev dependency lower bound to ruff>=0.15.20; uv.lock resolved ruff==0.15.20."
+      ],
+      "tests": [
+        "mise run lint"
+      ],
+      "timestamp": "2026-06-29T19:30:00Z"
     }
   ],
   "failed": [],

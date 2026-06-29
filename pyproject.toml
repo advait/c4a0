@@ -44,7 +44,7 @@ dev = [
   "jupyterlab>=4.0.10",
   "pandas>=2.1.4",
   "rankit>=0.3.3",
-  "ruff>=0.9.9",
+  "ruff>=0.15.20",
 ]
 
 [tool.pyright]

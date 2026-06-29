@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 1 |
+| **Updated** | 2 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -48,6 +48,18 @@ Slices:
 **Migration applied:** Raised dev dependency lower bound to `pyright>=1.1.411`; `uv.lock` resolved `pyright==1.1.411`. First `uv add` also normalized `uv.lock` to the newer uv lock revision with upload-time metadata.
 
 **Tests:** ✓ `mise run typecheck` passed with 0 errors, 0 warnings.
+
+### ruff: 0.9.9 → 0.15.20
+
+**Changelog:** Ruff release notes/versioning docs reviewed.
+
+**Breaking changes:** Ruff is pre-1.0; its versioning docs state minor bumps may include lint/config behavior changes. No project config migration was required.
+
+**Notable changes:** Newer linter release with potential rule behavior additions/changes; existing project still passes.
+
+**Migration applied:** Raised dev dependency lower bound to `ruff>=0.15.20`; `uv.lock` resolved `ruff==0.15.20`.
+
+**Tests:** ✓ `mise run lint` passed.
 
 ---
 
@@ -91,6 +103,9 @@ mise run ci
 mise exec -- uv add --dev pyright --upgrade-package pyright
 mise exec -- uv add --dev 'pyright>=1.1.411'
 mise run typecheck
+mise exec -- uv add --dev ruff --upgrade-package ruff
+mise exec -- uv add --dev 'ruff>=0.15.20'
+mise run lint
 ```
 
 ---
