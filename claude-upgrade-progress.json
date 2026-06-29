@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T23:35:00Z",
+  "last_updated": "2026-06-29T23:40:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -149,15 +149,25 @@
     {
       "name": "tensorboard",
       "from": "2.19.0",
-      "to": "2.20.0",
-      "breaking_changes": [],
+      "to": "2.21.0",
+      "breaking_changes": [
+        "TensorBoard 2.21.0 aligns with the TensorFlow 2.21 dependency stack and raises runtime dependency requirements: protobuf>=6.31.1,<8.0.0 and grpcio>=1.74.0,<2.0.",
+        "Project code does not call TensorBoard APIs directly; TensorBoard is used for experiment/log viewing and Lightning logging."
+      ],
       "fixes_applied": [
-        "Raised dependency lower bound to tensorboard>=2.20.0."
+        "Initially raised dependency lower bound to tensorboard>=2.20.0.",
+        "Direct dependency audit later found tensorboard 2.21.0 and raised the lower bound to tensorboard>=2.21.0.",
+        "Accepted resolver updates to grpcio==1.81.1 and protobuf==7.35.1."
       ],
       "tests": [
-        "mise run test:python"
+        "mise run test:python (after 2.20.0)",
+        "TensorBoard/import version check",
+        "tensorboardX SummaryWriter import check",
+        "mise run test:python",
+        "mise run train:smoke",
+        "mise exec -- uv lock --check"
       ],
-      "timestamp": "2026-06-29T20:15:00Z"
+      "timestamp": "2026-06-29T23:40:00Z"
     },
     {
       "name": "pydantic",
@@ -582,7 +592,8 @@
     "JupyterLab updated to 4.6.1; version check, Python tests, and uv lock check passed.",
     "pandas updated to 3.0.3; project has no direct pandas imports, and Python tests plus uv lock check passed.",
     "rankit 0.3.3 and loguru 0.7.3 are already at the latest stable versions found; no manifest changes required.",
-    "Slice 7 notebook-experiment completed; mise run ci passed after JupyterLab and pandas updates and rankit/loguru latest-stable checks."
+    "Slice 7 notebook-experiment completed; mise run ci passed after JupyterLab and pandas updates and rankit/loguru latest-stable checks.",
+    "Direct dependency audit found TensorBoard 2.21.0 after the earlier TensorBoard 2.20 update; refreshed to 2.21.0 and focused validation passed."
   ],
   "slice_validations": [
     {

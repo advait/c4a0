@@ -128,15 +128,15 @@ Slices:
 
 **Tests:** ✓ `mise run test:python` passed.
 
-### tensorboard: 2.19.0 → 2.20.0
+### tensorboard: 2.19.0 → 2.21.0
 
-**Changelog:** Official TensorBoard release notes / PyPI reviewed.
+**Changelog:** Official TensorBoard release notes / PyPI reviewed, including 2.20.0 and the later 2.21.0 release.
 
-**Breaking changes:** None explicitly identified for 2.19 → 2.20.
+**Breaking changes:** 2.21.0 aligns with the TensorFlow 2.21 dependency stack and raises runtime dependency requirements, notably `protobuf>=6.31.1,<8.0.0` and `grpcio>=1.74.0,<2.0`. Project code does not call TensorBoard APIs directly; TensorBoard is used for experiment/log viewing and by Lightning logging.
 
-**Migration applied:** Raised dependency lower bound to `tensorboard>=2.20.0`; `uv.lock` resolved `tensorboard==2.20.0`.
+**Migration applied:** Initially raised dependency lower bound to `tensorboard>=2.20.0`; later direct-dependency audit found 2.21.0 and raised the lower bound to `tensorboard>=2.21.0`. `uv.lock` resolved `tensorboard==2.21.0`, `grpcio==1.81.1`, and `protobuf==7.35.1`.
 
-**Tests:** ✓ `mise run test:python` passed.
+**Tests:** ✓ `mise run test:python` passed after 2.20.0; after 2.21.0, ✓ TensorBoard/import version check printed `2.21.0`, ✓ `tensorboardX.SummaryWriter` import passed, ✓ `mise run test:python` passed, ✓ `mise run train:smoke` passed, and ✓ `mise exec -- uv lock --check` passed.
 
 ### pydantic: 2.10.6 → 2.13.4
 
@@ -529,6 +529,20 @@ print('rankit', importlib.metadata.version('rankit'))
 print('loguru', importlib.metadata.version('loguru'))
 PY
 mise run ci
+mise exec -- uv add 'tensorboard>=2.21.0' --upgrade-package tensorboard
+mise exec -- uv run python - <<'PY'
+import importlib.metadata as md
+for name in ['tensorboard', 'grpcio', 'protobuf']:
+    print(name, md.version(name))
+PY
+mise exec -- uv run tensorboard --version
+mise exec -- uv run python - <<'PY'
+from tensorboardX import SummaryWriter
+print('tensorboardX SummaryWriter ok')
+PY
+mise run test:python
+mise run train:smoke
+mise exec -- uv lock --check
 ```
 
 ---
