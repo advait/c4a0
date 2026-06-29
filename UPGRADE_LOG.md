@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 2 |
+| **Updated** | 3 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -61,6 +61,18 @@ Slices:
 
 **Tests:** ✓ `mise run lint` passed.
 
+### maturin: 1.8.2 → 1.14.1
+
+**Changelog:** Official maturin changelog / release pages reviewed.
+
+**Breaking changes:** None explicitly identified for the upgrade range.
+
+**Notable changes:** Newer maturin build behavior uses `rust/target/maturin` for the extension build artifact in this project; build/install still works. Existing patchelf/rpath warning remains non-fatal.
+
+**Migration applied:** Raised project dependency to `maturin>=1.14.1` and build backend requirement to `maturin>=1.14.1,<2`; `uv.lock` resolved `maturin==1.14.1`.
+
+**Tests:** ✓ `mise run build` passed; ✓ `mise run test:python` passed.
+
 ---
 
 ## Skipped
@@ -106,6 +118,11 @@ mise run typecheck
 mise exec -- uv add --dev ruff --upgrade-package ruff
 mise exec -- uv add --dev 'ruff>=0.15.20'
 mise run lint
+mise exec -- uv add maturin --upgrade-package maturin
+mise exec -- uv add 'maturin>=1.14.1'
+mise exec -- uv lock
+mise run build
+mise run test:python
 ```
 
 ---
