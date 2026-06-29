@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "started": "2026-06-29T00:00:00Z",
+  "last_updated": "2026-06-29T00:00:00Z",
+  "project": "c4a0",
+  "language": "Python + Rust",
+  "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
+  "status": "in_progress",
+  "config": {
+    "skip_alpha_beta": true,
+    "preserve_pinned": true,
+    "max_consecutive_failures": 5,
+    "max_total_failures": 10
+  },
+  "summary": {
+    "total": 45,
+    "updated": 0,
+    "skipped": 0,
+    "failed": 0,
+    "requires_refactor": 0
+  },
+  "current": null,
+  "pending_slices": [
+    "dev-tooling",
+    "small-python",
+    "small-rust",
+    "medium-rust",
+    "native-boundary",
+    "ml-stack",
+    "notebook-experiment",
+    "toolchains"
+  ],
+  "completed_slices": [],
+  "dependencies": [],
+  "completed": [],
+  "failed": [],
+  "requires_refactor": [],
+  "circuit_breaker": {
+    "consecutive_failures": 0,
+    "total_failures": 0,
+    "triggered": false,
+    "reason": ""
+  }
+}
