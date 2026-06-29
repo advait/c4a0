@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 3 |
+| **Updated** | 5 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -73,6 +73,30 @@ Slices:
 
 **Tests:** ✓ `mise run build` passed; ✓ `mise run test:python` passed.
 
+### pytest: 8.3.5 → 9.1.1
+
+**Changelog:** Official pytest 9 changelog reviewed.
+
+**Breaking changes:** Pytest 9 drops Python 3.9 support; `PytestRemovedIn9Warning` deprecations become errors/default removals; overlapping duplicate path CLI arguments are normalized differently. This project runs Python 3.11 and uses simple `pytest -q` invocation.
+
+**Notable changes:** Native TOML configuration support and strict-mode additions. Existing `[tool.pytest.ini_options]` remains supported.
+
+**Migration applied:** Raised dev dependency lower bound to `pytest>=9.1.1`; `uv.lock` resolved `pytest==9.1.1`.
+
+**Tests:** ✓ `mise run test:python` passed.
+
+### pytest-asyncio: 0.25.3 → 1.4.0
+
+**Changelog:** Official pytest-asyncio changelog / migration docs reviewed.
+
+**Breaking changes:** Notable async fixture/event-loop behavior changes in the 0.25+ and 1.x line; pytest compatibility requirements increased. No project test changes were required.
+
+**Notable changes:** The previous `asyncio_default_fixture_loop_scope` deprecation warning is gone after the update.
+
+**Migration applied:** Raised dev dependency lower bound to `pytest-asyncio>=1.4.0`; `uv.lock` resolved `pytest-asyncio==1.4.0`.
+
+**Tests:** ✓ `mise run test:python` passed.
+
 ---
 
 ## Skipped
@@ -98,6 +122,7 @@ _To be filled._
 | Package | Warning | Fix Applied |
 |---------|---------|-------------|
 | uv/pyproject | `tool.uv.dev-dependencies` is deprecated | Moved dev dependencies to `[dependency-groups].dev`; `mise run ci` passed. |
+| pytest-asyncio | `asyncio_default_fixture_loop_scope` unset warning | Updating `pytest-asyncio` from 0.25.3 to 1.4.0 removed the warning under current tests. |
 
 ---
 
@@ -122,6 +147,10 @@ mise exec -- uv add maturin --upgrade-package maturin
 mise exec -- uv add 'maturin>=1.14.1'
 mise exec -- uv lock
 mise run build
+mise run test:python
+mise exec -- uv add --dev pytest --upgrade-package pytest
+mise exec -- uv add --dev 'pytest>=9.1.1'
+mise exec -- uv add --dev 'pytest-asyncio>=1.4.0'
 mise run test:python
 ```
 

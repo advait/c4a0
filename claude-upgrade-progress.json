@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T19:35:00Z",
+  "last_updated": "2026-06-29T19:45:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 3,
+    "updated": 5,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -74,6 +74,36 @@
         "mise run test:python"
       ],
       "timestamp": "2026-06-29T19:35:00Z"
+    },
+    {
+      "name": "pytest",
+      "from": "8.3.5",
+      "to": "9.1.1",
+      "breaking_changes": [
+        "Python 3.9 support dropped; PytestRemovedIn9Warning deprecations become errors/default removals; overlapping duplicate path CLI behavior changed."
+      ],
+      "fixes_applied": [
+        "Raised dev dependency lower bound to pytest>=9.1.1."
+      ],
+      "tests": [
+        "mise run test:python"
+      ],
+      "timestamp": "2026-06-29T19:45:00Z"
+    },
+    {
+      "name": "pytest-asyncio",
+      "from": "0.25.3",
+      "to": "1.4.0",
+      "breaking_changes": [
+        "Async fixture/event-loop behavior changed in the 0.25+ and 1.x line; pytest compatibility requirements increased."
+      ],
+      "fixes_applied": [
+        "Raised dev dependency lower bound to pytest-asyncio>=1.4.0; previous loop-scope warning disappeared."
+      ],
+      "tests": [
+        "mise run test:python"
+      ],
+      "timestamp": "2026-06-29T19:45:00Z"
     }
   ],
   "failed": [],
