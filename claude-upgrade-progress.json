@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T20:10:00Z",
+  "last_updated": "2026-06-29T20:15:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 8,
+    "updated": 9,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -144,6 +144,19 @@
         "mise run test:python"
       ],
       "timestamp": "2026-06-29T20:10:00Z"
+    },
+    {
+      "name": "tensorboard",
+      "from": "2.19.0",
+      "to": "2.20.0",
+      "breaking_changes": [],
+      "fixes_applied": [
+        "Raised dependency lower bound to tensorboard>=2.20.0."
+      ],
+      "tests": [
+        "mise run test:python"
+      ],
+      "timestamp": "2026-06-29T20:15:00Z"
     }
   ],
   "failed": [],

@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 8 |
+| **Updated** | 9 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -127,6 +127,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:python` passed.
 
+### tensorboard: 2.19.0 → 2.20.0
+
+**Changelog:** Official TensorBoard release notes / PyPI reviewed.
+
+**Breaking changes:** None explicitly identified for 2.19 → 2.20.
+
+**Migration applied:** Raised dependency lower bound to `tensorboard>=2.20.0`; `uv.lock` resolved `tensorboard==2.20.0`.
+
+**Tests:** ✓ `mise run test:python` passed.
+
 ---
 
 ## Skipped
@@ -190,6 +200,9 @@ mise exec -- uv add 'tqdm>=4.68.3'
 mise run test:python
 mise exec -- uv add tensorboardx --upgrade-package tensorboardx
 mise exec -- uv add 'tensorboardx>=2.6.5'
+mise run test:python
+mise exec -- uv add tensorboard --upgrade-package tensorboard
+mise exec -- uv add 'tensorboard>=2.20.0'
 mise run test:python
 ```
 
