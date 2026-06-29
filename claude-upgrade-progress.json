@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "started": "2026-06-29T00:00:00Z",
-  "last_updated": "2026-06-29T21:55:00Z",
+  "last_updated": "2026-06-29T22:05:00Z",
   "project": "c4a0",
   "language": "Python + Rust",
   "manifest": "pyproject.toml, uv.lock, rust/Cargo.toml, rust/Cargo.lock",
@@ -14,7 +14,7 @@
   },
   "summary": {
     "total": 45,
-    "updated": 24,
+    "updated": 25,
     "skipped": 0,
     "failed": 0,
     "requires_refactor": 0
@@ -374,6 +374,24 @@
         "mise run test:python"
       ],
       "timestamp": "2026-06-29T21:55:00Z"
+    },
+    {
+      "name": "ratatui",
+      "from": "0.27.0",
+      "to": "0.30.2",
+      "breaking_changes": [
+        "block::Title removed; Frame::size deprecated/renamed; Buffer::get_mut deprecated; Bar label/text generic Into signatures can cause inference failures; Crossterm/MSRV updates."
+      ],
+      "fixes_applied": [
+        "Replaced block::Title with Line::centered().",
+        "Used frame.area().",
+        "Replaced Buffer::get_mut with buffer indexing.",
+        "Removed ambiguous .into() calls for Bar::label and Bar::text_value."
+      ],
+      "tests": [
+        "mise run test:rust"
+      ],
+      "timestamp": "2026-06-29T22:05:00Z"
     }
   ],
   "failed": [],

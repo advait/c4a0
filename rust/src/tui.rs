@@ -13,11 +13,11 @@ use ratatui::{
         execute,
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     },
-    layout::{Alignment, Rect},
+    layout::Rect,
     style::Stylize,
     symbols::border,
     text::Line,
-    widgets::{block::Title, Block, Paragraph, Widget},
+    widgets::{Block, Paragraph, Widget},
     Terminal,
 };
 
@@ -66,7 +66,7 @@ impl<E: EvalPosT + Send + Sync + 'static> App<E> {
         while !self.exit {
             terminal.draw(|frame| {
                 let snapshot = self.game.snapshot();
-                draw_app(&snapshot, frame.size(), frame.buffer_mut());
+                draw_app(&snapshot, frame.area(), frame.buffer_mut());
             })?;
 
             if event::poll(Duration::from_millis(100))? {
@@ -111,9 +111,9 @@ impl<E: EvalPosT + Send + Sync + 'static> App<E> {
 }
 
 fn draw_app(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
-    let title = Title::from(" c4a0 - Connect Four AlphaZero ".bold());
+    let title = Line::from(" c4a0 - Connect Four AlphaZero ".bold()).centered();
     let outer_block = Block::bordered()
-        .title(title.alignment(Alignment::Center))
+        .title(title)
         .padding(Padding::horizontal(1))
         .border_set(border::THICK);
     let inner = outer_block.inner(rect);
@@ -204,13 +204,13 @@ fn draw_game_cell(value: Option<CellValue>, row: usize, col: usize, rect: Rect, 
     };
     for y in (rect.top() + 1)..rect.bottom() {
         for x in (rect.left() + 1)..rect.right() {
-            buf.get_mut(x, y).set_style(bg_style);
+            buf[(x, y)].set_style(bg_style);
         }
     }
 
     let border_style = Style::default().fg(Color::White);
     let mut set_border = |x, y, ch| {
-        buf.get_mut(x, y).set_char(ch).set_style(border_style);
+        buf[(x, y)].set_char(ch).set_style(border_style);
     };
 
     // Draw horizontal top borders
@@ -281,18 +281,18 @@ fn draw_evals(q_penalty: QValue, q_no_penalty: QValue, rect: Rect, buf: &mut Buf
     let q_no_penalty_u64 = ((q_no_penalty + 1.0) / 2.0 * (value_max as f32)) as u64;
     let bars = vec![
         Bar::default()
-            .label("Eval".into())
+            .label("Eval")
             .value(q_penalty_u64)
-            .text_value(format!("{:.2}", q_penalty).into())
+            .text_value(format!("{:.2}", q_penalty))
             .style(if q_penalty >= 0.0 {
                 Style::new().red()
             } else {
                 Style::new().blue()
             }),
         Bar::default()
-            .label("Win %".into())
+            .label("Win %")
             .value(q_no_penalty_u64)
-            .text_value(format!("{:.0}%", q_no_penalty * 100.).into())
+            .text_value(format!("{:.0}%", q_no_penalty * 100.))
             .style(if q_no_penalty >= 0.0 {
                 Style::new().red()
             } else {
@@ -328,10 +328,11 @@ fn draw_policy(snapshot: &Snapshot, rect: Rect, buf: &mut Buffer) {
         .iter()
         .enumerate()
         .map(|(i, p)| {
+            let text_value = format!("{:.2}", p);
             Bar::default()
-                .label(format!("{}", i + 1).into())
+                .label(format!("{}", i + 1))
                 .value((p * (policy_max as f32)) as u64)
-                .text_value(format!("{:.2}", p)[1..].into())
+                .text_value(text_value[1..].to_string())
         })
         .collect::<Vec<_>>();
 

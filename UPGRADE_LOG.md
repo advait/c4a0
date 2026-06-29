@@ -12,7 +12,7 @@
 | Metric | Count |
 |--------|-------|
 | **Total dependencies considered** | 45 |
-| **Updated** | 24 |
+| **Updated** | 25 |
 | **Skipped** | 0 |
 | **Failed (rolled back)** | 0 |
 | **Requires attention** | 0 |
@@ -289,6 +289,16 @@ Slices:
 
 **Tests:** ✓ `mise run test:rust` passed; ✓ `mise run test:python` passed.
 
+### ratatui: 0.27.0 → 0.30.2
+
+**Changelog:** Official `BREAKING-CHANGES.md` and release notes reviewed.
+
+**Breaking changes:** Range includes `block::Title` removal, `Frame::size` deprecation/rename to `Frame::area`, `Buffer::get_mut` deprecation, `Bar::label`/`Bar::text_value` generic `Into` signature changes, Crossterm 0.29 update, and MSRV increases.
+
+**Migration applied:** Raised Rust dependency to `ratatui = "0.30.2"`; `Cargo.lock` resolved `ratatui==0.30.2` and its split crate/dependency graph. Replaced `widgets::block::Title` with `Line::centered()`, used `frame.area()`, replaced deprecated `Buffer::get_mut` with buffer indexing, and removed ambiguous `.into()` calls for bar labels/text values.
+
+**Tests:** ✓ `mise run test:rust` passed.
+
 ---
 
 ## Skipped
@@ -403,6 +413,9 @@ mise exec -- cargo update --manifest-path rust/Cargo.toml -p rand@0.8.5 --precis
 mise run test:rust  # initially failed: rand::distributions moved
 mise run test:rust
 mise run test:python
+mise exec -- cargo update --manifest-path rust/Cargo.toml -p ratatui --precise 0.30.2
+mise run test:rust  # initially failed: Ratatui 0.30 API changes
+mise run test:rust
 ```
 
 ---
