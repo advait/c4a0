@@ -46,6 +46,9 @@ def test_solver_alignment_training_is_self_play_only(monkeypatch, tmp_path):
         eval_temperature=None,
         eval_opening_depth=0,
         seed=1337,
+        select_best_generation_by_solver=False,
+        selection_eval_games=8,
+        selection_eval_mcts=4,
     )
 
     gen = solver_alignment_eval.train_self_play_only(
@@ -84,6 +87,9 @@ def test_benchmark_tier_defaults_and_overrides():
         eval_temperature=0.0,
         eval_opening_depth=None,
         seed=2026,
+        select_best_generation_by_solver=True,
+        selection_eval_games=512,
+        selection_eval_mcts=128,
     )
 
     config = solver_alignment_eval.build_config(args)
@@ -100,6 +106,9 @@ def test_benchmark_tier_defaults_and_overrides():
     assert config.eval_temperature == 0.0
     assert config.eval_opening_depth == 6
     assert config.seed == 2026
+    assert config.select_best_generation_by_solver is True
+    assert config.selection_eval_games == 512
+    assert config.selection_eval_mcts == 128
 
 
 def test_eval_opening_moves_are_legal_and_deterministic():

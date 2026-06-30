@@ -8,7 +8,7 @@ never provide moves, values, samples, replay data, or loss targets to training.
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -130,6 +130,9 @@ class EvalConfig:
     eval_temperature: float | None
     eval_opening_depth: int
     seed: int
+    select_best_generation_by_solver: bool
+    selection_eval_games: int
+    selection_eval_mcts: int
 
 
 def parse_args() -> argparse.Namespace:
@@ -186,6 +189,9 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Use deterministic legal opening prefixes of this depth for eval games only (0-6).",
     )
+    parser.add_argument("--select-best-generation-by-solver", action="store_true")
+    parser.add_argument("--selection-eval-games", type=int, default=512)
+    parser.add_argument("--selection-eval-mcts", type=int, default=128)
     return parser.parse_args()
 
 
@@ -306,6 +312,49 @@ def score_alignment(
     return float(games.score_top_moves(solver_path, book_path, str(cache_path)))
 
 
+def select_best_generation_by_solver(
+    run_dir: Path,
+    trained_final_gen: TrainingGen,
+    config: EvalConfig,
+    device: torch.device,
+    solver_path: str,
+    book_path: str,
+    cache_path: Path,
+) -> tuple[TrainingGen, list[dict[str, float | int | str]]]:
+    selection_config = replace(
+        config,
+        eval_games=config.selection_eval_games,
+        eval_mcts=config.selection_eval_mcts,
+        eval_game_id_offset=config.eval_game_id_offset + 10_000_000,
+    )
+    generations = [
+        gen
+        for gen in TrainingGen.load_all(str(run_dir / "training"))
+        if 0 < gen.gen_n <= trained_final_gen.gen_n
+    ]
+    generations.sort(key=lambda gen: gen.gen_n)
+
+    rows: list[dict[str, float | int | str]] = []
+    best_gen = trained_final_gen
+    best_metric = float("-inf")
+    for gen in generations:
+        games = generate_eval_games(run_dir, gen, selection_config, device)
+        metric = score_alignment(games, solver_path, book_path, cache_path)
+        row = {
+            "gen_n": gen.gen_n,
+            "created_at": gen.created_at.isoformat(),
+            "metric": metric,
+            "eval_games": len(games.results),
+            "eval_nonterminal_samples": games.nonterminal_sample_count(),
+            "eval_unique_positions": games.unique_positions(),
+        }
+        rows.append(row)
+        if metric > best_metric:
+            best_metric = metric
+            best_gen = gen
+    return best_gen, rows
+
+
 def wilson_interval(
     success_rate: float, n: int, z: float = 1.959963984540054
 ) -> dict[str, float | int]:
@@ -354,6 +403,9 @@ def build_config(args: argparse.Namespace) -> EvalConfig:
         eval_temperature=args.eval_temperature,
         eval_opening_depth=tier_or_override("eval_opening_depth"),
         seed=args.seed,
+        select_best_generation_by_solver=args.select_best_generation_by_solver,
+        selection_eval_games=args.selection_eval_games,
+        selection_eval_mcts=args.selection_eval_mcts,
     )
 
 
@@ -367,6 +419,8 @@ def write_metrics(
     book_path: str,
     cache_path: Path,
     argv: list[str],
+    trained_final_gen: TrainingGen | None = None,
+    selection_rows: list[dict[str, float | int | str]] | None = None,
 ) -> None:
     nonterminal_samples = games.nonterminal_sample_count()
     metadata = {
@@ -384,6 +438,8 @@ def write_metrics(
         ].description,
         "config": asdict(config),
         "final_generation": gen.model_dump(mode="json"),
+        "trained_final_generation": (trained_final_gen or gen).model_dump(mode="json"),
+        "selection_rows": selection_rows or [],
         "eval_games": len(games.results),
         "eval_samples": games.sample_count(),
         "eval_nonterminal_samples": nonterminal_samples,
@@ -415,7 +471,20 @@ def main() -> int:
     cache_path = resolve_cache_path(args.cache, run_dir, args.run_local_cache)
 
     seed_everything(config.seed)
-    gen = train_self_play_only(run_dir, config, device)
+    trained_final_gen = train_self_play_only(run_dir, config, device)
+    if config.select_best_generation_by_solver:
+        gen, selection_rows = select_best_generation_by_solver(
+            run_dir,
+            trained_final_gen,
+            config,
+            device,
+            str(solver),
+            str(book),
+            cache_path,
+        )
+    else:
+        gen = trained_final_gen
+        selection_rows = []
     games = generate_eval_games(run_dir, gen, config, device)
     metric = score_alignment(games, str(solver), str(book), cache_path)
     write_metrics(
@@ -428,6 +497,8 @@ def main() -> int:
         str(book),
         cache_path,
         sys.argv[1:],
+        trained_final_gen=trained_final_gen,
+        selection_rows=selection_rows,
     )
 
     print(f"{metric:.8f}")
