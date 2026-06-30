@@ -159,12 +159,27 @@ class ConnectFourNet(pl.LightningModule):
 
     def step(self, batch, log_prefix):
         # Forward pass
-        pos, policy_target, q_penalty_target, q_no_penalty_target = batch
+        if len(batch) == 4:
+            pos, policy_target, q_penalty_target, q_no_penalty_target = batch
+            policy_weight = torch.ones_like(q_penalty_target)
+        else:
+            (
+                pos,
+                policy_target,
+                q_penalty_target,
+                q_no_penalty_target,
+                policy_weight,
+            ) = batch
         policy_logprob, q_penalty_pred, q_no_penalty_pred = self.forward(pos)
         policy_logprob_targets = torch.log(policy_target + self.EPS)
 
         # Losses
-        policy_loss = self.policy_kl_div(policy_logprob_targets, policy_logprob)
+        per_sample_policy_loss = (
+            policy_target * (policy_logprob_targets - policy_logprob)
+        ).sum(dim=1)
+        policy_loss = (
+            per_sample_policy_loss * policy_weight
+        ).sum() / policy_weight.sum().clamp_min(1.0)
         q_penalty_loss = self.q_penalty_mse(q_penalty_pred, q_penalty_target)
         q_no_penalty_loss = self.q_no_penalty_mse(
             q_no_penalty_pred, q_no_penalty_target
