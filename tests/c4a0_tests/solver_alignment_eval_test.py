@@ -43,6 +43,7 @@ def test_solver_alignment_training_is_self_play_only(monkeypatch, tmp_path):
         learning_rate=1e-3,
         l2_reg=0.0,
         eval_game_id_offset=100,
+        eval_temperature=None,
     )
 
     gen = solver_alignment_eval.train_self_play_only(
@@ -78,6 +79,7 @@ def test_benchmark_tier_defaults_and_overrides():
         learning_rate=5e-4,
         l2_reg=0.0,
         eval_game_id_offset=1_000_000,
+        eval_temperature=0.0,
     )
 
     config = solver_alignment_eval.build_config(args)
@@ -91,3 +93,4 @@ def test_benchmark_tier_defaults_and_overrides():
     assert config.eval_games == tier.eval_games
     assert config.eval_mcts == 456
     assert config.eval_games >= 10_000
+    assert config.eval_temperature == 0.0

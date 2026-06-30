@@ -119,6 +119,7 @@ class EvalConfig:
     learning_rate: float
     l2_reg: float
     eval_game_id_offset: int
+    eval_temperature: float | None
 
 
 def parse_args() -> argparse.Namespace:
@@ -162,6 +163,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=5e-4)
     parser.add_argument("--l2-reg", type=float, default=0.0)
     parser.add_argument("--eval-game-id-offset", type=int, default=1_000_000)
+    parser.add_argument(
+        "--eval-temperature",
+        type=float,
+        default=None,
+        help="Override eval game move temperature; 0.0 makes eval trajectories greedy.",
+    )
     return parser.parse_args()
 
 
@@ -245,6 +252,7 @@ def generate_eval_games(
         config.c_exploration,
         config.c_ply_penalty,
         lambda model_id, pos: model.forward_numpy(pos),
+        config.eval_temperature,
     )
 
 
@@ -302,6 +310,7 @@ def build_config(args: argparse.Namespace) -> EvalConfig:
         learning_rate=args.learning_rate,
         l2_reg=args.l2_reg,
         eval_game_id_offset=args.eval_game_id_offset,
+        eval_temperature=args.eval_temperature,
     )
 
 

@@ -61,6 +61,7 @@ def play_games(
     c_exploration: float,
     c_ply_penalty: float,
     py_eval_pos_cb: Callable[[int, NDArray[np.float32]], tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]],
+    move_temperature: float | None = None,
 ) -> PlayGamesResult: ...
 
 

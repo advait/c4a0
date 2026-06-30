@@ -43,6 +43,7 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
     n_mcts_iterations: usize,
     c_exploration: f32,
     c_ply_penalty: f32,
+    move_temperature: Option<f32>,
 ) -> Vec<GameResult> {
     let n_games = reqs.len();
     let (pb_game_done, pb_nn_eval, pb_mcts_iter) = init_progress_bars(n_games);
@@ -97,6 +98,7 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
                         n_mcts_threads,
                         c_exploration,
                         c_ply_penalty,
+                        move_temperature,
                         pb_game_done,
                         pb_mcts_iter,
                     }
@@ -259,6 +261,7 @@ struct MctsThread {
     n_mcts_threads: usize,
     c_exploration: f32,
     c_ply_penalty: f32,
+    move_temperature: Option<f32>,
     pb_game_done: ProgressBar,
     pb_mcts_iter: ProgressBar,
 }
@@ -292,11 +295,11 @@ impl MctsThread {
                     // If we are in the early game, use a higher temperature to encourage
                     // generating more diverse (but suboptimal) games.
                     let ply = root_pos.ply();
-                    let temperature = match () {
+                    let temperature = self.move_temperature.unwrap_or(match () {
                         _ if ply < 4 => 4.0,
                         _ if ply < 8 => 2.0,
                         _ => 1.0,
-                    };
+                    });
                     game.make_random_move(self.c_exploration, temperature);
                     self.nn_queue_tx.send(game).unwrap();
                 } else {
@@ -421,6 +424,7 @@ pub mod tests {
             mcts_iterations,
             c_exploration,
             c_ply_penalty,
+            None,
         );
 
         for result in results {

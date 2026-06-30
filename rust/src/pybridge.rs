@@ -17,7 +17,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 /// Play games via MCTS. This is a python wrapper around [self_play].
 /// `reqs` is a list of [GameMetadata] that describes the games to play.
 /// The `py_eval_pos_cb` callback is expected to be a pytorch model that runs on the GPU.
-#[pyfunction]
+#[pyfunction(signature = (reqs, max_nn_batch_size, n_mcts_iterations, c_exploration, c_ply_penalty, py_eval_pos_cb, move_temperature=None))]
 pub fn play_games<'py>(
     py: Python<'py>,
     reqs: &Bound<'py, PyList>,
@@ -26,6 +26,7 @@ pub fn play_games<'py>(
     c_exploration: f32,
     c_ply_penalty: f32,
     py_eval_pos_cb: &Bound<'py, PyAny>,
+    move_temperature: Option<f32>,
 ) -> PyResult<PlayGamesResult> {
     let reqs: Vec<GameMetadata> = reqs.extract().expect("error extracting reqs");
 
@@ -45,6 +46,7 @@ pub fn play_games<'py>(
                 n_mcts_iterations,
                 c_exploration,
                 c_ply_penalty,
+                move_temperature,
             )
         })
     };
