@@ -44,6 +44,22 @@ def test_play_games_can_start_from_opening_prefix():
     )
 
 
+def test_initial_sample_counts_score_one_root_position_per_game():
+    games = c4a0_rust.play_games(
+        [c4a0_rust.GameMetadata(i, 0, 0, [i % N_COLS]) for i in range(4)],
+        8,
+        2,
+        1.4,
+        0.01,
+        _uniform_eval,
+    )
+
+    assert games.initial_nonterminal_sample_count() == 4
+    assert games.initial_unique_positions() == 4
+    assert games.nonterminal_sample_count() >= games.initial_nonterminal_sample_count()
+    assert games.unique_positions() >= games.initial_unique_positions()
+
+
 def test_split_train_test_is_deterministic_and_non_mutating():
     games = c4a0_rust.play_games(
         [c4a0_rust.GameMetadata(i, 0, 0) for i in range(4)],

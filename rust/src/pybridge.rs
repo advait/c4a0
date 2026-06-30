@@ -159,6 +159,22 @@ impl PlayGamesResult {
         Ok(avg_score)
     }
 
+    /// Scores strict top-move agreement for only the first non-terminal sample in each game.
+    fn score_initial_top_moves(
+        &self,
+        solver_path: String,
+        solver_book_path: String,
+        solution_cache_path: String,
+    ) -> PyResult<f32> {
+        let solver = CachingSolver::new(solver_path, solver_book_path, solution_cache_path);
+        let scores = solver
+            .score_top_moves(self.initial_nonterminal_pos_and_policies())
+            .map_err(pyify_err)?;
+        let n_scores = scores.len();
+        let avg_score = scores.into_iter().sum::<f32>() / n_scores as f32;
+        Ok(avg_score)
+    }
+
     /// Returns the number of training/evaluation samples in the results.
     fn sample_count(&self) -> usize {
         self.results.iter().map(|r| r.samples.len()).sum()
@@ -171,6 +187,20 @@ impl PlayGamesResult {
             .flat_map(|r| r.samples.iter())
             .filter(|s| s.pos.is_terminal_state().is_none())
             .count()
+    }
+
+    /// Returns the number of first non-terminal samples, at most one per game.
+    fn initial_nonterminal_sample_count(&self) -> usize {
+        self.initial_nonterminal_pos_and_policies().len()
+    }
+
+    /// Returns the number of unique first non-terminal positions, at most one per game.
+    fn initial_unique_positions(&self) -> usize {
+        self.initial_nonterminal_pos_and_policies()
+            .into_iter()
+            .map(|(pos, _)| pos)
+            .collect::<std::collections::HashSet<_>>()
+            .len()
     }
 
     /// Returns the number of unique positions in the results.
@@ -191,6 +221,18 @@ impl PlayGamesResult {
             .flat_map(|r| r.samples.iter())
             .filter(|s| s.pos.is_terminal_state().is_none())
             .map(|p| (p.pos.clone(), p.policy.clone()))
+            .collect()
+    }
+
+    fn initial_nonterminal_pos_and_policies(&self) -> Vec<(Pos, Policy)> {
+        self.results
+            .iter()
+            .filter_map(|r| {
+                r.samples
+                    .iter()
+                    .find(|s| s.pos.is_terminal_state().is_none())
+                    .map(|p| (p.pos.clone(), p.policy.clone()))
+            })
             .collect()
     }
 }

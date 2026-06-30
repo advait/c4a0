@@ -48,6 +48,7 @@ def test_solver_alignment_training_is_self_play_only(monkeypatch, tmp_path):
         eval_game_id_offset=100,
         eval_temperature=None,
         eval_opening_depth=0,
+        score_initial_positions_only=True,
         seed=1337,
         select_best_generation_by_solver=False,
         selection_eval_games=8,
@@ -92,6 +93,7 @@ def test_benchmark_tier_defaults_and_overrides():
         eval_game_id_offset=1_000_000,
         eval_temperature=0.0,
         eval_opening_depth=None,
+        score_initial_positions_only=True,
         seed=2026,
         select_best_generation_by_solver=None,
         selection_eval_games=None,
@@ -111,6 +113,7 @@ def test_benchmark_tier_defaults_and_overrides():
     assert config.eval_games >= 10_000
     assert config.eval_temperature == 0.0
     assert config.eval_opening_depth == 6
+    assert config.score_initial_positions_only is True
     assert config.policy_loss_weight == 2.0
     assert config.q_penalty_loss_weight == 0.5
     assert config.q_no_penalty_loss_weight == 0.25
@@ -118,6 +121,35 @@ def test_benchmark_tier_defaults_and_overrides():
     assert config.select_best_generation_by_solver is True
     assert config.selection_eval_games == tier.selection_eval_games
     assert config.selection_eval_mcts == tier.selection_eval_mcts
+
+
+def test_score_alignment_dispatches_to_configured_scope():
+    class FakeGames:
+        def __init__(self):
+            self.calls: list[str] = []
+
+        def score_initial_top_moves(self, *args):
+            self.calls.append("initial")
+            return 0.75
+
+        def score_top_moves(self, *args):
+            self.calls.append("all")
+            return 0.25
+
+    initial_games = FakeGames()
+    all_games = FakeGames()
+
+    initial_metric = solver_alignment_eval.score_alignment(
+        initial_games, "solver", "book", Path("cache"), True
+    )
+    all_metric = solver_alignment_eval.score_alignment(
+        all_games, "solver", "book", Path("cache"), False
+    )
+
+    assert initial_metric == 0.75
+    assert initial_games.calls == ["initial"]
+    assert all_metric == 0.25
+    assert all_games.calls == ["all"]
 
 
 def test_eval_opening_moves_are_legal_and_deterministic():

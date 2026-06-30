@@ -150,6 +150,7 @@ class EvalConfig:
     eval_game_id_offset: int
     eval_temperature: float | None
     eval_opening_depth: int
+    score_initial_positions_only: bool
     seed: int
     select_best_generation_by_solver: bool
     selection_eval_games: int
@@ -212,6 +213,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Use deterministic legal opening prefixes of this depth for eval games only (0-6).",
+    )
+    parser.add_argument(
+        "--score-initial-positions-only",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Score only the first/root non-terminal position from each eval game.",
     )
     parser.add_argument(
         "--select-best-generation-by-solver",
@@ -340,8 +347,33 @@ def score_alignment(
     solver_path: str,
     book_path: str,
     cache_path: Path,
+    score_initial_positions_only: bool,
 ) -> float:
+    if score_initial_positions_only:
+        return float(
+            games.score_initial_top_moves(  # type: ignore[attr-defined]
+                solver_path, book_path, str(cache_path)
+            )
+        )
     return float(games.score_top_moves(solver_path, book_path, str(cache_path)))
+
+
+def scored_sample_count(
+    games: c4a0_rust.PlayGamesResult,  # type: ignore[name-defined]
+    config: EvalConfig,
+) -> int:
+    if config.score_initial_positions_only:
+        return int(games.initial_nonterminal_sample_count())  # type: ignore[attr-defined]
+    return int(games.nonterminal_sample_count())
+
+
+def scored_unique_positions(
+    games: c4a0_rust.PlayGamesResult,  # type: ignore[name-defined]
+    config: EvalConfig,
+) -> int:
+    if config.score_initial_positions_only:
+        return int(games.initial_unique_positions())  # type: ignore[attr-defined]
+    return int(games.unique_positions())
 
 
 def select_best_generation_by_solver(
@@ -371,14 +403,24 @@ def select_best_generation_by_solver(
     best_metric = float("-inf")
     for gen in generations:
         games = generate_eval_games(run_dir, gen, selection_config, device)
-        metric = score_alignment(games, solver_path, book_path, cache_path)
+        metric = score_alignment(
+            games,
+            solver_path,
+            book_path,
+            cache_path,
+            config.score_initial_positions_only,
+        )
         row = {
             "gen_n": gen.gen_n,
             "created_at": gen.created_at.isoformat(),
             "metric": metric,
             "eval_games": len(games.results),
             "eval_nonterminal_samples": games.nonterminal_sample_count(),
+            "eval_scored_samples": scored_sample_count(games, selection_config),
             "eval_unique_positions": games.unique_positions(),
+            "eval_scored_unique_positions": scored_unique_positions(
+                games, selection_config
+            ),
         }
         rows.append(row)
         if metric > best_metric:
@@ -437,6 +479,7 @@ def build_config(args: argparse.Namespace) -> EvalConfig:
         eval_game_id_offset=args.eval_game_id_offset,
         eval_temperature=args.eval_temperature,
         eval_opening_depth=tier_or_override("eval_opening_depth"),
+        score_initial_positions_only=args.score_initial_positions_only,
         seed=args.seed,
         select_best_generation_by_solver=(
             tier.select_best_generation_by_solver
@@ -462,11 +505,12 @@ def write_metrics(
     selection_rows: list[dict[str, float | int | str]] | None = None,
 ) -> None:
     nonterminal_samples = games.nonterminal_sample_count()
+    scored_samples = scored_sample_count(games, config)
     metadata = {
         "metric": metric,
         "metric_name": "solver_alignment_mcts_strict_top_move",
         "metric_direction": "higher_is_better",
-        "metric_confidence_interval": wilson_interval(metric, nonterminal_samples),
+        "metric_confidence_interval": wilson_interval(metric, scored_samples),
         "solver_is_eval_only": True,
         "solver_path": solver_path,
         "book_path": book_path,
@@ -482,7 +526,14 @@ def write_metrics(
         "eval_games": len(games.results),
         "eval_samples": games.sample_count(),
         "eval_nonterminal_samples": nonterminal_samples,
+        "eval_scored_samples": scored_samples,
         "eval_unique_positions": games.unique_positions(),
+        "eval_scored_unique_positions": scored_unique_positions(games, config),
+        "eval_scoring_scope": (
+            "initial_nonterminal_position"
+            if config.score_initial_positions_only
+            else "all_nonterminal_positions"
+        ),
         "training_dir": str(run_dir / "training"),
         "git_commit": git_commit(),
         "argv": argv,
@@ -525,7 +576,13 @@ def main() -> int:
         gen = trained_final_gen
         selection_rows = []
     games = generate_eval_games(run_dir, gen, config, device)
-    metric = score_alignment(games, str(solver), str(book), cache_path)
+    metric = score_alignment(
+        games,
+        str(solver),
+        str(book),
+        cache_path,
+        config.score_initial_positions_only,
+    )
     write_metrics(
         run_dir,
         config,
