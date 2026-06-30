@@ -137,3 +137,28 @@ test -x solver/c4solver
 test -f solver/7x6.book
 printf '4444\n' | solver/c4solver -b solver/7x6.book -a >/dev/null
 '''
+
+[tasks."solver:eval:smoke"]
+description = "Run the smoke strict top-move solver-alignment benchmark tier"
+depends = ["build", "solver:check"]
+run = "uv run python scripts/solver_alignment_eval.py --tier smoke --solver solver/c4solver --book solver/7x6.book"
+
+[tasks."solver:eval:dev"]
+description = "Run the dev strict top-move solver-alignment benchmark tier"
+depends = ["build", "solver:check"]
+run = "uv run python scripts/solver_alignment_eval.py --tier dev --solver solver/c4solver --book solver/7x6.book"
+
+[tasks."solver:eval:candidate"]
+description = "Run the candidate strict top-move solver-alignment benchmark tier"
+depends = ["build", "solver:check"]
+run = "uv run python scripts/solver_alignment_eval.py --tier candidate --solver solver/c4solver --book solver/7x6.book"
+
+[tasks."solver:eval:gate"]
+description = "Run the gate strict top-move solver-alignment benchmark tier"
+depends = ["build", "solver:check"]
+run = "uv run python scripts/solver_alignment_eval.py --tier gate --solver solver/c4solver --book solver/7x6.book"
+
+[tasks."solver:eval:long"]
+description = "Run the long strict top-move solver-alignment benchmark tier"
+depends = ["build", "solver:check"]
+run = "uv run python scripts/solver_alignment_eval.py --tier long --solver solver/c4solver --book solver/7x6.book"

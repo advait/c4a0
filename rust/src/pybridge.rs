@@ -157,6 +157,20 @@ impl PlayGamesResult {
         Ok(avg_score)
     }
 
+    /// Returns the number of training/evaluation samples in the results.
+    fn sample_count(&self) -> usize {
+        self.results.iter().map(|r| r.samples.len()).sum()
+    }
+
+    /// Returns the number of non-terminal samples scored by solver top-move metrics.
+    fn nonterminal_sample_count(&self) -> usize {
+        self.results
+            .iter()
+            .flat_map(|r| r.samples.iter())
+            .filter(|s| s.pos.is_terminal_state().is_none())
+            .count()
+    }
+
     /// Returns the number of unique positions in the results.
     fn unique_positions(&self) -> usize {
         self.results
