@@ -37,6 +37,15 @@ class ModelConfig(BaseModel):
     l2_reg: float
     """L2 weight decay regularization for the optimizer"""
 
+    policy_loss_weight: float = 1.0
+    """Weight for policy KL divergence in the total loss."""
+
+    q_penalty_loss_weight: float = 1.0
+    """Weight for ply-penalized value MSE in the total loss."""
+
+    q_no_penalty_loss_weight: float = 1.0
+    """Weight for unpenalized value MSE in the total loss."""
+
 
 class ConnectFourNet(pl.LightningModule):
     """
@@ -60,6 +69,9 @@ class ConnectFourNet(pl.LightningModule):
         super().__init__()
         self.lr_schedule = config.lr_schedule
         self.l2_reg = config.l2_reg
+        self.policy_loss_weight = config.policy_loss_weight
+        self.q_penalty_loss_weight = config.q_penalty_loss_weight
+        self.q_no_penalty_loss_weight = config.q_no_penalty_loss_weight
 
         self.conv = nn.Sequential(
             nn.Conv2d(2, config.conv_filter_size, kernel_size=3, padding=1),
@@ -169,7 +181,11 @@ class ConnectFourNet(pl.LightningModule):
         q_no_penalty_loss = self.q_no_penalty_mse(
             q_no_penalty_pred, q_no_penalty_target
         )
-        loss = policy_loss + q_penalty_loss + q_no_penalty_loss
+        loss = (
+            self.policy_loss_weight * policy_loss
+            + self.q_penalty_loss_weight * q_penalty_loss
+            + self.q_no_penalty_loss_weight * q_no_penalty_loss
+        )
 
         value_loss = q_penalty_loss + q_no_penalty_loss
 

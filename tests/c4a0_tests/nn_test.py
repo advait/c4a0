@@ -6,7 +6,11 @@ from c4a0.training import parse_lr_schedule
 from c4a0_rust import BUF_N_CHANNELS, N_COLS, N_ROWS
 
 
-def make_model() -> ConnectFourNet:
+def make_model(
+    policy_loss_weight: float = 1.0,
+    q_penalty_loss_weight: float = 1.0,
+    q_no_penalty_loss_weight: float = 1.0,
+) -> ConnectFourNet:
     return ConnectFourNet(
         ModelConfig(
             n_residual_blocks=1,
@@ -15,6 +19,9 @@ def make_model() -> ConnectFourNet:
             n_value_layers=1,
             lr_schedule=parse_lr_schedule([0, 1e-3]),
             l2_reg=0.0,
+            policy_loss_weight=policy_loss_weight,
+            q_penalty_loss_weight=q_penalty_loss_weight,
+            q_no_penalty_loss_weight=q_no_penalty_loss_weight,
         )
     )
 
@@ -89,6 +96,32 @@ def test_loss_of_nonzero():
 
 
 @pytest.mark.filterwarnings("ignore:You are trying to `self.log()`*")
+@pytest.mark.filterwarnings("ignore:You are trying to `self.log()`*")
+def test_loss_uses_configured_component_weights():
+    model = make_model(
+        policy_loss_weight=2.0,
+        q_penalty_loss_weight=0.5,
+        q_no_penalty_loss_weight=0.25,
+    )
+    pos = starting_pos()
+    policy = torch.ones((1, N_COLS)) / N_COLS
+    q_penalty = torch.ones((1,))
+    q_no_penalty = -torch.ones((1,))
+
+    model.eval()
+    policy_logprob, q_penalty_pred, q_no_penalty_pred = model(pos)
+    policy_loss = (
+        (policy * (torch.log(policy + model.EPS) - policy_logprob)).sum(dim=1).mean()
+    )
+    q_penalty_loss = ((q_penalty_pred - q_penalty) ** 2).mean()
+    q_no_penalty_loss = ((q_no_penalty_pred - q_no_penalty) ** 2).mean()
+    expected = 2.0 * policy_loss + 0.5 * q_penalty_loss + 0.25 * q_no_penalty_loss
+
+    actual = model.training_step((pos, policy, q_penalty, q_no_penalty), 0)
+
+    assert actual.detach().item() == pytest.approx(expected.detach().item(), abs=1e-6)
+
+
 def test_loss_logs_both_value_components(monkeypatch):
     """Value diagnostics should expose both value heads, not just q_penalty."""
     model = make_model()

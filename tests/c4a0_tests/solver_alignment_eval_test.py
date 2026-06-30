@@ -42,6 +42,9 @@ def test_solver_alignment_training_is_self_play_only(monkeypatch, tmp_path):
         n_value_layers=1,
         learning_rate=1e-3,
         l2_reg=0.0,
+        policy_loss_weight=1.0,
+        q_penalty_loss_weight=1.0,
+        q_no_penalty_loss_weight=1.0,
         eval_game_id_offset=100,
         eval_temperature=None,
         eval_opening_depth=0,
@@ -83,6 +86,9 @@ def test_benchmark_tier_defaults_and_overrides():
         n_value_layers=1,
         learning_rate=5e-4,
         l2_reg=0.0,
+        policy_loss_weight=2.0,
+        q_penalty_loss_weight=0.5,
+        q_no_penalty_loss_weight=0.25,
         eval_game_id_offset=1_000_000,
         eval_temperature=0.0,
         eval_opening_depth=None,
@@ -105,6 +111,9 @@ def test_benchmark_tier_defaults_and_overrides():
     assert config.eval_games >= 10_000
     assert config.eval_temperature == 0.0
     assert config.eval_opening_depth == 6
+    assert config.policy_loss_weight == 2.0
+    assert config.q_penalty_loss_weight == 0.5
+    assert config.q_no_penalty_loss_weight == 0.25
     assert config.seed == 2026
     assert config.select_best_generation_by_solver is True
     assert config.selection_eval_games == tier.selection_eval_games

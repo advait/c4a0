@@ -144,6 +144,9 @@ class EvalConfig:
     n_value_layers: int
     learning_rate: float
     l2_reg: float
+    policy_loss_weight: float
+    q_penalty_loss_weight: float
+    q_no_penalty_loss_weight: float
     eval_game_id_offset: int
     eval_temperature: float | None
     eval_opening_depth: int
@@ -193,6 +196,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-value-layers", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=5e-4)
     parser.add_argument("--l2-reg", type=float, default=0.0)
+    parser.add_argument("--policy-loss-weight", type=float, default=1.0)
+    parser.add_argument("--q-penalty-loss-weight", type=float, default=1.0)
+    parser.add_argument("--q-no-penalty-loss-weight", type=float, default=1.0)
     parser.add_argument("--eval-game-id-offset", type=int, default=1_000_000)
     parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument(
@@ -263,6 +269,9 @@ def model_config(config: EvalConfig) -> ModelConfig:
         n_value_layers=config.n_value_layers,
         lr_schedule=parse_lr_schedule([0, config.learning_rate]),
         l2_reg=config.l2_reg,
+        policy_loss_weight=config.policy_loss_weight,
+        q_penalty_loss_weight=config.q_penalty_loss_weight,
+        q_no_penalty_loss_weight=config.q_no_penalty_loss_weight,
     )
 
 
@@ -422,6 +431,9 @@ def build_config(args: argparse.Namespace) -> EvalConfig:
         n_value_layers=args.n_value_layers,
         learning_rate=args.learning_rate,
         l2_reg=args.l2_reg,
+        policy_loss_weight=args.policy_loss_weight,
+        q_penalty_loss_weight=args.q_penalty_loss_weight,
+        q_no_penalty_loss_weight=args.q_no_penalty_loss_weight,
         eval_game_id_offset=args.eval_game_id_offset,
         eval_temperature=args.eval_temperature,
         eval_opening_depth=tier_or_override("eval_opening_depth"),
