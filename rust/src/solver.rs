@@ -47,6 +47,21 @@ impl CachingSolver {
         Ok(ret)
     }
 
+    /// Strictly scores whether the policy's top move matches a solver-best move.
+    pub fn score_top_moves(
+        &self,
+        pos_and_policy: Vec<(Pos, Policy)>,
+    ) -> Result<Vec<f32>, Box<dyn Error>> {
+        let (pos, policy): (Vec<Pos>, Vec<Policy>) = pos_and_policy.into_iter().unzip();
+        let solutions = self.solve(pos)?;
+        let ret = solutions
+            .into_iter()
+            .zip(policy.into_iter())
+            .map(|(sol, pol)| sol.score_top_move(&pol))
+            .collect();
+        Ok(ret)
+    }
+
     /// Solves the given position, resorting to cached positions if possible, relying on
     /// [Self::solver] to solve missing positions, and then caches resulting solutions.
     fn solve(&self, pos: Vec<Pos>) -> Result<Vec<Solution>, Box<dyn Error>> {
@@ -193,20 +208,28 @@ impl ops::Neg for Solution {
 }
 
 impl Solution {
+    fn best_moves(&self) -> Vec<usize> {
+        let &sol_max = self.0.iter().max().unwrap();
+        self.0
+            .iter()
+            .enumerate()
+            .filter(|(_, &x)| x == sol_max)
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    fn selected_policy_move(policy: &Policy) -> usize {
+        let policy_max = policy.iter().map(|&p| OrdF32(p)).max().unwrap().0;
+        policy.iter().position(|&p| p == policy_max).unwrap()
+    }
+
     /// Given a [Pos] and a [Policy], score the policy relative to this solution. Only considers the
     /// highest probability move in the policy.
     /// Selecting the best move according to this solution will score 1.0.
     /// Selecting a winning move (but not best) will score 0.5.
     /// Selecting a losing move will score 0.0.
     fn score_policy(&self, policy: &Policy) -> f32 {
-        let &sol_max = self.0.iter().max().unwrap();
-        let best_moves = self
-            .0
-            .iter()
-            .enumerate()
-            .filter(|(_, &x)| x == sol_max)
-            .map(|(i, _)| i)
-            .collect::<Vec<_>>();
+        let best_moves = self.best_moves();
         let winning_moves = self
             .0
             .iter()
@@ -214,14 +237,22 @@ impl Solution {
             .filter(|(_, &x)| x > 0)
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
-
-        let policy_max = policy.iter().map(|&p| OrdF32(p)).max().unwrap().0;
-        let selected_move = policy.iter().position(|&p| p == policy_max).unwrap();
+        let selected_move = Self::selected_policy_move(policy);
 
         if best_moves.contains(&selected_move) {
             1.0
         } else if winning_moves.contains(&selected_move) {
             0.5
+        } else {
+            0.0
+        }
+    }
+
+    /// Strict top-move agreement with the solver. Ties among solver-best moves are all accepted.
+    fn score_top_move(&self, policy: &Policy) -> f32 {
+        let selected_move = Self::selected_policy_move(policy);
+        if self.best_moves().contains(&selected_move) {
+            1.0
         } else {
             0.0
         }
@@ -266,6 +297,15 @@ mod tests {
         let mut ret = Policy::default();
         ret[idx] = 1.0;
         ret
+    }
+
+    #[test]
+    fn top_move_agreement_does_not_give_winning_move_half_credit() {
+        let solution = Solution([0, 5, 2, -1, 5, 0, 0]);
+        assert_eq!(solution.score_policy(&one_hot(2)), 0.5);
+        assert_eq!(solution.score_top_move(&one_hot(2)), 0.0);
+        assert_eq!(solution.score_top_move(&one_hot(1)), 1.0);
+        assert_eq!(solution.score_top_move(&one_hot(4)), 1.0);
     }
 
     #[test]

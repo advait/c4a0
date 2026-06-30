@@ -133,14 +133,25 @@ impl PlayGamesResult {
         solution_cache_path: String,
     ) -> PyResult<f32> {
         let solver = CachingSolver::new(solver_path, solver_book_path, solution_cache_path);
-        let pos_and_policies = self
-            .results
-            .iter()
-            .flat_map(|r| r.samples.iter())
-            .filter(|s| s.pos.is_terminal_state().is_none())
-            .map(|p| (p.pos.clone(), p.policy.clone()))
-            .collect::<Vec<_>>();
-        let scores = solver.score_policies(pos_and_policies).map_err(pyify_err)?;
+        let scores = solver
+            .score_policies(self.nonterminal_pos_and_policies())
+            .map_err(pyify_err)?;
+        let n_scores = scores.len();
+        let avg_score = scores.into_iter().sum::<f32>() / n_scores as f32;
+        Ok(avg_score)
+    }
+
+    /// Scores strict top-move agreement with the given solver.
+    fn score_top_moves(
+        &self,
+        solver_path: String,
+        solver_book_path: String,
+        solution_cache_path: String,
+    ) -> PyResult<f32> {
+        let solver = CachingSolver::new(solver_path, solver_book_path, solution_cache_path);
+        let scores = solver
+            .score_top_moves(self.nonterminal_pos_and_policies())
+            .map_err(pyify_err)?;
         let n_scores = scores.len();
         let avg_score = scores.into_iter().sum::<f32>() / n_scores as f32;
         Ok(avg_score)
@@ -154,6 +165,17 @@ impl PlayGamesResult {
             .map(|s| s.pos.clone())
             .collect::<std::collections::HashSet<_>>()
             .len()
+    }
+}
+
+impl PlayGamesResult {
+    fn nonterminal_pos_and_policies(&self) -> Vec<(Pos, Policy)> {
+        self.results
+            .iter()
+            .flat_map(|r| r.samples.iter())
+            .filter(|s| s.pos.is_terminal_state().is_none())
+            .map(|p| (p.pos.clone(), p.policy.clone()))
+            .collect()
     }
 }
 

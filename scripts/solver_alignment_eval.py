@@ -135,7 +135,7 @@ def score_alignment(
     book_path: str,
     cache_path: Path,
 ) -> float:
-    return float(games.score_policies(solver_path, book_path, str(cache_path)))
+    return float(games.score_top_moves(solver_path, book_path, str(cache_path)))  # type: ignore[attr-defined]
 
 
 def build_config(args: argparse.Namespace) -> EvalConfig:
