@@ -62,7 +62,7 @@ def test_initial_sample_counts_score_one_root_position_per_game():
 
 def test_split_train_test_is_deterministic_and_non_mutating():
     games = c4a0_rust.play_games(
-        [c4a0_rust.GameMetadata(i, 0, 0) for i in range(4)],
+        [c4a0_rust.GameMetadata(i, 0, 0, [i % N_COLS]) for i in range(4)],
         8,
         2,
         1.4,

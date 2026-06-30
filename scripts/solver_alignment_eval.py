@@ -200,7 +200,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--conv-filter-size", type=int, default=32)
     parser.add_argument("--n-policy-layers", type=int, default=1)
     parser.add_argument("--n-value-layers", type=int, default=1)
-    parser.add_argument("--learning-rate", type=float, default=1e-3)
+    parser.add_argument("--learning-rate", type=float, default=2e-3)
     parser.add_argument("--l2-reg", type=float, default=0.0)
     parser.add_argument("--policy-loss-weight", type=float, default=2.0)
     parser.add_argument("--q-penalty-loss-weight", type=float, default=0.25)
