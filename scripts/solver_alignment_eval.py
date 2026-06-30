@@ -120,6 +120,7 @@ class EvalConfig:
     l2_reg: float
     eval_game_id_offset: int
     eval_temperature: float | None
+    eval_opening_depth: int
 
 
 def parse_args() -> argparse.Namespace:
@@ -168,6 +169,12 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=None,
         help="Override eval game move temperature; 0.0 makes eval trajectories greedy.",
+    )
+    parser.add_argument(
+        "--eval-opening-depth",
+        type=int,
+        default=0,
+        help="Use deterministic legal opening prefixes of this depth for eval games only (0-6).",
     )
     return parser.parse_args()
 
@@ -232,6 +239,17 @@ def train_self_play_only(
     )
 
 
+def eval_opening_moves(game_index: int, depth: int) -> list[int]:
+    if depth < 0 or depth > 6:
+        raise ValueError("eval_opening_depth must be in [0, 6]")
+    moves: list[int] = []
+    value = game_index
+    for _ in range(depth):
+        moves.append(value % 7)
+        value //= 7
+    return moves
+
+
 def generate_eval_games(
     run_dir: Path,
     gen: TrainingGen,
@@ -242,7 +260,12 @@ def generate_eval_games(
     model.to(device)
     model.eval()
     reqs = [
-        c4a0_rust.GameMetadata(config.eval_game_id_offset + game_id, 0, 0)  # type: ignore[attr-defined]
+        c4a0_rust.GameMetadata(  # type: ignore[attr-defined]
+            config.eval_game_id_offset + game_id,
+            0,
+            0,
+            eval_opening_moves(game_id, config.eval_opening_depth),
+        )
         for game_id in range(config.eval_games)
     ]
     return c4a0_rust.play_games(  # type: ignore[attr-defined]
@@ -311,6 +334,7 @@ def build_config(args: argparse.Namespace) -> EvalConfig:
         l2_reg=args.l2_reg,
         eval_game_id_offset=args.eval_game_id_offset,
         eval_temperature=args.eval_temperature,
+        eval_opening_depth=args.eval_opening_depth,
     )
 
 

@@ -44,6 +44,7 @@ def test_solver_alignment_training_is_self_play_only(monkeypatch, tmp_path):
         l2_reg=0.0,
         eval_game_id_offset=100,
         eval_temperature=None,
+        eval_opening_depth=0,
     )
 
     gen = solver_alignment_eval.train_self_play_only(
@@ -80,6 +81,7 @@ def test_benchmark_tier_defaults_and_overrides():
         l2_reg=0.0,
         eval_game_id_offset=1_000_000,
         eval_temperature=0.0,
+        eval_opening_depth=6,
     )
 
     config = solver_alignment_eval.build_config(args)
@@ -94,3 +96,12 @@ def test_benchmark_tier_defaults_and_overrides():
     assert config.eval_mcts == 456
     assert config.eval_games >= 10_000
     assert config.eval_temperature == 0.0
+    assert config.eval_opening_depth == 6
+
+
+def test_eval_opening_moves_are_legal_and_deterministic():
+    assert solver_alignment_eval.eval_opening_moves(0, 0) == []
+    assert solver_alignment_eval.eval_opening_moves(0, 3) == [0, 0, 0]
+    assert solver_alignment_eval.eval_opening_moves(1, 3) == [1, 0, 0]
+    assert solver_alignment_eval.eval_opening_moves(8, 3) == [1, 1, 0]
+    assert solver_alignment_eval.eval_opening_moves(7**6 - 1, 6) == [6, 6, 6, 6, 6, 6]

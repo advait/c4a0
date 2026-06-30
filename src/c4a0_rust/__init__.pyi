@@ -12,8 +12,15 @@ class GameMetadata:
     game_id: int
     player0_id: int
     player1_id: int
+    initial_moves: list[int]
 
-    def __init__(self, game_id: int = 0, player0_id: int = 0, player1_id: int = 0) -> None: ...
+    def __init__(
+        self,
+        game_id: int = 0,
+        player0_id: int = 0,
+        player1_id: int = 0,
+        initial_moves: Sequence[int] = (),
+    ) -> None: ...
 
 
 class Sample:

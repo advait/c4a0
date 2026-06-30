@@ -52,9 +52,10 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
     let (done_queue_tx, done_queue_rx) = bounded::<GameResult>(n_games);
     let n_games_remaining = Arc::new(AtomicUsize::new(n_games));
 
-    // Create initial games
+    // Create initial games. Opening prefixes are caller-provided and never solver-derived.
     for req in reqs {
-        let game = MctsGame::new_from_pos(Pos::default(), req);
+        let pos = Pos::from_moves(&req.initial_moves);
+        let game = MctsGame::new_from_pos(pos, req);
         nn_queue_tx.send(game).unwrap();
     }
 
@@ -418,6 +419,7 @@ pub mod tests {
                     game_id,
                     player0_id: 0,
                     player1_id: 0,
+                    initial_moves: vec![],
                 })
                 .collect(),
             MAX_NN_BATCH_SIZE,

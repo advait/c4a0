@@ -19,6 +19,31 @@ def _sample_positions(samples):
     return [sample.pos_str() for sample in samples]
 
 
+def test_play_games_can_start_from_opening_prefix():
+    default_games = c4a0_rust.play_games(
+        [c4a0_rust.GameMetadata(0, 0, 0)],
+        8,
+        2,
+        1.4,
+        0.01,
+        _uniform_eval,
+    )
+    opened_games = c4a0_rust.play_games(
+        [c4a0_rust.GameMetadata(0, 0, 0, [3, 3])],
+        8,
+        2,
+        1.4,
+        0.01,
+        _uniform_eval,
+    )
+
+    assert opened_games.results[0].metadata.initial_moves == [3, 3]
+    assert (
+        opened_games.results[0].samples[0].pos_str()
+        != default_games.results[0].samples[0].pos_str()
+    )
+
+
 def test_split_train_test_is_deterministic_and_non_mutating():
     games = c4a0_rust.play_games(
         [c4a0_rust.GameMetadata(i, 0, 0) for i in range(4)],

@@ -8,7 +8,7 @@ use numpy::{
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::c4r::Pos;
+use crate::c4r::{Move, Pos};
 
 /// Probabilities for how lucrative each column is.
 pub type Policy = [f32; Pos::N_COLS];
@@ -45,16 +45,26 @@ pub struct GameMetadata {
 
     #[pyo3(get)]
     pub player1_id: ModelID,
+
+    #[pyo3(get)]
+    pub initial_moves: Vec<Move>,
 }
 
 #[pymethods]
 impl GameMetadata {
     #[new]
-    fn new(game_id: u64, player0_id: ModelID, player1_id: ModelID) -> Self {
+    #[pyo3(signature = (game_id=0, player0_id=0, player1_id=0, initial_moves=Vec::new()))]
+    fn new(
+        game_id: u64,
+        player0_id: ModelID,
+        player1_id: ModelID,
+        initial_moves: Vec<Move>,
+    ) -> Self {
         GameMetadata {
             game_id,
             player0_id,
             player1_id,
+            initial_moves,
         }
     }
 }
