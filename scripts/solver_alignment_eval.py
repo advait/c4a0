@@ -64,9 +64,9 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
     ),
     "dev": BenchmarkTier(
         train_gens=2,
-        train_games=1_024,
+        train_games=2_048,
         train_mcts=512,
-        eval_games=2_048,
+        eval_games=10_000,
         eval_mcts=128,
         self_play_batch_size=256,
         training_batch_size=256,
