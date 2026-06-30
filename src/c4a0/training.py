@@ -301,7 +301,6 @@ SampleTensor = NewType(
         torch.Tensor,  # Policy
         torch.Tensor,  # Q Value with penalty
         torch.Tensor,  # Q Value without penalty
-        torch.Tensor,  # Policy loss weight
     ],
 )
 
@@ -327,15 +326,11 @@ class SampleDataModule(pl.LightningDataModule):
         policy_t = torch.from_numpy(policy)
         q_penalty_t = torch.from_numpy(q_penalty)
         q_no_penalty_t = torch.from_numpy(q_no_penalty)
-        policy_weight_t = torch.tensor(0.0 if sample.is_terminal() else 1.0)
         assert pos_t.shape == (BUF_N_CHANNELS, N_ROWS, N_COLS)
         assert policy_t.shape == (N_COLS,)
         assert q_penalty_t.shape == ()
-        assert q_no_penalty_t.shape == ()
-        assert policy_weight_t.shape == ()
-        return SampleTensor(
-            (pos_t, policy_t, q_penalty_t, q_no_penalty_t, policy_weight_t)
-        )
+        assert q_no_penalty.shape == ()
+        return SampleTensor((pos_t, policy_t, q_penalty_t, q_no_penalty_t))
 
     def train_dataloader(self):
         return DataLoader(
