@@ -59,7 +59,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--training-batch-size", type=int, default=128)
     parser.add_argument("--c-exploration", type=float, default=6.6)
     parser.add_argument("--c-ply-penalty", type=float, default=0.01)
-    parser.add_argument("--n-residual-blocks", type=int, default=1)
+    parser.add_argument("--n-residual-blocks", type=int, default=0)
     parser.add_argument("--conv-filter-size", type=int, default=16)
     parser.add_argument("--n-policy-layers", type=int, default=1)
     parser.add_argument("--n-value-layers", type=int, default=1)
