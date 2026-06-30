@@ -169,7 +169,7 @@ class ConnectFourNet(pl.LightningModule):
         q_no_penalty_loss = self.q_no_penalty_mse(
             q_no_penalty_pred, q_no_penalty_target
         )
-        loss = policy_loss + (q_penalty_loss + q_no_penalty_loss) / 2.0
+        loss = policy_loss + q_penalty_loss + q_no_penalty_loss
 
         value_loss = q_penalty_loss + q_no_penalty_loss
 

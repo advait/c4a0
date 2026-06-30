@@ -27,7 +27,7 @@ def _manual_loss(model, samples):
         )
         q_penalty_loss = ((q_penalty_pred - q_penalty_target) ** 2).mean()
         q_no_penalty_loss = ((q_no_penalty_pred - q_no_penalty_target) ** 2).mean()
-    return (policy_loss + (q_penalty_loss + q_no_penalty_loss) / 2.0).item()
+    return (policy_loss + q_penalty_loss + q_no_penalty_loss).item()
 
 
 def _sum_abs_model_diff(left, right):
