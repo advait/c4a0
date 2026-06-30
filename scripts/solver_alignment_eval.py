@@ -13,10 +13,12 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import pickle
+import random
 import subprocess
 import sys
 import uuid
 
+import numpy as np
 import torch
 
 from c4a0.nn import ModelConfig
@@ -127,6 +129,7 @@ class EvalConfig:
     eval_game_id_offset: int
     eval_temperature: float | None
     eval_opening_depth: int
+    seed: int
 
 
 def parse_args() -> argparse.Namespace:
@@ -170,6 +173,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=5e-4)
     parser.add_argument("--l2-reg", type=float, default=0.0)
     parser.add_argument("--eval-game-id-offset", type=int, default=1_000_000)
+    parser.add_argument("--seed", type=int, default=1337)
     parser.add_argument(
         "--eval-temperature",
         type=float,
@@ -212,6 +216,14 @@ def git_commit() -> str | None:
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         return None
+
+
+def seed_everything(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
 def model_config(config: EvalConfig) -> ModelConfig:
@@ -341,6 +353,7 @@ def build_config(args: argparse.Namespace) -> EvalConfig:
         eval_game_id_offset=args.eval_game_id_offset,
         eval_temperature=args.eval_temperature,
         eval_opening_depth=tier_or_override("eval_opening_depth"),
+        seed=args.seed,
     )
 
 
@@ -401,6 +414,7 @@ def main() -> int:
     device = torch.device(args.device)
     cache_path = resolve_cache_path(args.cache, run_dir, args.run_local_cache)
 
+    seed_everything(config.seed)
     gen = train_self_play_only(run_dir, config, device)
     games = generate_eval_games(run_dir, gen, config, device)
     metric = score_alignment(games, str(solver), str(book), cache_path)
