@@ -62,7 +62,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--n-residual-blocks", type=int, default=1)
     parser.add_argument("--conv-filter-size", type=int, default=16)
     parser.add_argument("--n-policy-layers", type=int, default=1)
-    parser.add_argument("--n-value-layers", type=int, default=2)
+    parser.add_argument("--n-value-layers", type=int, default=1)
     parser.add_argument("--learning-rate", type=float, default=5e-4)
     parser.add_argument("--l2-reg", type=float, default=0.0)
     parser.add_argument("--eval-game-id-offset", type=int, default=1_000_000)
