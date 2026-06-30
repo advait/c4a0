@@ -63,7 +63,7 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         description="Fast local sanity check; not a convergence signal.",
     ),
     "dev": BenchmarkTier(
-        train_gens=5,
+        train_gens=2,
         train_games=512,
         train_mcts=128,
         eval_games=2_048,
