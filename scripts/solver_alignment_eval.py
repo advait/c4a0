@@ -36,6 +36,7 @@ class BenchmarkTier:
     eval_mcts: int
     self_play_batch_size: int
     training_batch_size: int
+    replay_window: int
     description: str
 
 
@@ -48,6 +49,7 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         eval_mcts=32,
         self_play_batch_size=64,
         training_batch_size=64,
+        replay_window=1,
         description="Fast local sanity check; not a convergence signal.",
     ),
     "dev": BenchmarkTier(
@@ -58,6 +60,7 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         eval_mcts=128,
         self_play_batch_size=256,
         training_batch_size=256,
+        replay_window=1,
         description="Moderate iteration signal for candidate development.",
     ),
     "candidate": BenchmarkTier(
@@ -68,6 +71,7 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         eval_mcts=384,
         self_play_batch_size=512,
         training_batch_size=512,
+        replay_window=1,
         description="Primary autoresearch acceptance tier with thousands of games.",
     ),
     "gate": BenchmarkTier(
@@ -78,6 +82,7 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         eval_mcts=800,
         self_play_batch_size=1_024,
         training_batch_size=1_024,
+        replay_window=1,
         description="Expensive stability gate before treating a change as durable.",
     ),
     "long": BenchmarkTier(
@@ -88,6 +93,7 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         eval_mcts=1_600,
         self_play_batch_size=2_048,
         training_batch_size=2_048,
+        replay_window=1,
         description="Long-run convergence tier; intended for overnight/multi-day runs.",
     ),
 }
@@ -103,6 +109,7 @@ class EvalConfig:
     eval_mcts: int
     self_play_batch_size: int
     training_batch_size: int
+    replay_window: int
     c_exploration: float
     c_ply_penalty: float
     n_residual_blocks: int
@@ -145,6 +152,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-mcts", type=int, default=None)
     parser.add_argument("--self-play-batch-size", type=int, default=None)
     parser.add_argument("--training-batch-size", type=int, default=None)
+    parser.add_argument("--replay-window", type=int, default=None)
     parser.add_argument("--c-exploration", type=float, default=6.6)
     parser.add_argument("--c-ply-penalty", type=float, default=0.0)
     parser.add_argument("--n-residual-blocks", type=int, default=1)
@@ -211,6 +219,7 @@ def train_self_play_only(
         self_play_batch_size=config.self_play_batch_size,
         training_batch_size=config.training_batch_size,
         model_config=model_config(config),
+        replay_window=config.replay_window,
         max_gens=config.train_gens,
         solver_config=None,
     )
@@ -283,6 +292,7 @@ def build_config(args: argparse.Namespace) -> EvalConfig:
         eval_mcts=tier_or_override("eval_mcts"),
         self_play_batch_size=tier_or_override("self_play_batch_size"),
         training_batch_size=tier_or_override("training_batch_size"),
+        replay_window=tier_or_override("replay_window"),
         c_exploration=args.c_exploration,
         c_ply_penalty=args.c_ply_penalty,
         n_residual_blocks=args.n_residual_blocks,

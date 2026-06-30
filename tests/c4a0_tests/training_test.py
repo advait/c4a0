@@ -80,3 +80,36 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(tmp_path):
     with open(gen.gen_folder(str(tmp_path)) + "/model.pkl", "rb") as f:
         pickled_model = pickle.load(f)
     assert _sum_abs_model_diff(saved_model, pickled_model) == pytest.approx(0.0)
+
+
+def test_training_loop_can_train_from_recent_self_play_replay(tmp_path):
+    model_config = ModelConfig(
+        n_residual_blocks=1,
+        conv_filter_size=8,
+        n_policy_layers=1,
+        n_value_layers=1,
+        lr_schedule=parse_lr_schedule([0, 1e-3]),
+        l2_reg=0.0,
+    )
+
+    gen = training_loop(
+        base_dir=str(tmp_path),
+        device=torch.device("cpu"),
+        n_self_play_games=4,
+        n_mcts_iterations=4,
+        c_exploration=6.6,
+        c_ply_penalty=0.01,
+        self_play_batch_size=16,
+        training_batch_size=10_000,
+        model_config=model_config,
+        max_gens=2,
+        replay_window=2,
+    )
+
+    games = gen.get_games(str(tmp_path))
+    assert games is not None
+    assert len(games.results) == 4
+    assert gen.replay_window == 2
+    assert gen.replay_generations == 1
+    assert gen.replay_game_count == 8
+    assert gen.replay_sample_count > games.sample_count()

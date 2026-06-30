@@ -37,6 +37,10 @@ class TrainingGen(BaseModel):
     parent: Optional[datetime] = None
     val_loss: Optional[float] = None
     solver_score: Optional[float] = None
+    replay_window: int = 1
+    replay_generations: int = 0
+    replay_game_count: int = 0
+    replay_sample_count: int = 0
 
     @staticmethod
     def _gen_folder(created_at: datetime, base_dir: str) -> str:
@@ -152,6 +156,30 @@ class SolverConfig(BaseModel):
     solutions_path: str
 
 
+def build_replay_games(
+    base_dir: str,
+    current_games: PlayGamesResult,
+    replay_window: int,
+) -> tuple[PlayGamesResult, int]:
+    """Combine current self-play with recent self-play-only historical games."""
+    if replay_window <= 1:
+        return current_games, 0
+
+    replay_games = current_games
+    historical_generations = 0
+    for gen in TrainingGen.load_all(base_dir):
+        if gen.gen_n == 0:
+            continue
+        historical_games = gen.get_games(base_dir)
+        if historical_games is None:
+            continue
+        replay_games = replay_games + historical_games
+        historical_generations += 1
+        if historical_generations >= replay_window - 1:
+            break
+    return replay_games, historical_generations
+
+
 def train_single_gen(
     base_dir: str,
     device: torch.device,
@@ -163,6 +191,7 @@ def train_single_gen(
     self_play_batch_size: int,
     training_batch_size: int,
     solver_config: Optional[SolverConfig] = None,
+    replay_window: int = 1,
 ) -> TrainingGen:
     """
     Trains a new generation from the given parent.
@@ -204,7 +233,17 @@ def train_single_gen(
     # Training
     logger.info("Beginning training")
     model = copy.deepcopy(model)
-    train, test = games.split_train_test(0.8, 1337)  # type: ignore
+    replay_games, replay_generations = build_replay_games(
+        base_dir, games, replay_window
+    )
+    logger.info(
+        "Using replay window {} with {} historical generations, {} games, {} samples",
+        replay_window,
+        replay_generations,
+        len(replay_games.results),
+        replay_games.sample_count(),
+    )
+    train, test = replay_games.split_train_test(0.8, 1337)  # type: ignore
     data_module = SampleDataModule(train, test, training_batch_size)
     best_model_cb = BestModelCheckpoint(monitor="val_loss", mode="min")
     trainer = pl.Trainer(
@@ -234,6 +273,10 @@ def train_single_gen(
         parent=parent.created_at,
         val_loss=best_model_cb.best_score,
         solver_score=solver_score,
+        replay_window=replay_window,
+        replay_generations=replay_generations,
+        replay_game_count=len(replay_games.results),
+        replay_sample_count=replay_games.sample_count(),
     )
     gen.save_all(base_dir, games, best_model)
     return gen
@@ -251,6 +294,7 @@ def training_loop(
     model_config: ModelConfig,
     max_gens: Optional[int] = None,
     solver_config: Optional[SolverConfig] = None,
+    replay_window: int = 1,
 ) -> TrainingGen:
     """Main training loop. Sequentially trains generation after generation."""
     logger.info("Beginning training loop")
@@ -266,6 +310,7 @@ def training_loop(
     logger.info(
         "solver_config: {}", solver_config and solver_config.model_dump_json(indent=2)
     )
+    logger.info("replay_window: {}", replay_window)
 
     gen = TrainingGen.load_latest_with_default(
         base_dir=base_dir,
@@ -289,6 +334,7 @@ def training_loop(
             self_play_batch_size=self_play_batch_size,
             training_batch_size=training_batch_size,
             solver_config=solver_config,
+            replay_window=replay_window,
         )
         if max_gens is not None and gen.gen_n >= max_gens:
             return gen

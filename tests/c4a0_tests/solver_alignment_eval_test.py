@@ -33,6 +33,7 @@ def test_solver_alignment_training_is_self_play_only(monkeypatch, tmp_path):
         eval_mcts=4,
         self_play_batch_size=8,
         training_batch_size=8,
+        replay_window=1,
         c_exploration=6.6,
         c_ply_penalty=0.01,
         n_residual_blocks=1,
@@ -54,6 +55,7 @@ def test_solver_alignment_training_is_self_play_only(monkeypatch, tmp_path):
     assert captured["solver_config"] is None
     assert captured["max_gens"] == config.train_gens
     assert captured["n_self_play_games"] == config.train_games
+    assert captured["replay_window"] == config.replay_window
 
 
 def test_benchmark_tier_defaults_and_overrides():
@@ -66,6 +68,7 @@ def test_benchmark_tier_defaults_and_overrides():
         eval_mcts=456,
         self_play_batch_size=None,
         training_batch_size=None,
+        replay_window=None,
         c_exploration=6.6,
         c_ply_penalty=0.0,
         n_residual_blocks=1,
@@ -84,6 +87,7 @@ def test_benchmark_tier_defaults_and_overrides():
     assert config.train_gens == tier.train_gens
     assert config.train_games == 123
     assert config.train_mcts == tier.train_mcts
+    assert config.replay_window == tier.replay_window
     assert config.eval_games == tier.eval_games
     assert config.eval_mcts == 456
     assert config.eval_games >= 10_000
