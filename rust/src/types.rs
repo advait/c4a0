@@ -146,6 +146,11 @@ impl Sample {
         (pos, policy, q_penalty, q_no_penalty)
     }
 
+    /// Whether this sample's position is terminal.
+    pub fn is_terminal(&self) -> bool {
+        self.pos.is_terminal_state().is_some()
+    }
+
     /// String representation of the position.
     pub fn pos_str(&self) -> String {
         self.pos.to_string()

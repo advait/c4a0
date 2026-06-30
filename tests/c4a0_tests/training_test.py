@@ -17,14 +17,16 @@ def _manual_loss(model, samples):
     policy_target = torch.stack([sample[1] for sample in samples])
     q_penalty_target = torch.stack([sample[2] for sample in samples])
     q_no_penalty_target = torch.stack([sample[3] for sample in samples])
+    policy_weight = torch.stack([sample[4] for sample in samples])
     model.eval()
     with torch.no_grad():
         policy_logprob, q_penalty_pred, q_no_penalty_pred = model(pos)
+        per_sample_policy_loss = (
+            policy_target * (torch.log(policy_target + model.EPS) - policy_logprob)
+        ).sum(dim=1)
         policy_loss = (
-            (policy_target * (torch.log(policy_target + model.EPS) - policy_logprob))
-            .sum(dim=1)
-            .mean()
-        )
+            per_sample_policy_loss * policy_weight
+        ).sum() / policy_weight.sum().clamp_min(1.0)
         q_penalty_loss = ((q_penalty_pred - q_penalty_target) ** 2).mean()
         q_no_penalty_loss = ((q_no_penalty_pred - q_no_penalty_target) ** 2).mean()
     return (policy_loss + q_penalty_loss + q_no_penalty_loss).item()
@@ -69,6 +71,21 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(tmp_path):
 
     games = gen.get_games(str(tmp_path))
     assert games is not None
+    terminal_sample = next(
+        sample
+        for result in games.results
+        for sample in result.samples
+        if sample.is_terminal()
+    )
+    nonterminal_sample = next(
+        sample
+        for result in games.results
+        for sample in result.samples
+        if not sample.is_terminal()
+    )
+    assert SampleDataModule.sample_to_tensor(terminal_sample)[4].item() == 0.0
+    assert SampleDataModule.sample_to_tensor(nonterminal_sample)[4].item() == 1.0
+
     train, validation = games.split_train_test(0.8, 1337)
     data_module = SampleDataModule(list(train), list(validation), 10_000)
 
