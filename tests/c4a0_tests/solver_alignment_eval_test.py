@@ -123,6 +123,27 @@ def test_benchmark_tier_defaults_and_overrides():
     assert config.selection_eval_mcts == tier.selection_eval_mcts
 
 
+def test_link_existing_training_dir_loads_latest_generation(monkeypatch, tmp_path):
+    source = tmp_path / "source-training"
+    source.mkdir()
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+
+    generations = [SimpleNamespace(gen_n=1), SimpleNamespace(gen_n=3)]
+
+    def fake_load_all(path):
+        assert Path(path) == run_dir / "training"
+        return generations
+
+    monkeypatch.setattr(solver_alignment_eval.TrainingGen, "load_all", fake_load_all)
+
+    gen = solver_alignment_eval.link_existing_training_dir(run_dir, str(source))
+
+    assert gen.gen_n == 3
+    assert (run_dir / "training").is_symlink()
+    assert (run_dir / "training").resolve() == source.resolve()
+
+
 def test_score_alignment_dispatches_to_configured_scope():
     class FakeGames:
         def __init__(self):

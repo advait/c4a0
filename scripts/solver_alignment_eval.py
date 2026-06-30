@@ -172,6 +172,11 @@ def parse_args() -> argparse.Namespace:
         help="Resolve a relative --cache under this eval run directory instead of repo cwd.",
     )
     parser.add_argument("--output-dir", default="autoresearch/eval-runs")
+    parser.add_argument(
+        "--training-dir",
+        default=None,
+        help="Existing training directory to re-score without retraining.",
+    )
     parser.add_argument("--device", default="cpu")
     parser.add_argument(
         "--tier",
@@ -300,6 +305,19 @@ def train_self_play_only(
         max_gens=config.train_gens,
         solver_config=None,
     )
+
+
+def link_existing_training_dir(run_dir: Path, training_dir: str) -> TrainingGen:
+    """Reuse an existing self-play training directory for eval-only rescoring."""
+    source = Path(training_dir).resolve()
+    if not source.exists() or not source.is_dir():
+        raise FileNotFoundError(f"training dir not found: {source}")
+    target = run_dir / "training"
+    target.symlink_to(source, target_is_directory=True)
+    generations = [gen for gen in TrainingGen.load_all(str(target)) if gen.gen_n > 0]
+    if not generations:
+        raise ValueError(f"training dir has no trained generations: {source}")
+    return max(generations, key=lambda gen: gen.gen_n)
 
 
 def eval_opening_moves(game_index: int, depth: int) -> list[int]:
@@ -503,6 +521,7 @@ def write_metrics(
     argv: list[str],
     trained_final_gen: TrainingGen | None = None,
     selection_rows: list[dict[str, float | int | str]] | None = None,
+    source_training_dir: str | None = None,
 ) -> None:
     nonterminal_samples = games.nonterminal_sample_count()
     scored_samples = scored_sample_count(games, config)
@@ -535,6 +554,7 @@ def write_metrics(
             else "all_nonterminal_positions"
         ),
         "training_dir": str(run_dir / "training"),
+        "source_training_dir": source_training_dir,
         "git_commit": git_commit(),
         "argv": argv,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -561,7 +581,12 @@ def main() -> int:
     cache_path = resolve_cache_path(args.cache, run_dir, args.run_local_cache)
 
     seed_everything(config.seed)
-    trained_final_gen = train_self_play_only(run_dir, config, device)
+    source_training_dir = None
+    if args.training_dir is None:
+        trained_final_gen = train_self_play_only(run_dir, config, device)
+    else:
+        source_training_dir = str(Path(args.training_dir).resolve())
+        trained_final_gen = link_existing_training_dir(run_dir, args.training_dir)
     if config.select_best_generation_by_solver:
         gen, selection_rows = select_best_generation_by_solver(
             run_dir,
@@ -595,6 +620,7 @@ def main() -> int:
         sys.argv[1:],
         trained_final_gen=trained_final_gen,
         selection_rows=selection_rows,
+        source_training_dir=source_training_dir,
     )
 
     print(f"{metric:.8f}")
