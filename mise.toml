@@ -110,3 +110,30 @@ uv run python src/c4a0/main.py train \
   --l2-reg 0 \
   --max-gens 1
 '''
+
+[tasks."solver:setup"]
+description = "Fetch and build Pascal Pons Connect Four solver and opening book for evaluation-only metrics"
+run = '''
+set -eu
+mkdir -p solver
+if [ ! -d solver/connect4/.git ]; then
+  git clone https://github.com/PascalPons/connect4.git solver/connect4
+fi
+git -C solver/connect4 fetch --depth 1 origin master
+git -C solver/connect4 checkout --quiet origin/master
+make -C solver/connect4
+ln -sf connect4/c4solver solver/c4solver
+if [ ! -f solver/7x6.book ]; then
+  curl -L --fail --output solver/7x6.book https://github.com/PascalPons/connect4/releases/download/book/7x6.book
+fi
+'''
+outputs = ["solver/c4solver", "solver/7x6.book"]
+
+[tasks."solver:check"]
+description = "Verify the local Pascal Pons solver and opening book are available"
+run = '''
+set -eu
+test -x solver/c4solver
+test -f solver/7x6.book
+printf '4444\n' | solver/c4solver -b solver/7x6.book -a >/dev/null
+'''

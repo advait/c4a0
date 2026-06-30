@@ -13,6 +13,7 @@ lightning_logs/
 training/
 training-sweeps/
 solver/
+autoresearch/
 
 *.bak
 *.db
