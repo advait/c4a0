@@ -357,13 +357,21 @@ impl Node {
     /// The exploitation component of the UCT value (i.e. the average win rate) with a penalty
     /// applied for additional plys to discourage longer sequences.
     fn q_with_penalty(&self) -> QValue {
-        self.q_sum_penalty / ((self.visit_count as f32) + 1.0)
+        if self.visit_count == 0 {
+            0.0
+        } else {
+            self.q_sum_penalty / self.visit_count as f32
+        }
     }
 
     /// The exploitation component of the UCT value (i.e. the average win rate) without any
     /// ply penalty.
     fn q_no_penalty(&self) -> QValue {
-        self.q_sum_no_penalty / ((self.visit_count as f32) + 1.0)
+        if self.visit_count == 0 {
+            0.0
+        } else {
+            self.q_sum_no_penalty / self.visit_count as f32
+        }
     }
 
     /// The exploration component of the UCT value. Higher visit counts result in lower values.
