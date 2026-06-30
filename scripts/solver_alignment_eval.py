@@ -40,6 +40,9 @@ class BenchmarkTier:
     training_batch_size: int
     replay_window: int
     eval_opening_depth: int
+    select_best_generation_by_solver: bool
+    selection_eval_games: int
+    selection_eval_mcts: int
     description: str
 
 
@@ -54,6 +57,9 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         training_batch_size=64,
         replay_window=1,
         eval_opening_depth=2,
+        select_best_generation_by_solver=False,
+        selection_eval_games=16,
+        selection_eval_mcts=16,
         description="Fast local sanity check; not a convergence signal.",
     ),
     "dev": BenchmarkTier(
@@ -66,6 +72,9 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         training_batch_size=256,
         replay_window=1,
         eval_opening_depth=6,
+        select_best_generation_by_solver=True,
+        selection_eval_games=512,
+        selection_eval_mcts=128,
         description="Moderate iteration signal for candidate development.",
     ),
     "candidate": BenchmarkTier(
@@ -78,6 +87,9 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         training_batch_size=512,
         replay_window=1,
         eval_opening_depth=6,
+        select_best_generation_by_solver=True,
+        selection_eval_games=2_048,
+        selection_eval_mcts=256,
         description="Primary autoresearch acceptance tier with thousands of games.",
     ),
     "gate": BenchmarkTier(
@@ -90,6 +102,9 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         training_batch_size=1_024,
         replay_window=1,
         eval_opening_depth=6,
+        select_best_generation_by_solver=True,
+        selection_eval_games=5_000,
+        selection_eval_mcts=512,
         description="Expensive stability gate before treating a change as durable.",
     ),
     "long": BenchmarkTier(
@@ -102,6 +117,9 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         training_batch_size=2_048,
         replay_window=1,
         eval_opening_depth=6,
+        select_best_generation_by_solver=True,
+        selection_eval_games=10_000,
+        selection_eval_mcts=800,
         description="Long-run convergence tier; intended for overnight/multi-day runs.",
     ),
 }
@@ -189,9 +207,14 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Use deterministic legal opening prefixes of this depth for eval games only (0-6).",
     )
-    parser.add_argument("--select-best-generation-by-solver", action="store_true")
-    parser.add_argument("--selection-eval-games", type=int, default=512)
-    parser.add_argument("--selection-eval-mcts", type=int, default=128)
+    parser.add_argument(
+        "--select-best-generation-by-solver",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Use solver-eval-only champion selection after training.",
+    )
+    parser.add_argument("--selection-eval-games", type=int, default=None)
+    parser.add_argument("--selection-eval-mcts", type=int, default=None)
     return parser.parse_args()
 
 
@@ -403,9 +426,13 @@ def build_config(args: argparse.Namespace) -> EvalConfig:
         eval_temperature=args.eval_temperature,
         eval_opening_depth=tier_or_override("eval_opening_depth"),
         seed=args.seed,
-        select_best_generation_by_solver=args.select_best_generation_by_solver,
-        selection_eval_games=args.selection_eval_games,
-        selection_eval_mcts=args.selection_eval_mcts,
+        select_best_generation_by_solver=(
+            tier.select_best_generation_by_solver
+            if args.select_best_generation_by_solver is None
+            else args.select_best_generation_by_solver
+        ),
+        selection_eval_games=tier_or_override("selection_eval_games"),
+        selection_eval_mcts=tier_or_override("selection_eval_mcts"),
     )
 
 

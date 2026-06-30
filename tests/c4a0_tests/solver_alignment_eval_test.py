@@ -87,9 +87,9 @@ def test_benchmark_tier_defaults_and_overrides():
         eval_temperature=0.0,
         eval_opening_depth=None,
         seed=2026,
-        select_best_generation_by_solver=True,
-        selection_eval_games=512,
-        selection_eval_mcts=128,
+        select_best_generation_by_solver=None,
+        selection_eval_games=None,
+        selection_eval_mcts=None,
     )
 
     config = solver_alignment_eval.build_config(args)
@@ -107,8 +107,8 @@ def test_benchmark_tier_defaults_and_overrides():
     assert config.eval_opening_depth == 6
     assert config.seed == 2026
     assert config.select_best_generation_by_solver is True
-    assert config.selection_eval_games == 512
-    assert config.selection_eval_mcts == 128
+    assert config.selection_eval_games == tier.selection_eval_games
+    assert config.selection_eval_mcts == tier.selection_eval_mcts
 
 
 def test_eval_opening_moves_are_legal_and_deterministic():
