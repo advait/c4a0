@@ -37,6 +37,7 @@ class BenchmarkTier:
     self_play_batch_size: int
     training_batch_size: int
     replay_window: int
+    eval_opening_depth: int
     description: str
 
 
@@ -50,6 +51,7 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         self_play_batch_size=64,
         training_batch_size=64,
         replay_window=1,
+        eval_opening_depth=2,
         description="Fast local sanity check; not a convergence signal.",
     ),
     "dev": BenchmarkTier(
@@ -61,6 +63,7 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         self_play_batch_size=256,
         training_batch_size=256,
         replay_window=1,
+        eval_opening_depth=6,
         description="Moderate iteration signal for candidate development.",
     ),
     "candidate": BenchmarkTier(
@@ -72,6 +75,7 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         self_play_batch_size=512,
         training_batch_size=512,
         replay_window=1,
+        eval_opening_depth=6,
         description="Primary autoresearch acceptance tier with thousands of games.",
     ),
     "gate": BenchmarkTier(
@@ -83,6 +87,7 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         self_play_batch_size=1_024,
         training_batch_size=1_024,
         replay_window=1,
+        eval_opening_depth=6,
         description="Expensive stability gate before treating a change as durable.",
     ),
     "long": BenchmarkTier(
@@ -94,6 +99,7 @@ BENCHMARK_TIERS: dict[str, BenchmarkTier] = {
         self_play_batch_size=2_048,
         training_batch_size=2_048,
         replay_window=1,
+        eval_opening_depth=6,
         description="Long-run convergence tier; intended for overnight/multi-day runs.",
     ),
 }
@@ -173,7 +179,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--eval-opening-depth",
         type=int,
-        default=0,
+        default=None,
         help="Use deterministic legal opening prefixes of this depth for eval games only (0-6).",
     )
     return parser.parse_args()
@@ -334,7 +340,7 @@ def build_config(args: argparse.Namespace) -> EvalConfig:
         l2_reg=args.l2_reg,
         eval_game_id_offset=args.eval_game_id_offset,
         eval_temperature=args.eval_temperature,
-        eval_opening_depth=args.eval_opening_depth,
+        eval_opening_depth=tier_or_override("eval_opening_depth"),
     )
 
 
