@@ -19,14 +19,14 @@ impl<E: EvalPosT + Send + Sync + 'static> InteractivePlay<E> {
         eval_pos: E,
         max_mcts_iterations: usize,
         c_exploration: f32,
-        c_ply_penalty: f32,
+        c_ply_discount: f32,
     ) -> Self {
         Self::new_from_pos(
             Pos::default(),
             eval_pos,
             max_mcts_iterations,
             c_exploration,
-            c_ply_penalty,
+            c_ply_discount,
         )
     }
 
@@ -35,14 +35,14 @@ impl<E: EvalPosT + Send + Sync + 'static> InteractivePlay<E> {
         eval_pos: E,
         max_mcts_iterations: usize,
         c_exploration: f32,
-        c_ply_penalty: f32,
+        c_ply_discount: f32,
     ) -> Self {
         let state = State {
             eval_pos,
             game: MctsGame::new_from_pos(pos, GameMetadata::default()),
             max_mcts_iterations,
             c_exploration,
-            c_ply_penalty,
+            c_ply_discount,
             bg_thread_running: false,
         };
 
@@ -137,7 +137,7 @@ struct State<E: EvalPosT> {
     game: MctsGame,
     max_mcts_iterations: usize,
     c_exploration: f32,
-    c_ply_penalty: f32,
+    c_ply_discount: f32,
     bg_thread_running: bool,
 }
 
@@ -208,7 +208,7 @@ impl<E: EvalPosT> State<E> {
             eval.q_penalty,
             eval.q_no_penalty,
             self.c_exploration,
-            self.c_ply_penalty,
+            self.c_ply_discount,
         );
 
         let snapshot = self.snapshot();
@@ -232,7 +232,7 @@ pub struct Snapshot {
     pub n_mcts_iterations: usize,
     pub max_mcts_iterations: usize,
     pub c_exploration: f32,
-    pub c_ply_penalty: f32,
+    pub c_ply_discount: f32,
     pub bg_thread_running: bool,
 }
 
@@ -245,7 +245,7 @@ mod tests {
     use super::{InteractivePlay, Snapshot};
 
     const TEST_C_EXPLORATION: f32 = 4.0;
-    const TEST_C_PLY_PENALTY: f32 = 0.01;
+    const TEST_C_PLY_DISCOUNT: f32 = 0.99;
 
     impl InteractivePlay<UniformEvalPos> {
         fn new_test(pos: Pos, max_mcts_iters: usize) -> InteractivePlay<UniformEvalPos> {
@@ -254,7 +254,7 @@ mod tests {
                 UniformEvalPos {},
                 max_mcts_iters,
                 TEST_C_EXPLORATION,
-                TEST_C_PLY_PENALTY,
+                TEST_C_PLY_DISCOUNT,
             )
         }
 
