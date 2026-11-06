@@ -20,4 +20,3 @@ solver/
 *.pkl
 
 skills-lock.json
-.agents/
