@@ -189,12 +189,6 @@ class TrainingGen(BaseModel):
             return model
 
 
-class SolverConfig(BaseModel):
-    solver_path: str
-    book_path: str
-    solutions_path: str
-
-
 def train_single_gen(
     base_dir: str,
     device: torch.device,
@@ -206,7 +200,6 @@ def train_single_gen(
     self_play_batch_size: int,
     training_batch_size: int,
     eval_config: EvalConfig,
-    solver_config: Optional[SolverConfig] = None,
 ) -> TrainingGen:
     """
     Trains a new generation from the given parent.
@@ -231,19 +224,6 @@ def train_single_gen(
         c_ply_penalty,
         lambda player_id, pos: model.forward_numpy(pos),  # type: ignore
     )
-
-    # Optionally judge generated policies against solver
-    if solver_config is not None:
-        logger.info("Scoring policies against solver")
-        solver_score = games.score_policies(
-            solver_config.solver_path,
-            solver_config.book_path,
-            solver_config.solutions_path,
-        )
-        logger.info("Solver score: {}", solver_score)
-    else:
-        logger.info("Skipping scoring against solver")
-        solver_score = None
 
     # Training
     logger.info("Beginning training")
@@ -277,7 +257,6 @@ def train_single_gen(
         training_batch_size=training_batch_size,
         parent=parent.created_at,
         val_loss=best_model_cb.best_score,
-        solver_score=solver_score,
     )
     gen.publish(base_dir, games, best_model, eval_config)
     return gen
@@ -295,7 +274,6 @@ def training_loop(
     model_config: ModelConfig,
     max_gens: Optional[int] = None,
     eval_config: Optional[EvalConfig] = None,
-    solver_config: Optional[SolverConfig] = None,
 ) -> TrainingGen:
     """Main training loop. Sequentially trains generation after generation. Each generation's
     saved model is scored on `eval_config` (default: raw network on the v1 dev suite)."""
@@ -314,9 +292,6 @@ def training_loop(
         "eval: {} with MCTS budgets {}",
         eval_config.suite.name,
         eval_config.mcts_iterations,
-    )
-    logger.info(
-        "solver_config: {}", solver_config and solver_config.model_dump_json(indent=2)
     )
 
     gen = TrainingGen.load_latest_with_default(
@@ -342,7 +317,6 @@ def training_loop(
             self_play_batch_size=self_play_batch_size,
             training_batch_size=training_batch_size,
             eval_config=eval_config,
-            solver_config=solver_config,
         )
         if max_gens is not None and gen.gen_n >= max_gens:
             return gen

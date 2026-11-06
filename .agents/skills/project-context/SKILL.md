@@ -8,7 +8,8 @@ description: "Read before the first decision on c4a0: who uses it, what is one-w
 Status: implemented
 
 **What it is.** An AlphaZero-style Connect Four engine. Rust (`rust/src`) holds the rules,
-MCTS, multi-threaded self-play, the Pascal Pons solver interface and the TUI. Python
+MCTS, multi-threaded self-play, position sampling and splits, the Pascal Pons solver interface
+and the TUI. Python
 (`src/c4a0`) holds the PyTorch Lightning network, the generation loop and the CLI
 (`src/c4a0/main.py`). PyO3 joins them (`rust/src/pybridge.rs`, stubs in
 `src/c4a0_rust/__init__.pyi`).
@@ -29,8 +30,9 @@ with tests.
   directory holds `metadata.json` (parsed by `TrainingGen` in `src/c4a0/training.py`),
   `model.pkl` and `games.pkl`. Renaming or reinterpreting a `TrainingGen` field breaks
   loading or silently changes meaning for existing runs. Pickles break on class changes.
-- The solver cache `solutions.db` (RocksDB) holds one process's lock. Never share one
-  between concurrent runs.
+- `metadata.json` `evals` are keyed by suite name (`v1/dev`) and carry `suite_sha256`. The
+  suite files under `src/c4a0/suite/v1/` and the split salt in `rust/src/labels.rs` are
+  one-way: changing either makes old `evals` incomparable, so add a `v2` suite instead.
 - The PyO3 API is internal to this repo, so it may change freely as long as the `.pyi`
   stubs and every Python caller change in the same commit.
 
@@ -42,10 +44,9 @@ container is the isolation boundary.
 container, and the run will read nothing. Read-only work is a brief instruction, not a
 sandbox flag.
 
-**Task runner.** mise (`mise.toml`). On a fresh container run `mise run bootstrap` once, which
-installs libclang if the system lacks it. Canonical tasks: `install`, `build`, `lint`,
-`typecheck`, `test:rust`, `test:python`, `check`, `train:smoke`, `ci`. See the **verify**
-skill for which to run when.
+**Task runner.** mise (`mise.toml`). Canonical tasks: `install`, `build`, `lint`,
+`typecheck`, `test:rust`, `test:python`, `check`, `train:smoke`, `ci`, and `suite:build`
+(needs the solver). See the **verify** skill for which to run when.
 
 **Follow-ups.** GitHub issues on `advait/c4a0`, or list them in the reply. The old
 `docs/improvements.md` backlog was deliberately removed. Do not recreate it.

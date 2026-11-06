@@ -12,7 +12,7 @@ mise.*.local.toml
 lightning_logs/
 training/
 training-sweeps/
-solver/
+/solver
 
 *.bak
 *.db

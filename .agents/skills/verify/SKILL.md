@@ -20,6 +20,11 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   The first run after a source change rebuilds the extension (about 2 minutes).
 - A single Python file runs with `uv run pytest -q tests/c4a0_tests/<file>_test.py`, in
   about 1 to 13 s.
+- Raw-network dev eval of a default model (2447 positions, suite load through `SuiteEval`)
+  took a median 0.15 s (0.148 to 0.166 s, 3 runs, load average 5, 16 torch threads); the
+  forward pass is about 0.08 s of it. MCTS-64 on the dev suite took 1.7 s (one run).
+- Solver-gated tests (golden rows, suite rebuild) run when `solver/c4solver` and
+  `solver/7x6.book` exist and skip otherwise.
 
 ## Lane 2: end to end (seconds to minutes)
 
@@ -35,17 +40,20 @@ Run it only when the task is to measure a change's effect on convergence, or the
 Its question is how the share of solver-optimal moves changes across generations.
 
 Requirements before a convergence number counts:
-1. **Solver.** Pascal Pons's solver built in `solver/` (gitignored) with `7x6.book`, per
-   the README. Pass `--solver-path` and `--book-path`, and give each run its own
-   `--solutions-path`.
-2. **A metric that measures the right thing.** On master, a generation's `solver_score` is
-   computed from its *parent's* self-play games (`src/c4a0/training.py`, scored before
-   training). It gives 0.5 credit to slower wins and breaks ties by lowest column
-   (`rust/src/solver.rs` `score_policy`). Until that is fixed, report it only as "parent
-   self-play policy score". The target metric is the trained model's strict top-1
-   agreement with solver-best moves (ties split evenly), on a fixed held-out position suite
-   that spans plies, both players and all columns. Report the raw network and MCTS
-   separately.
+1. **The metric.** Every published generation's `metadata.json` holds
+   `evals["v1/dev"]` (`SuiteEval` in `src/c4a0/evaluation.py`): the saved child model's top-1
+   agreement with solver-best moves on the committed dev suite (`src/c4a0/suite/v1/`), ties
+   split evenly, slower wins count as misses, full columns masked, trivial rows excluded,
+   tallied per ply bucket. Raw network and value are always recorded. Add MCTS budgets with
+   `train --eval-mcts-iterations 64`, or afterwards with `main.py eval --base-dir <run>
+   --mcts-iterations 64`. No solver is needed. Report raw and MCTS separately, and read the
+   buckets: on a fresh random net MCTS-64 scores 0.33 at plies 0-5 but 0.99 at plies 36-41
+   (search nearly solves late tactics), so the aggregate hides the opening. Legacy
+   `solver_score` (parent self-play, half credit for slower wins) is never written now; do not
+   compare it with `evals`. Keep the test suite for a final number, not for selection.
+2. **Ceiling.** `main.py label` then `main.py ceiling` (see `docs/development.md`) shows what
+   the architecture reaches with solver labels directly. Needs Pascal Pons's solver built in
+   `solver/` with `7x6.book`, per the README.
 3. **Variance.** Use at least 3 seeds per arm. A single run is an anecdote. The README's
    9-generation result is one.
 4. **Scale.** On CPU, self-play scales roughly with games × MCTS iterations (inferred from

@@ -2,18 +2,17 @@
 
 This project has two main parts:
 
-- `rust/`: Connect Four rules, MCTS, self-play, solver interface, and TUI exposed to Python through PyO3.
+- `rust/`: Connect Four rules, MCTS, self-play, position sampling, solver interface, and TUI exposed to Python through PyO3.
 - `src/c4a0/`: PyTorch/PyTorch Lightning model, training loop, sweeps, and CLI commands.
 
 The CLI entrypoint is `src/c4a0/main.py`.
 
 ## Tooling model
 
-Use [`mise`](https://mise.jdx.dev/) as the project entrypoint. `mise.toml` pins and bootstraps the required tools:
+Use [`mise`](https://mise.jdx.dev/) as the project entrypoint. `mise.toml` pins the required tools:
 
 - `uv` for Python dependency management
 - Rust stable, including `cargo`
-- `libclang` for Rust crates that use bindgen, including RocksDB bindings
 
 Install mise once, then from the repo root run:
 
@@ -21,10 +20,6 @@ Install mise once, then from the repo root run:
 mise trust
 mise install
 ```
-
-`mise.toml` sets `LIBCLANG_PATH`/`LD_LIBRARY_PATH` using `scripts/find-libclang.py`. GitHub runners normally provide `/usr/lib/llvm-*/lib/libclang.so`; local machines can use a system LLVM/libclang or an existing mise LLVM install.
-
-On a machine with no libclang at all (such as the dev container, which has no `sudo`), run `mise run bootstrap` once. It installs the `libclang` wheel into `.mise/libclang`, which `scripts/find-libclang.py` then finds. The wheel has no clang resource headers, so the script falls back to GCC's for `stdbool.h`.
 
 ## Common tasks
 
@@ -91,7 +86,10 @@ Current commands:
 
 - `train`: train via self-play
 - `play`: open the terminal UI and play against a model/random/uniform player
-- `score`: score generated policies with an external Connect Four solver
+- `eval`: score every published generation's model on a solver suite (backfill, MCTS budgets)
+- `build-suite`: rebuild the committed v1 dev/test suites (needs the solver)
+- `label`: sample and solver-label positions in a split (train by default)
+- `ceiling`: supervised ceiling, training the network directly on solver labels
 - `nn-sweep`: Optuna sweep over NN hyperparameters using existing training data
 - `mcts-sweep`: Optuna sweep over self-play/MCTS hyperparameters
 
@@ -130,7 +128,7 @@ Verified smoke runs in this environment:
 - generated a generation 0 root model and a generation 1 trained model
 - produced self-play samples and unique-position counts in the training metadata/artifacts
 - saved `metadata.json`, `games.pkl`, and `model.pkl` for each generation
-- left `solver_score` as `null` because no external solver was configured
+- recorded `evals["v1/dev"]` (raw network on the committed dev suite) for both generations
 
 Training artifacts are stored as timestamped generation directories:
 
@@ -154,7 +152,7 @@ base = "training/ci-smoke"
 for gen in reversed(TrainingGen.load_all(base)):
     games = gen.get_games(base)
     if games is None:
-        print(f"gen={gen.gen_n}: root/no games, val_loss={gen.val_loss}, solver_score={gen.solver_score}")
+        print(f"gen={gen.gen_n}: root/no games, val_loss={gen.val_loss}, dev_top1={gen.evals['v1/dev'].raw.top1}")
         continue
     lengths = [len(g.samples) for g in games.results]
     scores = [g.player0_score() for g in games.results]
@@ -164,7 +162,7 @@ for gen in reversed(TrainingGen.load_all(base)):
         f"samples={sum(lengths)}, min_len={min(lengths)}, max_len={max(lengths)}, "
         f"avg_len={sum(lengths)/len(lengths):.2f}, "
         f"p0_score_avg={sum(scores)/len(scores):.3f}, "
-        f"val_loss={gen.val_loss}, solver_score={gen.solver_score}"
+        f"val_loss={gen.val_loss}, dev_top1={gen.evals['v1/dev'].raw.top1}"
     )
 PY
 ```
@@ -218,9 +216,31 @@ For Optuna sweeps:
 mise exec -- uv run optuna-dashboard sqlite:///optuna.db
 ```
 
-## Optional solver scoring
+## Solver-optimal evaluation
 
-The solver is optional and is not used for training. It scores generated policies against objective Connect Four solutions.
+Every generation is scored when it is published: `TrainingGen.publish` saves `games.pkl` and
+`model.pkl`, reloads the model from `model.pkl`, scores it on the committed v1 dev suite, and only
+then writes `metadata.json` (atomically). A generation directory without `metadata.json` is
+unpublished and loaders skip it. Older runs load with `evals == {}`; their `solver_score` is the
+legacy parent self-play score and is never written again.
+
+`gen.evals["v1/dev"]` is a `SuiteEval` (`src/c4a0/evaluation.py`):
+
+- `raw.by_bucket`: per ply bucket, `hits` (credit summed over non-trivial positions) and `n`.
+  Credit is `|A & best| / |A|` where `A` is the set of legal moves tied for the policy maximum.
+  `raw.top1` is the overall rate.
+- `mcts`: the same for root visit policies at each `--eval-mcts-iterations` budget.
+- `value`: confusion matrix of solver W/D/L against `q_no_penalty` with cutoffs at -0.5 and 0.5.
+- `illegal_argmax`, `model_sha256`, `suite_sha256`, `c_exploration`, `c_ply_penalty`.
+
+Score MCTS budgets on an existing run (idempotent; replaces the stored v1/dev entry):
+
+```sh
+mise exec -- uv run python src/c4a0/main.py eval --base-dir training/ci-smoke --mcts-iterations 64
+```
+
+The suites are committed, so none of this needs the solver. To rebuild them or label training
+positions, build the solver in `solver/`:
 
 ```sh
 git clone https://github.com/PascalPons/connect4.git solver
@@ -228,23 +248,25 @@ cd solver
 make
 wget https://github.com/PascalPons/connect4/releases/download/book/7x6.book
 cd ..
+mise run suite:build   # rewrites src/c4a0/suite/v1/{dev,test}.tsv byte-identically
 ```
 
-Score an existing training directory:
+Split membership (train, dev, test) is a salted hash of the mirror-canonical board in
+`rust/src/labels.rs`, so labels from `label` are disjoint from both suites by construction.
+
+## Supervised ceiling
+
+Can the network represent solver-perfect play at all? Train it directly on solver labels:
 
 ```sh
-mise exec -- uv run python src/c4a0/main.py score solver/c4solver solver/7x6.book --base-dir training/ci-smoke
+mise exec -- uv run python src/c4a0/main.py label training/labels/train-s7.tsv --per-ply 24000 --seed 7
+mise exec -- uv run python src/c4a0/main.py ceiling training/labels/train-s7.tsv /tmp/c4a0-ceiling/b1f32 --seed 0
 ```
 
-Or score during training:
-
-```sh
-mise exec -- uv run python src/c4a0/main.py train \
-  --solver-path solver/c4solver \
-  --book-path solver/7x6.book
-```
-
-Scores are cached in `solutions.db` by default.
+`ceiling` refuses non-train files, early-stops on dev loss, saves `model.pkl`, and writes
+`report.json` (a `CeilingReport`) scored on dev. Pass `--report-test` only after choosing a
+configuration on dev. Pass the architecture flags (`--n-residual-blocks`, `--conv-filter-size`,
+...) to compare network sizes.
 
 ## Verified checks
 
@@ -253,8 +275,8 @@ Verified in this environment:
 - `mise run build`: builds and installs the mixed Python/Rust package
 - `mise run lint`: Ruff passed
 - `mise run typecheck`: Pyright passed with 0 errors
-- `mise run test:rust`: 29 passed
-- `mise run test:python`: 4 passed
+- `mise run test:rust`: 46 passed
+- `mise run test:python`: 60 passed (pybridge self-play test can hang on the known shutdown race; exit 124)
 - `mise run train:smoke`: runs end-to-end self-play + model training
 
 Current benign warnings observed:

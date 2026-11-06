@@ -14,7 +14,7 @@ use crate::{
     c4r::{Move, Pos},
     labels::{moves_string, parse_moves, sample_positions, Split},
     self_play::self_play,
-    solver::{solve_parallel, CachingSolver},
+    solver::solve_parallel,
     tui,
     types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, ModelID, Sample},
 };
@@ -123,33 +123,6 @@ impl PlayGamesResult {
             train.iter().flat_map(|r| r.samples.clone()).collect(),
             test.iter().flat_map(|r| r.samples.clone()).collect(),
         ))
-    }
-
-    /// Scores the policies in the results using the given solver.
-    /// `solver_path` is the path to the solver binary, see:
-    ///     https://github.com/PascalPons/connect4
-    /// `solver_book_path` is the path to the solver book:
-    ///     https://github.com/PascalPons/connect4/releases/tag/book?ts=2
-    /// `solution_cache_path` is the path to the solution cache file which will be created if it
-    /// is missing.
-    fn score_policies(
-        &self,
-        solver_path: String,
-        solver_book_path: String,
-        solution_cache_path: String,
-    ) -> PyResult<f32> {
-        let solver = CachingSolver::new(solver_path, solver_book_path, solution_cache_path);
-        let pos_and_policies = self
-            .results
-            .iter()
-            .flat_map(|r| r.samples.iter())
-            .filter(|s| s.pos.is_terminal_state().is_none())
-            .map(|p| (p.pos.clone(), p.policy.clone()))
-            .collect::<Vec<_>>();
-        let scores = solver.score_policies(pos_and_policies).map_err(pyify_err)?;
-        let n_scores = scores.len();
-        let avg_score = scores.into_iter().sum::<f32>() / n_scores as f32;
-        Ok(avg_score)
     }
 
     /// Returns the number of unique positions in the results.

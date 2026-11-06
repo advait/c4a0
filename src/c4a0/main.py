@@ -35,7 +35,6 @@ from c4a0.supervised import TARGET_VERSION, CeilingReport, fit_supervised  # noq
 from c4a0.sweep import perform_hparam_sweep  # noqa: E402
 from c4a0.tournament import ModelID, RandomPlayer, UniformPlayer  # noqa: E402
 from c4a0.training import (  # noqa: E402
-    SolverConfig,
     TrainingGen,
     default_eval_config,
     parse_lr_schedule,
@@ -67,9 +66,6 @@ def train(
     l2_reg: float = 4e-4,
     max_gens: Optional[int] = None,
     eval_mcts_iterations: List[int] = [],
-    solver_path: Optional[str] = None,
-    book_path: Optional[str] = None,
-    solutions_path: str = "./solutions.db",
 ):
     """Trains a model via self-play. Each generation's saved model is scored on the v1 dev
     suite (raw network, plus MCTS at each --eval-mcts-iterations budget)."""
@@ -83,17 +79,6 @@ def train(
         l2_reg=l2_reg,
     )
 
-    if solver_path and book_path:
-        logger.info("Using solver")
-        solver_config = SolverConfig(
-            solver_path=solver_path,
-            book_path=book_path,
-            solutions_path=solutions_path,
-        )
-    else:
-        logger.info("Solver not provided, skipping solutions")
-        solver_config = None
-
     training_loop(
         base_dir=base_dir,
         device=torch.device(device),
@@ -106,7 +91,6 @@ def train(
         model_config=model_config,
         max_gens=max_gens,
         eval_config=default_eval_config(eval_mcts_iterations),
-        solver_config=solver_config,
     )
 
 
@@ -164,15 +148,14 @@ def mcts_sweep(
     optuna_db_path: str = "optuna.db",
     n_trials: int = 100,
     max_gens_per_trial: int = 10,
-    solver_path: str = "/home/advait/connect4/c4solver",
-    book_path: str = "/home/advait/connect4/7x6.book",
-    solutions_path: str = "./solutions.db",
 ):
     """
     Performs sweep of MCTS hyperparameters (e.g. n_self_play_games, n_mcts_iterations,
     c_exploration) to determine optimal values by performing `n_trials` independent training
-    runs, each with `max_gens_per_trial` generations, seeking to maximize the solver score.
+    runs, each with `max_gens_per_trial` generations, seeking to maximize the final generation's
+    raw-network top-1 agreement with solver-best moves on the v1 dev suite.
     """
+    eval_config = default_eval_config()
     base_path = Path(base_training_dir)
     base_path.mkdir(exist_ok=True)
 
@@ -199,16 +182,10 @@ def mcts_sweep(
             training_batch_size=training_batch_size,
             model_config=model_config,
             max_gens=max_gens_per_trial,
-            solver_config=SolverConfig(
-                solver_path=solver_path,
-                book_path=book_path,
-                solutions_path=solutions_path,
-            ),
+            eval_config=eval_config,
         )
-        logger.info(
-            "Trial {} completed. Solver score: {}", trial.number, gen.solver_score
-        )
-        score = gen.solver_score
+        score = gen.evals[eval_config.suite.name].raw.top1
+        logger.info("Trial {} completed. Dev raw top1: {}", trial.number, score)
         assert score is not None
         return score
 
@@ -360,29 +337,6 @@ def eval_gens(
             e.raw.top1,
             {n: m.top1 for n, m in e.mcts.items()},
         )
-
-
-@app.command()
-def score(
-    solver_path: str,
-    book_path: str,
-    base_dir: str = "training",
-    solutions_path: str = "./solutions.db",
-):
-    """Scores the training generations using the given solver."""
-    gens = TrainingGen.load_all(base_dir)
-    for gen in gens:
-        logger.info("Getting games for: {}", gen.gen_n)
-        games = gen.get_games(base_dir)  # type: ignore
-        if not games:
-            continue
-        if gen.solver_score is not None:
-            logger.info(f"Gen already has score: {gen.solver_score}")
-            continue
-        score = games.score_policies(solver_path, book_path, solutions_path)  # type: ignore
-        gen.solver_score = score
-        gen.save_metadata(base_dir)
-        logger.info("Gen {} has score: {}", gen.gen_n, score)
 
 
 if __name__ == "__main__":

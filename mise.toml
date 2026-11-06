@@ -9,16 +9,7 @@ rust = "stable"
 uv = "0.11.25"
 
 [env]
-LIBCLANG_PATH = "{{ exec(command='/usr/bin/python3 scripts/find-libclang.py') | trim }}"
-LD_LIBRARY_PATH = "{{ exec(command='/usr/bin/python3 scripts/find-libclang.py') | trim }}:{{ env.LD_LIBRARY_PATH | default(value='') }}"
-BINDGEN_EXTRA_CLANG_ARGS = "{{ exec(command='/usr/bin/python3 scripts/find-libclang.py --bindgen-extra-clang-args') | trim }}"
 UV_LINK_MODE = "copy"
-
-# Bootstrap
-
-[tasks.bootstrap]
-description = "One-time setup on machines without system libclang (e.g. the dev container): installs a libclang wheel into .mise/libclang"
-run = '[ -n "$(/usr/bin/python3 scripts/find-libclang.py)" ] || uv pip install --quiet --python /usr/bin/python3 --target .mise/libclang libclang==18.1.1'
 
 [tasks.install]
 description = "Install Python dependencies and build the editable package with uv"

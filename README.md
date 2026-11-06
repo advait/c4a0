@@ -45,19 +45,16 @@ uv run src/c4a0/main.py train --max-gens=10
 uv run src/c4a0/main.py play --model=best
 ```
 
-6. (Optional) Download a [connect four solver](https://github.com/PascalPons/connect4?ts=2) to
-   objectively measure training progress:
+6. (Optional) Build Pascal Pons's [connect four solver](https://github.com/PascalPons/connect4?ts=2)
+   in `solver/`. Training does not need it: every generation is scored against the committed
+   solver-labeled suite (`src/c4a0/suite/v1/`). The solver is only needed to rebuild that suite
+   or to label positions for the supervised ceiling.
 ```
 git clone https://github.com/PascalPons/connect4.git solver
 cd solver
 make
 # Download opening book to speed up solutions
 wget https://github.com/PascalPons/connect4/releases/download/book/7x6.book
-```
-
-Now pass the solver paths to `train`, `score` and other commands:
-```
-uv run python src/c4a0/main.py score solver/c4solver solver/7x6.book
 ```
 
 ## Results
@@ -95,10 +92,12 @@ Uses rust multi-threading to parallelize self play (training data generation).
 
 Connect Four is a perfectly solved game. See Pascal Pons's [great
 writeup](http://blog.gamesolver.org/) on how to build a perfect solver. We can use these solutions
-to objectively measure our NN's performance. Importantly we **never train on these solutions**,
-instead only using our self-play data to improve the NN's performance.
+to objectively measure our NN's performance. Self-play **never trains on these solutions**; only
+the opt-in supervised ceiling (`main.py ceiling`) does, to show what the architecture can learn.
 
-`solver.rs` contains the stdin/out interface to learn the objective solutions to our training
-positions. Because solutions are expensive to compute, we cache them in a local
-[rocksdb](https://docs.rs/rocksdb/latest/rocksdb/) database (solutions.db). We then measure our
-training positions to see how often they recommend optimal moves as determined by the solver.
+`solver.rs` runs the solver over stdin/out with strict response checks. `labels.rs` samples
+held-out positions and assigns each to train, dev or test by a hash of its mirror-canonical board.
+Each generation's saved model is scored on the committed dev suite and the result is stored in its
+`metadata.json` under `evals`: the share of non-trivial positions where the network's top move
+is solver-optimal (ties split evenly, slower wins count as misses), by ply bucket, plus value
+accuracy and optional MCTS budgets (`--eval-mcts-iterations`).
