@@ -1,16 +1,22 @@
-use numpy::{ndarray::Array4, IntoPyArray, PyArray4, PyReadonlyArray1, PyReadonlyArray2};
+use numpy::{
+    ndarray::{Array2, Array4},
+    IntoPyArray, PyArray2, PyArray4, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
+};
 use pyo3::{
+    exceptions::{PyRuntimeError, PyValueError},
     prelude::*,
     types::{PyBytes, PyList},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    c4r::Pos,
+    analysis::search_positions,
+    c4r::{Move, Pos},
+    labels::{moves_string, parse_moves, sample_positions, Split},
     self_play::self_play,
-    solver::CachingSolver,
+    solver::{solve_parallel, CachingSolver},
     tui,
-    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, ModelID, Policy, Sample},
+    types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, ModelID, Sample},
 };
 use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 
@@ -169,37 +175,138 @@ impl EvalPosT for PyEvalPos {
     /// callback.
     fn eval_pos(&self, model_id: ModelID, pos: Vec<Pos>) -> Vec<EvalPosResult> {
         Python::attach(|py| {
-            let batch_size = pos.len();
-            let pos_batch = create_pos_batch(py, &pos);
-
-            let (policy, q_penalty, q_no_penalty): (
-                PyReadonlyArray2<f32>,
-                PyReadonlyArray1<f32>,
-                PyReadonlyArray1<f32>,
-            ) = (&self
-                .py_eval_pos_cb
-                .call(py, (model_id, pos_batch), None)
-                .expect("Failed to call py_eval_pos_cb"))
-                .extract(py)
-                .expect("Failed to extract result");
-
-            let policy = policy.as_slice().expect("Failed to get policy slice");
-            let q_penalty = q_penalty.as_slice().expect("Failed to get value slice");
-            let q_no_penalty = q_no_penalty.as_slice().expect("Failed to get value slice");
-
-            (0..batch_size)
-                .map(|i| EvalPosResult {
-                    policy: policy_from_slice(&policy[i * Pos::N_COLS..(i + 1) * Pos::N_COLS]),
-                    q_penalty: q_penalty[i],
-                    q_no_penalty: q_no_penalty[i],
-                })
-                .collect()
+            call_eval_cb(py, self.py_eval_pos_cb.bind(py), model_id, &pos)
+                .expect("Failed to call py_eval_pos_cb")
         })
     }
 }
 
+/// Calls `cb(model_id, pos[B,2,6,7]) -> (policy_logprobs[B,7], q_penalty[B], q_no_penalty[B])`
+/// and checks the output shapes.
+fn call_eval_cb<'py>(
+    py: Python<'py>,
+    cb: &Bound<'py, PyAny>,
+    model_id: ModelID,
+    pos: &[Pos],
+) -> PyResult<Vec<EvalPosResult>> {
+    let batch_size = pos.len();
+    let ret = cb.call1((model_id, create_pos_batch(py, pos)))?;
+    let (policy, q_penalty, q_no_penalty): (
+        PyReadonlyArray2<f32>,
+        PyReadonlyArray1<f32>,
+        PyReadonlyArray1<f32>,
+    ) = ret.extract()?;
+    if policy.shape() != [batch_size, Pos::N_COLS]
+        || q_penalty.len() != batch_size
+        || q_no_penalty.len() != batch_size
+    {
+        return Err(PyValueError::new_err(format!(
+            "eval callback returned shapes {:?}, {}, {} for a batch of {}",
+            policy.shape(),
+            q_penalty.len(),
+            q_no_penalty.len(),
+            batch_size
+        )));
+    }
+    let policy = policy.as_array();
+    let q_penalty = q_penalty.as_array();
+    let q_no_penalty = q_no_penalty.as_array();
+    Ok((0..batch_size)
+        .map(|i| EvalPosResult {
+            policy: std::array::from_fn(|c| policy[[i, c]]),
+            q_penalty: q_penalty[i],
+            q_no_penalty: q_no_penalty[i],
+        })
+        .collect())
+}
+
+/// Parses move strings (0-indexed column digits), raising ValueError on the first invalid one.
+fn parse_all(moves: &[String]) -> PyResult<Vec<Pos>> {
+    moves
+        .iter()
+        .map(|m| parse_moves(m).map_err(PyValueError::new_err))
+        .collect()
+}
+
+/// Encodes positions given as move strings into the network input, shape (N, 2, 6, 7).
+#[pyfunction]
+pub fn encode_positions<'py>(
+    py: Python<'py>,
+    moves: Vec<String>,
+) -> PyResult<Bound<'py, PyArray4<f32>>> {
+    Ok(create_pos_batch(py, &parse_all(&moves)?))
+}
+
+/// Runs evaluation MCTS ([search_positions]) from every non-terminal root and returns the root
+/// visit policies, shape (N, 7). Single-threaded: `py_eval_pos_cb` is called on this thread with
+/// model_id 0 and its exceptions propagate.
+#[pyfunction]
+pub fn mcts_policies<'py>(
+    py: Python<'py>,
+    moves: Vec<String>,
+    n_mcts_iterations: usize,
+    c_exploration: f32,
+    c_ply_penalty: f32,
+    py_eval_pos_cb: &Bound<'py, PyAny>,
+) -> PyResult<Bound<'py, PyArray2<f32>>> {
+    let roots = parse_all(&moves)?;
+    if let Some(i) = roots.iter().position(|p| p.is_terminal_state().is_some()) {
+        return Err(PyValueError::new_err(format!(
+            "{:?}: cannot search a finished game",
+            moves[i]
+        )));
+    }
+    if n_mcts_iterations < 2 {
+        return Err(PyValueError::new_err(
+            "n_mcts_iterations must be at least 2",
+        ));
+    }
+    let policies = search_positions(
+        |batch| call_eval_cb(py, py_eval_pos_cb, 0, &batch),
+        &roots,
+        n_mcts_iterations,
+        c_exploration,
+        c_ply_penalty,
+    )?;
+    let flat: Vec<f32> = policies.iter().flatten().copied().collect();
+    Ok(Array2::from_shape_vec((policies.len(), Pos::N_COLS), flat)
+        .expect("policy buffer shape")
+        .into_pyarray(py))
+}
+
+/// Samples positions in `split` ([sample_positions]) and labels them with Pons's solver
+/// ([solve_parallel]). Returns (moves, scores) rows: 0-indexed move strings and seven scores per
+/// row, None for full columns.
+#[pyfunction]
+#[allow(clippy::too_many_arguments)]
+pub fn label_positions(
+    py: Python<'_>,
+    split: &str,
+    first_ply: usize,
+    last_ply: usize,
+    per_ply: usize,
+    seed: u64,
+    solver_path: String,
+    book_path: String,
+    n_procs: usize,
+) -> PyResult<Vec<(String, Vec<Option<i8>>)>> {
+    let split = Split::parse(split).map_err(PyValueError::new_err)?;
+    py.detach(move || {
+        let sampled = sample_positions(split, first_ply..=last_ply, per_ply, seed)
+            .map_err(|e| PyValueError::new_err(e.to_string()))?;
+        let moves: Vec<Vec<Move>> = sampled.into_iter().map(|s| s.moves).collect();
+        let scores = solve_parallel(&solver_path, &book_path, &moves, n_procs)
+            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        Ok(moves
+            .iter()
+            .zip(scores)
+            .map(|(m, s)| (moves_string(m), s.to_vec()))
+            .collect())
+    })
+}
+
 /// Creates a batch of positions in tensor format.
-fn create_pos_batch<'py>(py: Python<'py>, positions: &Vec<Pos>) -> Bound<'py, PyArray4<f32>> {
+fn create_pos_batch<'py>(py: Python<'py>, positions: &[Pos]) -> Bound<'py, PyArray4<f32>> {
     let mut buffer = vec![0.0; positions.len() * Pos::BUF_LEN];
     for i in 0..positions.len() {
         let pos = &positions[i];
@@ -218,14 +325,6 @@ fn create_pos_batch<'py>(py: Python<'py>, positions: &Vec<Pos>) -> Bound<'py, Py
     )
     .expect("Failed to create Array4 from buffer")
     .into_pyarray(py)
-}
-
-/// Convert a slice of probabilities into a [Policy].
-fn policy_from_slice(policy: &[f32]) -> Policy {
-    debug_assert_eq!(policy.len(), Pos::N_COLS);
-    let mut ret = Policy::default();
-    ret.copy_from_slice(policy);
-    ret
 }
 
 #[pyfunction]

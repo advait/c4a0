@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+mod analysis;
 mod c4r;
 mod interactive_play;
 mod labels;
@@ -37,6 +38,9 @@ fn c4a0_rust(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     m.add_function(wrap_pyfunction!(pybridge::play_games, m)?)?;
     m.add_function(wrap_pyfunction!(pybridge::run_tui, m)?)?;
+    m.add_function(wrap_pyfunction!(pybridge::encode_positions, m)?)?;
+    m.add_function(wrap_pyfunction!(pybridge::mcts_policies, m)?)?;
+    m.add_function(wrap_pyfunction!(pybridge::label_positions, m)?)?;
 
     Ok(())
 }

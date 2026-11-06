@@ -46,18 +46,55 @@ class PlayGamesResult:
     def unique_positions(self) -> int: ...
 
 
+EvalPosCb = Callable[
+    [int, NDArray[np.float32]],
+    tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]],
+]
+"""cb(model_id, pos[B,2,6,7]) -> (policy_logprobs[B,7], q_penalty[B], q_no_penalty[B])"""
+
+
 def play_games(
     reqs: Sequence[GameMetadata],
     max_nn_batch_size: int,
     n_mcts_iterations: int,
     c_exploration: float,
     c_ply_penalty: float,
-    py_eval_pos_cb: Callable[[int, NDArray[np.float32]], tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]],
+    py_eval_pos_cb: EvalPosCb,
 ) -> PlayGamesResult: ...
 
 
+def encode_positions(moves: Sequence[str]) -> NDArray[np.float32]:
+    """Network input (N,2,6,7) for 0-indexed move strings. Raises ValueError on invalid moves."""
+    ...
+
+
+def mcts_policies(
+    moves: Sequence[str],
+    n_mcts_iterations: int,
+    c_exploration: float,
+    c_ply_penalty: float,
+    py_eval_pos_cb: EvalPosCb,
+) -> NDArray[np.float32]:
+    """Root visit policies (N,7) after single-threaded lockstep MCTS from non-terminal roots."""
+    ...
+
+
+def label_positions(
+    split: str,
+    first_ply: int,
+    last_ply: int,
+    per_ply: int,
+    seed: int,
+    solver_path: str,
+    book_path: str,
+    n_procs: int,
+) -> list[tuple[str, list[int | None]]]:
+    """Samples positions in `split` and labels them with Pons scores (None = full column)."""
+    ...
+
+
 def run_tui(
-    py_eval_pos_cb: Callable[[int, NDArray[np.float32]], tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]],
+    py_eval_pos_cb: EvalPosCb,
     max_mcts_iters: int,
     c_exploration: float,
     c_ply_penalty: float,
