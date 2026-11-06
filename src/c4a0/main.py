@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 
+import hashlib
+import os
 from pathlib import Path
+import pickle
 import sys
 
 from typing import List, Optional
@@ -16,8 +19,19 @@ parent_dir = Path(__file__).resolve().parent.parent
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
-from c4a0.labels import SUITE_V1, label, suite_path, write_labels  # noqa: E402
-from c4a0.nn import ModelConfig  # noqa: E402
+from c4a0.evaluation import evaluate_model  # noqa: E402
+from c4a0.labels import (  # noqa: E402
+    SUITE_V1,
+    Recipe,
+    Split,
+    label as label_positions,
+    load_suite,
+    read_labels,
+    suite_path,
+    write_labels,
+)
+from c4a0.nn import ConnectFourNet, ModelConfig  # noqa: E402
+from c4a0.supervised import TARGET_VERSION, CeilingReport, fit_supervised  # noqa: E402
 from c4a0.sweep import perform_hparam_sweep  # noqa: E402
 from c4a0.tournament import ModelID, RandomPlayer, UniformPlayer  # noqa: E402
 from c4a0.training import (  # noqa: E402
@@ -217,10 +231,135 @@ def build_suite(
 ):
     """Rebuilds the committed v1 dev and test suites (deterministic: same bytes every run)."""
     for split, recipe in SUITE_V1.items():
-        labels = label(recipe, solver_path, book_path, n_procs)
+        labels = label_positions(recipe, solver_path, book_path, n_procs)
         path = suite_path(split)
         write_labels(path, labels)
         logger.info("Wrote {} rows to {}", len(labels), path)
+
+
+@app.command()
+def label(
+    out: Path,
+    split: Split = Split.TRAIN,
+    per_ply: int = 24000,
+    seed: int = 7,
+    first_ply: int = 0,
+    last_ply: int = 41,
+    solver_path: str = "solver/c4solver",
+    book_path: str = "solver/7x6.book",
+    n_procs: int = 32,
+):
+    """Samples and solver-labels positions in a split (train by default, for the ceiling)."""
+    recipe = Recipe(
+        version=1, split=split, seed=seed, per_ply=per_ply, plies=(first_ply, last_ply)
+    )
+    labels = label_positions(recipe, solver_path, book_path, n_procs)
+    write_labels(out, labels)
+    logger.info("Wrote {} rows to {}", len(labels), out)
+
+
+@app.command()
+def ceiling(
+    labels: Path,
+    out_dir: Path,
+    n_residual_blocks: int = 1,
+    conv_filter_size: int = 32,
+    n_policy_layers: int = 4,
+    n_value_layers: int = 2,
+    lr: float = 2e-3,
+    l2_reg: float = 4e-4,
+    batch_size: int = 4096,
+    max_epochs: int = 100,
+    patience: int = 10,
+    seed: int = 0,
+    c_exploration: float = 6.6,
+    c_ply_penalty: float = 0.01,
+    mcts_iterations: List[int] = [],
+    report_test: bool = False,
+):
+    """
+    Supervised ceiling: trains the self-play architecture on solver labels (train split only),
+    early-stopping on dev loss, and scores the saved model on dev (and test with --report-test,
+    once the configuration is chosen). Writes model.pkl and report.json to out_dir.
+    """
+    train = read_labels(labels)
+    if train.recipe.split != Split.TRAIN:
+        raise typer.BadParameter(f"{labels} is a {train.recipe.split} file, not train")
+    dev = load_suite(Split.DEV)
+    torch.manual_seed(seed)
+    config = ModelConfig(
+        n_residual_blocks=n_residual_blocks,
+        conv_filter_size=conv_filter_size,
+        n_policy_layers=n_policy_layers,
+        n_value_layers=n_value_layers,
+        lr_schedule={0: lr},
+        l2_reg=l2_reg,
+    )
+    model, epochs = fit_supervised(
+        ConnectFourNet(config),
+        train,
+        dev.labels,
+        c_ply_penalty,
+        batch_size,
+        max_epochs,
+        patience,
+    )
+    out_dir.mkdir(parents=True, exist_ok=True)
+    model_path = out_dir / "model.pkl"
+    with open(model_path, "wb") as f:
+        pickle.dump(model, f)
+
+    def score(split: Split):
+        return evaluate_model(
+            model_path, load_suite(split), mcts_iterations, c_exploration, c_ply_penalty
+        )
+
+    report = CeilingReport(
+        net=config,
+        train_labels=str(labels),
+        train_sha256=hashlib.sha256(labels.read_bytes()).hexdigest(),
+        n_train=len(train),
+        epochs=epochs,
+        batch_size=batch_size,
+        seed=seed,
+        c_ply_penalty=c_ply_penalty,
+        target_version=TARGET_VERSION,
+        dev=score(Split.DEV),
+        test=score(Split.TEST) if report_test else None,
+    )
+    tmp = out_dir / "report.json.tmp"
+    tmp.write_text(report.model_dump_json(indent=2))
+    os.replace(tmp, out_dir / "report.json")
+    logger.info(
+        "Ceiling dev: raw top1 {}, mcts top1 {}, value accuracy {}",
+        report.dev.raw.top1,
+        {n: e.top1 for n, e in report.dev.mcts.items()},
+        report.dev.value.accuracy,
+    )
+
+
+@app.command("eval")
+def eval_gens(
+    base_dir: str = "training",
+    split: Split = Split.DEV,
+    mcts_iterations: List[int] = [],
+):
+    """Scores every published generation's model.pkl on a suite and stores it in the
+    generation's evals (replacing any earlier score on that suite)."""
+    suite = load_suite(split)
+    for gen in reversed(TrainingGen.load_all(base_dir)):
+        model_path = Path(gen.gen_folder(base_dir)) / "model.pkl"
+        gen.evals[suite.name] = evaluate_model(
+            model_path, suite, mcts_iterations, gen.c_exploration, gen.c_ply_penalty
+        )
+        gen.save_metadata(base_dir)
+        e = gen.evals[suite.name]
+        logger.info(
+            "Gen {}: raw top1 {}, mcts top1 {}",
+            gen.gen_n,
+            e.raw.top1,
+            {n: m.top1 for n, m in e.mcts.items()},
+        )
 
 
 @app.command()
