@@ -92,6 +92,13 @@ run = [
   { task = "train:smoke" },
 ]
 
+# Solver labels
+
+[tasks."suite:build"]
+description = "Rebuild the committed v1 dev/test solver suites (needs solver/ built per the README)"
+depends = ["build"]
+run = "uv run python src/c4a0/main.py build-suite"
+
 # Training / app lifecycle
 
 [tasks."train:smoke"]

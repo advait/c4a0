@@ -433,4 +433,48 @@ mod tests {
         assert_eq!(err.attempts, 10);
         assert!(err.found < 50);
     }
+
+    /// The committed suites: rows parse, are non-terminal, belong to their split, have unique keys
+    /// shared by no other split, mark exactly the full columns, and fill every ply's quota (or
+    /// every key the split has at that ply).
+    #[test]
+    fn committed_suites_are_split_pure_and_complete() {
+        let suites = [
+            (Split::Dev, include_str!("../../src/c4a0/suite/v1/dev.tsv")),
+            (
+                Split::Test,
+                include_str!("../../src/c4a0/suite/v1/test.tsv"),
+            ),
+        ];
+        let mut all_keys = HashSet::new();
+        for (split, text) in suites {
+            let mut rows = Vec::new();
+            for line in text.lines().skip(2) {
+                let (moves, scores) = line.split_once('\t').unwrap();
+                let pos = parse_moves(moves).unwrap();
+                assert!(pos.is_terminal_state().is_none(), "{:?}", moves);
+                let full: Vec<bool> = scores.split(',').map(|s| s == "x").collect();
+                let legal = pos.legal_moves();
+                assert_eq!(
+                    full,
+                    legal.iter().map(|l| !l).collect::<Vec<_>>(),
+                    "{:?}",
+                    moves
+                );
+                assert!(
+                    all_keys.insert(PositionKey::of(&pos)),
+                    "shared key {:?}",
+                    moves
+                );
+                rows.push(Sampled {
+                    moves: moves
+                        .chars()
+                        .map(|c| c.to_digit(10).unwrap() as Move)
+                        .collect(),
+                    pos,
+                });
+            }
+            check_sample(split, &rows, 0..=41, 64);
+        }
+    }
 }

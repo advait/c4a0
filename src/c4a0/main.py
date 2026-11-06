@@ -16,6 +16,7 @@ parent_dir = Path(__file__).resolve().parent.parent
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
+from c4a0.labels import SUITE_V1, label, suite_path, write_labels  # noqa: E402
 from c4a0.nn import ModelConfig  # noqa: E402
 from c4a0.sweep import perform_hparam_sweep  # noqa: E402
 from c4a0.tournament import ModelID, RandomPlayer, UniformPlayer  # noqa: E402
@@ -202,6 +203,20 @@ def mcts_sweep(
         pruner=optuna.pruners.MedianPruner(),
     )
     study.optimize(objective, n_trials=n_trials)
+
+
+@app.command()
+def build_suite(
+    solver_path: str = "solver/c4solver",
+    book_path: str = "solver/7x6.book",
+    n_procs: int = 32,
+):
+    """Rebuilds the committed v1 dev and test suites (deterministic: same bytes every run)."""
+    for split, recipe in SUITE_V1.items():
+        labels = label(recipe, solver_path, book_path, n_procs)
+        path = suite_path(split)
+        write_labels(path, labels)
+        logger.info("Wrote {} rows to {}", len(labels), path)
 
 
 @app.command()
