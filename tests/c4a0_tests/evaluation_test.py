@@ -123,3 +123,50 @@ def test_evaluate_model_scores_the_pickled_bytes(tmp_path):
         assert policy_eval.top1 is not None and 0.0 <= policy_eval.top1 <= 1.0
     assert sum(map(sum, result.value.confusion)) == 5
     assert SuiteEval.model_validate_json(result.model_dump_json()) == result
+
+
+def test_non_finite_value_is_rejected_not_scored_as_draw():
+    labels = make_labels({"3344": PONS_ROWS["3344"]})
+    with pytest.raises(ValueError, match="non-finite"):
+        tally_value(np.array([np.nan], dtype=np.float32), labels)
+
+
+def test_openings_oracle_scores_full_and_column_zero_first_move_scores_zero():
+    from c4a0.evaluation import OPENINGS
+
+    oracle = OPENINGS.best.astype(np.float32)
+    assert top1_credit(oracle, OPENINGS).sum() == len(OPENINGS)
+    empty_board_col0 = top1_credit(
+        np.array([one_hot_ties(0)], dtype=np.float32),
+        OPENINGS.take(np.arange(len(OPENINGS)) == 0),
+    )
+    assert empty_board_col0.tolist() == [0.0]
+    assert OPENINGS.best[0].tolist() == [c == 3 for c in range(7)]
+
+
+SOLVER_BIN = (
+    __import__("pathlib").Path(__file__).resolve().parents[2] / "solver" / "c4solver"
+)
+
+
+@pytest.mark.skipif(not SOLVER_BIN.is_file(), reason="solver not built in solver/")
+def test_openings_scores_match_the_solver():
+    import subprocess
+
+    from c4a0.evaluation import OPENINGS
+
+    book = SOLVER_BIN.parent / "7x6.book"
+    lines = (
+        "\n".join("".join(str(int(c) + 1) for c in m) for m in OPENINGS.moves) + "\n"
+    )
+    out = subprocess.run(
+        [str(SOLVER_BIN), "-b", str(book), "-a"],
+        input=lines,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    rows = [
+        [int(x) for x in line.split()[-7:]] for line in out.splitlines() if line.strip()
+    ]
+    assert rows == OPENINGS.scores.tolist()

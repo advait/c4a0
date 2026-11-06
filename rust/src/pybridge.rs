@@ -184,6 +184,14 @@ fn call_eval_cb<'py>(
     let policy = policy.as_array();
     let q_penalty = q_penalty.as_array();
     let q_no_penalty = q_no_penalty.as_array();
+    // A NaN reaching MCTS panics in its float comparisons; reject it here with a Python error.
+    if policy.iter().any(|p| p.is_nan())
+        || q_penalty.iter().chain(q_no_penalty.iter()).any(|q| !q.is_finite())
+    {
+        return Err(PyValueError::new_err(
+            "eval callback returned NaN policy or non-finite values",
+        ));
+    }
     Ok((0..batch_size)
         .map(|i| EvalPosResult {
             policy: std::array::from_fn(|c| policy[[i, c]]),

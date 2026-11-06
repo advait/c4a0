@@ -16,7 +16,7 @@ import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, computed_field
 
-from c4a0.labels import BUCKET_NAMES, Labels, Suite
+from c4a0.labels import BUCKET_NAMES, Labels, Moves, Recipe, Split, Suite
 from c4a0.nn import ConnectFourNet
 
 import c4a0_rust
@@ -74,6 +74,30 @@ class SuiteEval(BaseModel):
     """MCTS iterations -> eval of the root visit policy."""
     value: ValueEval
     """Raw network q_no_penalty."""
+    openings_raw: Optional[Tally] = None
+    """Raw policy on OPENINGS (plies 0-1, which hash to train and so are absent from dev/test)."""
+    openings_mcts: dict[int, Tally] = {}
+
+
+# Plies 0 and 1 have 5 mirror classes, all in the train split, so no held-out suite can contain
+# them. They are checked here separately. Scores are `c4solver -a` output for "" and "1".."7".
+OPENINGS = Labels(
+    recipe=Recipe(version=1, split=Split.TRAIN, seed=0, per_ply=0, plies=(0, 1)),
+    moves=tuple(Moves(m) for m in ("", "0", "1", "2", "3", "4", "5", "6")),
+    scores=np.array(
+        [
+            [-2, -1, 0, 1, 0, -1, -2],
+            [-1, 2, 1, 2, -1, 1, -2],
+            [-2, 0, 1, 0, -2, -2, -3],
+            [-2, -2, 0, 0, 0, 0, -3],
+            [-4, -2, -2, -1, -2, -2, -4],
+            [-3, 0, 0, 0, 0, -2, -2],
+            [-3, -2, -2, 0, 1, 0, -2],
+            [-2, 1, -1, 2, 1, 2, -1],
+        ],
+        dtype=np.int8,
+    ),
+)
 
 
 def top1_credit(policies: NDArray[np.floating], labels: Labels) -> NDArray[np.float64]:
@@ -107,6 +131,8 @@ def tally_policy(credit: NDArray[np.float64], labels: Labels) -> PolicyEval:
 
 
 def tally_value(q_no_penalty: NDArray[np.floating], labels: Labels) -> ValueEval:
+    if not np.isfinite(q_no_penalty).all():
+        raise ValueError("q_no_penalty contains a non-finite value")
     pred = np.where(q_no_penalty < -0.5, 0, np.where(q_no_penalty > 0.5, 2, 1))
     confusion = np.zeros((3, 3), dtype=np.int64)
     np.add.at(confusion, (labels.value.astype(np.int64) + 1, pred), 1)
@@ -142,6 +168,24 @@ def evaluate_model(
         )
         mcts[n] = tally_policy(top1_credit(visits, nontrivial), nontrivial)
 
+    def tally_openings(policies: NDArray[np.floating]) -> Tally:
+        return Tally(hits=float(top1_credit(policies, OPENINGS).sum()), n=len(OPENINGS))
+
+    openings_input = c4a0_rust.encode_positions(OPENINGS.moves)
+    openings_raw = tally_openings(model.forward_numpy(openings_input)[0])
+    openings_mcts = {
+        n: tally_openings(
+            c4a0_rust.mcts_policies(
+                OPENINGS.moves,
+                n,
+                c_exploration,
+                c_ply_penalty,
+                lambda _model_id, pos: model.forward_numpy(pos),
+            )
+        )
+        for n in mcts_iterations
+    }
+
     return SuiteEval(
         suite=suite.name,
         suite_sha256=suite.sha256,
@@ -154,4 +198,6 @@ def evaluate_model(
         illegal_argmax=illegal_argmax(policy, labels),
         mcts=mcts,
         value=tally_value(q_no_penalty, labels),
+        openings_raw=openings_raw,
+        openings_mcts=openings_mcts,
     )

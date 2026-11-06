@@ -191,7 +191,8 @@ def mcts_sweep(
 
     storage_name = f"sqlite:///{optuna_db_path}"
     study = optuna.create_study(
-        study_name="mcts_sweep",
+        # The objective changed to saved-child dev top-1 (v1); never resume legacy studies.
+        study_name="mcts_sweep-v1-dev-top1",
         storage=storage_name,
         load_if_exists=True,
         direction="maximize",

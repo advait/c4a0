@@ -101,9 +101,7 @@ def test_mcts_policies_rejects_wrong_callback_shapes():
 
 @pytest.mark.skipif(not SOLVER.is_file(), reason="solver not built in solver/")
 def test_label_positions_rows_are_in_split_and_solved():
-    rows = c4a0_rust.label_positions(
-        "dev", 10, 12, 4, 7, str(SOLVER), str(BOOK), 2
-    )
+    rows = c4a0_rust.label_positions("dev", 10, 12, 4, 7, str(SOLVER), str(BOOK), 2)
     assert [len(m) for m, _ in rows] == [10] * 4 + [11] * 4 + [12] * 4
     for _moves, scores in rows:
         assert len(scores) == N_COLS
@@ -113,3 +111,19 @@ def test_label_positions_rows_are_in_split_and_solved():
 def test_label_positions_rejects_unknown_split():
     with pytest.raises(ValueError):
         c4a0_rust.label_positions("val", 0, 1, 1, 0, "x", "y", 1)
+
+
+def test_nan_value_from_callback_raises_instead_of_panicking():
+    import numpy as np
+    import pytest
+
+    def nan_cb(_model_id, pos):
+        n = len(pos)
+        return (
+            np.zeros((n, 7), dtype=np.float32),
+            np.full(n, np.nan, dtype=np.float32),
+            np.zeros(n, dtype=np.float32),
+        )
+
+    with pytest.raises(ValueError, match="non-finite"):
+        c4a0_rust.mcts_policies(["3"], 4, 1.0, 0.01, nan_cb)
