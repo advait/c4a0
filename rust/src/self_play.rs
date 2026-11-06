@@ -145,6 +145,8 @@ struct NNThread<E: EvalPosT> {
     eval_pos: E,
     pb_nn_eval: ProgressBar,
     pending_games: Vec<MctsGame>,
+    // Models are fixed during one self_play call; discard these results with the thread.
+    eval_cache: HashMap<(ModelID, Pos), EvalPosResult>,
     chan_closed: bool,
 }
 
@@ -163,6 +165,7 @@ impl<E: EvalPosT> NNThread<E> {
             eval_pos,
             pb_nn_eval,
             pending_games: Vec::default(),
+            eval_cache: HashMap::new(),
             chan_closed: false,
         }
     }
@@ -203,36 +206,42 @@ impl<E: EvalPosT> NNThread<E> {
         let mut model_pos = BTreeMap::<ModelID, HashSet<Pos>>::new();
         for game in self.pending_games.iter() {
             let model_id = game.leaf_model_id_to_play();
-            let entry = model_pos.entry(model_id).or_default();
-            entry.insert(game.leaf_pos());
+            let pos = game.leaf_pos();
+            if !self.eval_cache.contains_key(&(model_id, pos.clone())) {
+                model_pos.entry(model_id).or_default().insert(pos);
+            }
         }
 
-        // Select the model with the most positions and evaluate
-        let model_id = model_pos
+        // Select the model with the most uncached positions and evaluate only its misses.
+        if let Some((&model_id, positions)) = model_pos
             .iter()
             .max_by_key(|(_, positions)| positions.len())
-            .map(|(model_id, _)| *model_id)
-            .unwrap();
-        let pos = model_pos[&model_id]
-            .iter()
-            .take(self.max_nn_batch_size)
-            .cloned()
-            .collect::<Vec<_>>();
-        self.pb_nn_eval.inc(pos.len() as u64);
-        let evals = self.eval_pos.eval_pos(model_id, pos.clone());
-        let eval_map = pos.into_iter().zip(evals).collect::<HashMap<_, _>>();
+        {
+            let pos = positions
+                .iter()
+                .take(self.max_nn_batch_size)
+                .cloned()
+                .collect::<Vec<_>>();
+            self.pb_nn_eval.inc(pos.len() as u64);
+            let evals = self.eval_pos.eval_pos(model_id, pos.clone());
+            self.eval_cache.extend(
+                pos.into_iter()
+                    .zip(evals)
+                    .map(|(pos, result)| ((model_id, pos), result)),
+            );
+        }
 
         let mut games = Vec::<MctsGame>::default();
         mem::swap(&mut self.pending_games, &mut games);
         for game in games.into_iter() {
-            let pos = game.leaf_pos();
-            if game.leaf_model_id_to_play() != model_id || !eval_map.contains_key(&pos) {
+            let key = (game.leaf_model_id_to_play(), game.leaf_pos());
+            if let Some(nn_result) = self.eval_cache.get(&key) {
+                self.mcts_queue
+                    .send(MctsJob::Job(game, nn_result.clone()))
+                    .unwrap();
+            } else {
                 self.pending_games.push(game);
-                continue;
             }
-
-            let nn_result = eval_map[&pos].clone();
-            self.mcts_queue.send(MctsJob::Job(game, nn_result)).unwrap();
         }
     }
 
@@ -400,6 +409,194 @@ pub mod tests {
                 })
                 .collect()
         }
+    }
+
+    #[derive(Default)]
+    struct CountingEvalPos {
+        counts: std::cell::RefCell<HashMap<(ModelID, Pos), usize>>,
+    }
+
+    impl EvalPosT for CountingEvalPos {
+        fn eval_pos(&self, model_id: ModelID, positions: Vec<Pos>) -> Vec<EvalPosResult> {
+            assert!(!positions.is_empty());
+            assert_le!(positions.len(), MAX_NN_BATCH_SIZE);
+            positions
+                .into_iter()
+                .map(|pos| {
+                    *self
+                        .counts
+                        .borrow_mut()
+                        .entry((model_id, pos.clone()))
+                        .or_default() += 1;
+                    EvalPosResult {
+                        policy: std::array::from_fn(|col| {
+                            -(((col + pos.ply() + model_id as usize) % Pos::N_COLS) as f32)
+                        }),
+                        q_penalty: model_id as f32 / 100.0,
+                        q_no_penalty: pos.ply() as f32 / 100.0,
+                    }
+                })
+                .collect()
+        }
+    }
+
+    // Drive complete games synchronously to exercise NNThread without the worker shutdown race.
+    fn deterministic_game(
+        metadata: GameMetadata,
+        mut evaluate: impl FnMut(MctsGame) -> (MctsGame, EvalPosResult),
+    ) -> GameResult {
+        let mut game = MctsGame::new_from_pos(Pos::default(), metadata);
+        loop {
+            loop {
+                let (mut evaluated_game, result) = evaluate(game);
+                evaluated_game.on_received_policy(
+                    result.policy,
+                    result.q_penalty,
+                    result.q_no_penalty,
+                    1.0,
+                    0.01,
+                );
+                game = evaluated_game;
+                if game.root_visit_count() >= 8 {
+                    break;
+                }
+            }
+            if game.root_pos().is_terminal_state().is_some() {
+                return game.to_result(0.01);
+            }
+            let col = game
+                .root_pos()
+                .legal_moves()
+                .iter()
+                .position(|legal| *legal)
+                .unwrap();
+            game.make_move(col as _, 1.0);
+        }
+    }
+
+    #[test]
+    fn test_nn_cache_reuses_evaluations_and_preserves_game_results() {
+        let (nn_tx, nn_rx) = bounded(1);
+        let (mcts_tx, mcts_rx) = bounded(1);
+        let mut nn = NNThread::new(
+            nn_rx,
+            mcts_tx,
+            MAX_NN_BATCH_SIZE,
+            CountingEvalPos::default(),
+            ProgressBar::hidden(),
+        );
+        let uncached = CountingEvalPos::default();
+        let mut first_game_evals = 0;
+        // The first two games repeat exactly. Swapping the models also requires separate
+        // evaluations of the same positions, including the starting position.
+        for (game_id, (player0_id, player1_id)) in
+            [(7, 13), (7, 13), (13, 7)].into_iter().enumerate()
+        {
+            let metadata = GameMetadata {
+                game_id: game_id as u64,
+                player0_id,
+                player1_id,
+            };
+            let expected = deterministic_game(metadata.clone(), |game| {
+                let result = uncached
+                    .eval_pos(game.leaf_model_id_to_play(), vec![game.leaf_pos()])
+                    .pop()
+                    .unwrap();
+                (game, result)
+            });
+            let actual = deterministic_game(metadata, |game| {
+                let key = (game.leaf_model_id_to_play(), game.leaf_pos());
+                nn_tx.send(game).unwrap();
+                nn.loop_once();
+                let MctsJob::Job(game, result) = mcts_rx.try_recv().unwrap() else {
+                    panic!("expected an evaluated game");
+                };
+                let expected = uncached.eval_pos(key.0, vec![key.1]).pop().unwrap();
+                assert_eq!(result.policy, expected.policy);
+                assert_eq!(result.q_penalty, expected.q_penalty);
+                assert_eq!(result.q_no_penalty, expected.q_no_penalty);
+                (game, result)
+            });
+            assert_eq!(actual.samples.len(), expected.samples.len());
+            for (actual, expected) in actual.samples.iter().zip(&expected.samples) {
+                assert_eq!(actual.pos, expected.pos);
+                assert_eq!(actual.policy, expected.policy);
+                assert_eq!(actual.q_penalty, expected.q_penalty);
+                assert_eq!(actual.q_no_penalty, expected.q_no_penalty);
+            }
+            let counts = nn.eval_pos.counts.borrow();
+            assert!(counts.values().all(|count| *count == 1));
+            if game_id == 0 {
+                first_game_evals = counts.len();
+                assert!(first_game_evals > 1);
+            } else if game_id == 1 {
+                assert_eq!(counts.len(), first_game_evals);
+            }
+        }
+        let counts = nn.eval_pos.counts.borrow();
+        assert_eq!(counts.get(&(7, Pos::default())), Some(&1));
+        assert_eq!(counts.get(&(13, Pos::default())), Some(&1));
+        assert_eq!(nn.pb_nn_eval.position() as usize, counts.len());
+        assert!(uncached.counts.borrow().values().any(|count| *count > 1));
+    }
+
+    #[test]
+    fn test_nn_cache_handles_mixed_batches() {
+        let (nn_tx, nn_rx) = bounded(4);
+        let (mcts_tx, mcts_rx) = bounded(4);
+        let mut nn = NNThread::new(
+            nn_rx,
+            mcts_tx,
+            1,
+            CountingEvalPos::default(),
+            ProgressBar::hidden(),
+        );
+        let new_game = |pos, model_id| {
+            MctsGame::new_from_pos(
+                pos,
+                GameMetadata {
+                    player0_id: model_id,
+                    player1_id: model_id,
+                    ..GameMetadata::default()
+                },
+            )
+        };
+        nn_tx.send(new_game(Pos::default(), 7)).unwrap();
+        nn.loop_once();
+        mcts_rx.try_recv().unwrap();
+
+        // Mix an existing hit, a duplicate miss and a distinct miss, with a batch limit of one.
+        for (pos, model_id) in [
+            (Pos::default(), 7),
+            (Pos::default(), 13),
+            (Pos::default(), 13),
+            (Pos::from_moves(&[3]), 13),
+        ] {
+            nn_tx.send(new_game(pos, model_id)).unwrap();
+        }
+        nn.loop_once();
+        assert!(!nn.pending_games.is_empty());
+        nn.loop_once();
+        assert!(nn.pending_games.is_empty());
+        let jobs: Vec<_> = mcts_rx.try_iter().collect();
+        assert_eq!(jobs.len(), 4);
+        for job in jobs {
+            let MctsJob::Job(game, result) = job else {
+                panic!("expected an evaluated game");
+            };
+            assert_eq!(
+                result.q_penalty,
+                game.leaf_model_id_to_play() as f32 / 100.0
+            );
+            assert_eq!(result.q_no_penalty, game.leaf_pos().ply() as f32 / 100.0);
+        }
+        assert_eq!(nn.pb_nn_eval.position(), 3);
+        assert!(nn
+            .eval_pos
+            .counts
+            .borrow()
+            .values()
+            .all(|count| *count == 1));
     }
 
     #[test]
