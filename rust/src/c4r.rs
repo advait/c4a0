@@ -90,6 +90,12 @@ impl Pos {
         }
     }
 
+    /// The raw (mask, value) bitboards. Unique per board, since the ply (and so the player to
+    /// move) is the popcount of the mask.
+    pub fn bits(&self) -> (u64, u64) {
+        (self.mask, self.value)
+    }
+
     /// Returns the ply of the position or the number of moves that have been played.
     /// Ply of 0 is the starting position.
     pub fn ply(&self) -> usize {
