@@ -24,6 +24,8 @@ mise install
 
 `mise.toml` sets `LIBCLANG_PATH`/`LD_LIBRARY_PATH` using `scripts/find-libclang.py`. GitHub runners normally provide `/usr/lib/llvm-*/lib/libclang.so`; local machines can use a system LLVM/libclang or an existing mise LLVM install.
 
+On a machine with no libclang at all (such as the dev container, which has no `sudo`), run `mise run bootstrap` once. It installs the `libclang` wheel into `.mise/libclang`, which `scripts/find-libclang.py` then finds. The wheel has no clang resource headers, so the script falls back to GCC's for `stdbool.h`.
+
 ## Common tasks
 
 List tasks:
