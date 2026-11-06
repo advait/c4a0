@@ -3,10 +3,12 @@ Generation-based network training, alternating between self-play and training.
 """
 
 import copy
+from dataclasses import dataclass
 from datetime import datetime
 import os
+from pathlib import Path
 import pickle
-from typing import Dict, List, NewType, Optional, Tuple
+from typing import Dict, List, NewType, Optional, Sequence, Tuple
 
 from loguru import logger
 from pydantic import BaseModel
@@ -15,11 +17,26 @@ from pytorch_lightning.callbacks import EarlyStopping
 import torch
 from torch.utils.data import DataLoader
 
+from c4a0.evaluation import SuiteEval, evaluate_model
+from c4a0.labels import Split, Suite, load_suite
 from c4a0.nn import ConnectFourNet, ModelConfig
 from c4a0.utils import BestModelCheckpoint
 
 import c4a0_rust  # type: ignore
 from c4a0_rust import PlayGamesResult, BUF_N_CHANNELS, N_COLS, N_ROWS, Sample  # type: ignore
+
+
+@dataclass(frozen=True)
+class EvalConfig:
+    """What each generation's saved model is scored on before its metadata is written."""
+
+    suite: Suite
+    mcts_iterations: Tuple[int, ...] = ()
+    """MCTS budgets to score in addition to the raw network. Empty means raw only."""
+
+
+def default_eval_config(mcts_iterations: Sequence[int] = ()) -> EvalConfig:
+    return EvalConfig(load_suite(Split.DEV), tuple(mcts_iterations))
 
 
 class TrainingGen(BaseModel):
@@ -37,6 +54,10 @@ class TrainingGen(BaseModel):
     parent: Optional[datetime] = None
     val_loss: Optional[float] = None
     solver_score: Optional[float] = None
+    """Legacy: the PARENT's self-play policy score (half credit for slower wins, ties broken by
+    column order). Never written again; use `evals`."""
+    evals: Dict[str, SuiteEval] = {}
+    """Suite name -> score of THIS generation's saved model.pkl."""
 
     @staticmethod
     def _gen_folder(created_at: datetime, base_dir: str) -> str:
@@ -45,34 +66,55 @@ class TrainingGen(BaseModel):
     def gen_folder(self, base_dir: str) -> str:
         return TrainingGen._gen_folder(self.created_at, base_dir)
 
-    def save_all(
+    def publish(
         self,
         base_dir: str,
         games: Optional[PlayGamesResult],
         model: ConnectFourNet,
+        eval_config: EvalConfig,
     ):
+        """Saves games and model, scores the model as reloaded from model.pkl, then writes
+        metadata.json last. If scoring fails, no metadata is written and loaders skip the
+        generation."""
         gen_dir = self.gen_folder(base_dir)
         os.makedirs(gen_dir, exist_ok=True)
-
-        metadata_path = os.path.join(gen_dir, "metadata.json")
-        with open(metadata_path, "w") as f:
-            f.write(self.model_dump_json(indent=2))
 
         play_result_path = os.path.join(gen_dir, "games.pkl")
         with open(play_result_path, "wb") as f:
             pickle.dump(games, f)
 
-        model_path = os.path.join(gen_dir, "model.pkl")
+        model_path = Path(gen_dir) / "model.pkl"
         with open(model_path, "wb") as f:
             pickle.dump(model, f)
 
+        suite_eval = evaluate_model(
+            model_path,
+            eval_config.suite,
+            eval_config.mcts_iterations,
+            self.c_exploration,
+            self.c_ply_penalty,
+        )
+        self.evals[suite_eval.suite] = suite_eval
+        logger.info(
+            "Gen {} on {}: raw top1 {}, mcts top1 {}, value accuracy {}",
+            self.gen_n,
+            suite_eval.suite,
+            suite_eval.raw.top1,
+            {n: e.top1 for n, e in suite_eval.mcts.items()},
+            suite_eval.value.accuracy,
+        )
+        self.save_metadata(base_dir)
+
     def save_metadata(self, base_dir: str):
+        """Writes metadata.json atomically (temp file, then rename)."""
         gen_dir = self.gen_folder(base_dir)
         os.makedirs(gen_dir, exist_ok=True)
 
         metadata_path = os.path.join(gen_dir, "metadata.json")
-        with open(metadata_path, "w") as f:
+        tmp_path = metadata_path + ".tmp"
+        with open(tmp_path, "w") as f:
             f.write(self.model_dump_json(indent=2))
+        os.replace(tmp_path, metadata_path)
 
     @staticmethod
     def load(base_dir: str, created_at: datetime) -> "TrainingGen":
@@ -81,27 +123,27 @@ class TrainingGen(BaseModel):
             return TrainingGen.model_validate_json(f.read())
 
     @staticmethod
-    def load_all(base_dir: str) -> List["TrainingGen"]:
-        timestamps = sorted(
+    def _published_timestamps(base_dir: str) -> List[datetime]:
+        """Newest first. Directories without metadata.json are unpublished and skipped."""
+        return sorted(
             [
                 datetime.fromisoformat(f)
                 for f in os.listdir(base_dir)
-                if os.path.isdir(os.path.join(base_dir, f))
+                if os.path.isfile(os.path.join(base_dir, f, "metadata.json"))
             ],
             reverse=True,
         )
-        return [TrainingGen.load(base_dir, t) for t in timestamps]
+
+    @staticmethod
+    def load_all(base_dir: str) -> List["TrainingGen"]:
+        return [
+            TrainingGen.load(base_dir, t)
+            for t in TrainingGen._published_timestamps(base_dir)
+        ]
 
     @staticmethod
     def load_latest(base_dir: str) -> "TrainingGen":
-        timestamps = sorted(
-            [
-                datetime.fromisoformat(f)
-                for f in os.listdir(base_dir)
-                if os.path.isdir(os.path.join(base_dir, f))
-            ],
-            reverse=True,
-        )
+        timestamps = TrainingGen._published_timestamps(base_dir)
         if not timestamps:
             raise FileNotFoundError("No existing generations")
         return TrainingGen.load(base_dir, timestamps[0])
@@ -115,6 +157,7 @@ class TrainingGen(BaseModel):
         self_play_batch_size: int,
         training_batch_size: int,
         model_config: ModelConfig,
+        eval_config: EvalConfig,
     ):
         try:
             return TrainingGen.load_latest(base_dir)
@@ -130,7 +173,7 @@ class TrainingGen(BaseModel):
                 training_batch_size=training_batch_size,
             )
             model = ConnectFourNet(model_config)
-            gen.save_all(base_dir, None, model)
+            gen.publish(base_dir, None, model, eval_config)
             return gen
 
     def get_games(self, base_dir: str) -> Optional[PlayGamesResult]:
@@ -162,13 +205,14 @@ def train_single_gen(
     c_ply_penalty: float,
     self_play_batch_size: int,
     training_batch_size: int,
+    eval_config: EvalConfig,
     solver_config: Optional[SolverConfig] = None,
 ) -> TrainingGen:
     """
     Trains a new generation from the given parent.
     First generate games using c4a0_rust.play_games.
     Then train a new model based on the parent model using the generated samples.
-    Finally, save the resulting games and model in the training directory.
+    Finally, publish the games and model, scoring the saved model with `eval_config`.
     """
     gen_n = parent.gen_n + 1
     logger.info(f"Beginning new generation {gen_n} from {parent.gen_n}")
@@ -235,7 +279,7 @@ def train_single_gen(
         val_loss=best_model_cb.best_score,
         solver_score=solver_score,
     )
-    gen.save_all(base_dir, games, best_model)
+    gen.publish(base_dir, games, best_model, eval_config)
     return gen
 
 
@@ -250,9 +294,12 @@ def training_loop(
     training_batch_size: int,
     model_config: ModelConfig,
     max_gens: Optional[int] = None,
+    eval_config: Optional[EvalConfig] = None,
     solver_config: Optional[SolverConfig] = None,
 ) -> TrainingGen:
-    """Main training loop. Sequentially trains generation after generation."""
+    """Main training loop. Sequentially trains generation after generation. Each generation's
+    saved model is scored on `eval_config` (default: raw network on the v1 dev suite)."""
+    eval_config = eval_config or default_eval_config()
     logger.info("Beginning training loop")
     logger.info("device: {}", device)
     logger.info("n_self_play_games: {}", n_self_play_games)
@@ -263,6 +310,11 @@ def training_loop(
     logger.info("training_batch_size: {}", training_batch_size)
     logger.info("model_config: \n{}", model_config.model_dump_json(indent=2))
     logger.info("max_gens: {}", max_gens)
+    logger.info(
+        "eval: {} with MCTS budgets {}",
+        eval_config.suite.name,
+        eval_config.mcts_iterations,
+    )
     logger.info(
         "solver_config: {}", solver_config and solver_config.model_dump_json(indent=2)
     )
@@ -275,6 +327,7 @@ def training_loop(
         self_play_batch_size=self_play_batch_size,
         training_batch_size=training_batch_size,
         model_config=model_config,
+        eval_config=eval_config,
     )
 
     while True:
@@ -288,6 +341,7 @@ def training_loop(
             c_ply_penalty=c_ply_penalty,
             self_play_batch_size=self_play_batch_size,
             training_batch_size=training_batch_size,
+            eval_config=eval_config,
             solver_config=solver_config,
         )
         if max_gens is not None and gen.gen_n >= max_gens:

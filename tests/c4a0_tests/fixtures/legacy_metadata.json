@@ -1,0 +1,12 @@
+{
+  "created_at": "2024-06-01T12:34:56.789012",
+  "gen_n": 3,
+  "n_mcts_iterations": 1400,
+  "c_exploration": 6.6,
+  "c_ply_penalty": 0.01,
+  "self_play_batch_size": 2000,
+  "training_batch_size": 2000,
+  "parent": "2024-06-01T11:00:00.000001",
+  "val_loss": 1.2345,
+  "solver_score": 0.6789
+}

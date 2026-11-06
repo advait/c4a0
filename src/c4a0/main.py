@@ -23,6 +23,7 @@ from c4a0.tournament import ModelID, RandomPlayer, UniformPlayer  # noqa: E402
 from c4a0.training import (  # noqa: E402
     SolverConfig,
     TrainingGen,
+    default_eval_config,
     parse_lr_schedule,
     training_loop,
 )
@@ -51,11 +52,13 @@ def train(
     lr_schedule: List[float] = [0, 2e-3, 10, 8e-4],
     l2_reg: float = 4e-4,
     max_gens: Optional[int] = None,
+    eval_mcts_iterations: List[int] = [],
     solver_path: Optional[str] = None,
     book_path: Optional[str] = None,
     solutions_path: str = "./solutions.db",
 ):
-    """Trains a model via self-play."""
+    """Trains a model via self-play. Each generation's saved model is scored on the v1 dev
+    suite (raw network, plus MCTS at each --eval-mcts-iterations budget)."""
 
     model_config = ModelConfig(
         n_residual_blocks=n_residual_blocks,
@@ -88,6 +91,7 @@ def train(
         training_batch_size=training_batch_size,
         model_config=model_config,
         max_gens=max_gens,
+        eval_config=default_eval_config(eval_mcts_iterations),
         solver_config=solver_config,
     )
 
