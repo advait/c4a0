@@ -175,7 +175,16 @@ class ConnectFourNet(pl.LightningModule):
         policy_logprob_targets = torch.log(policy_target + self.EPS)
 
         # Losses
-        policy_loss = self.policy_kl_div(policy_logprob_targets, policy_logprob)
+        has_policy = policy_target.sum(dim=1) > 0
+        if bool(has_policy.all()):
+            policy_loss = self.policy_kl_div(policy_logprob_targets, policy_logprob)
+        else:
+            # Zero targets mask terminal policy loss. Divide by the full batch size
+            # so masked rows contribute exactly zero without reweighting other rows.
+            row_kl = (
+                policy_logprob_targets.exp() * (policy_logprob_targets - policy_logprob)
+            ).sum(dim=1)
+            policy_loss = row_kl.masked_fill(~has_policy, 0.0).mean()
         q_penalty_loss = self.q_penalty_mse(q_penalty_pred, q_penalty_target)
         q_no_penalty_loss = self.q_no_penalty_mse(
             q_no_penalty_pred, q_no_penalty_target

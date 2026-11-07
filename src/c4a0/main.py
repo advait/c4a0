@@ -69,6 +69,7 @@ def train(
     greedy_after_ply: int | None = typer.Option(None, min=0),
     root_noise_alpha: float | None = None,
     root_noise_frac: float = typer.Option(0.0, min=0.0, max=1.0),
+    mask_terminal_policy: bool = False,
     eval_mcts_iterations: list[int] = typer.Option(default_factory=list),
 ) -> None:
     """Trains a model via self-play. Each generation's saved model is scored on the v1 dev
@@ -98,6 +99,7 @@ def train(
         greedy_after_ply=greedy_after_ply,
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
+        mask_terminal_policy=mask_terminal_policy,
     )
 
 

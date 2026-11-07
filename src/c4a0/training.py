@@ -54,6 +54,7 @@ class TrainingGen(BaseModel):
     greedy_after_ply: int | None = None
     root_noise_alpha: float | None = None
     root_noise_frac: float = 0.0
+    mask_terminal_policy: bool = False
     parent: datetime | None = None
     val_loss: float | None = None
     solver_score: float | None = None
@@ -164,6 +165,7 @@ class TrainingGen(BaseModel):
         greedy_after_ply: int | None = None,
         root_noise_alpha: float | None = None,
         root_noise_frac: float = 0.0,
+        mask_terminal_policy: bool = False,
     ) -> "TrainingGen":
         try:
             return TrainingGen.load_latest(base_dir)
@@ -180,6 +182,7 @@ class TrainingGen(BaseModel):
                 greedy_after_ply=greedy_after_ply,
                 root_noise_alpha=root_noise_alpha,
                 root_noise_frac=root_noise_frac,
+                mask_terminal_policy=mask_terminal_policy,
             )
             model = ConnectFourNet(model_config)
             gen.publish(base_dir, None, model, eval_config)
@@ -212,6 +215,7 @@ def train_single_gen(
     greedy_after_ply: int | None = None,
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
+    mask_terminal_policy: bool = False,
 ) -> TrainingGen:
     """
     Trains a new generation from the given parent.
@@ -243,7 +247,9 @@ def train_single_gen(
     # Training
     logger.info("Beginning training")
     model = copy.deepcopy(model)
-    train, test = games.split_train_test(0.8, 1337)
+    train, test = games.split_train_test(
+        0.8, 1337, mask_terminal_policy=mask_terminal_policy
+    )
     data_module = SampleDataModule(train, test, training_batch_size)
     best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
     trainer = GenerationTrainer(
@@ -273,6 +279,7 @@ def train_single_gen(
         greedy_after_ply=greedy_after_ply,
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
+        mask_terminal_policy=mask_terminal_policy,
         parent=parent.created_at,
         val_loss=best_model_cb.best_score,
     )
@@ -295,6 +302,7 @@ def training_loop(
     greedy_after_ply: int | None = None,
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
+    mask_terminal_policy: bool = False,
 ) -> TrainingGen:
     """Main training loop. Sequentially trains generation after generation. Each generation's
     saved model is scored on `eval_config` (default: raw network on the v1 dev suite)."""
@@ -327,6 +335,7 @@ def training_loop(
         greedy_after_ply=greedy_after_ply,
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
+        mask_terminal_policy=mask_terminal_policy,
     )
 
     while True:
@@ -344,6 +353,7 @@ def training_loop(
             greedy_after_ply=greedy_after_ply,
             root_noise_alpha=root_noise_alpha,
             root_noise_frac=root_noise_frac,
+            mask_terminal_policy=mask_terminal_policy,
         )
         if max_gens is not None and gen.gen_n >= max_gens:
             return gen

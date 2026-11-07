@@ -47,6 +47,7 @@ def _tiny_loop(
     greedy_after_ply: int | None = None,
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
+    mask_terminal_policy: bool = False,
 ) -> TrainingGen:
     return training_loop(
         base_dir=str(base_dir),
@@ -63,6 +64,7 @@ def _tiny_loop(
         greedy_after_ply=greedy_after_ply,
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
+        mask_terminal_policy=mask_terminal_policy,
     )
 
 
@@ -102,7 +104,10 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(
         greedy_after_ply=4,
         root_noise_alpha=0.3,
         root_noise_frac=0.25,
+        mask_terminal_policy=True,
     )
+    assert gen.mask_terminal_policy is True
+    assert TrainingGen.load(str(tmp_path), gen.created_at).mask_terminal_policy is True
     assert gen.root_noise_alpha == 0.3
     assert gen.root_noise_frac == 0.25
     assert TrainingGen.load(str(tmp_path), gen.created_at).root_noise_frac == 0.25
@@ -117,7 +122,9 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(
 
     games = gen.get_games(str(tmp_path))
     assert games is not None
-    train, validation = games.split_train_test(0.8, 1337)
+    train, validation = games.split_train_test(
+        0.8, 1337, mask_terminal_policy=gen.mask_terminal_policy
+    )
     data_module = SampleDataModule(list(train), list(validation), 10_000)
 
     assert gen.val_loss == pytest.approx(
@@ -184,3 +191,4 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     assert gen.greedy_after_ply is None
     assert gen.root_noise_alpha is None
     assert gen.root_noise_frac == 0.0
+    assert gen.mask_terminal_policy is False

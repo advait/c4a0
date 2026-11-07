@@ -123,10 +123,25 @@ impl PlayGamesResult {
     /// Splits the results into training and test datasets.
     /// Ensures that whole games end up in either the training set or test set.
     /// Expects `train_frac` to be in [0, 1].
-    fn split_train_test(&self, train_frac: f32, seed: u64) -> PyResult<(Vec<Sample>, Vec<Sample>)> {
+    #[pyo3(signature = (train_frac, seed, mask_terminal_policy=false))]
+    fn split_train_test(
+        &self,
+        train_frac: f32,
+        seed: u64,
+        mask_terminal_policy: bool,
+    ) -> PyResult<(Vec<Sample>, Vec<Sample>)> {
         let mut rng = StdRng::seed_from_u64(seed);
         let mut results = self.results.clone();
         results.shuffle(&mut rng);
+        if mask_terminal_policy {
+            // Zero targets mean no policy supervision. Change only the training copies,
+            // preserving games.pkl so replay can choose masking independently each generation.
+            for sample in results.iter_mut().flat_map(|game| &mut game.samples) {
+                if sample.pos.is_terminal_state().is_some() {
+                    sample.policy = [0.0; Pos::N_COLS];
+                }
+            }
+        }
         let n_train = (results.len() as f32 * train_frac).round() as usize;
         let (train, test) = results.split_at(n_train);
         Ok((

@@ -43,11 +43,25 @@ def test_split_train_test_is_deterministic_and_non_mutating() -> None:
         root_noise_frac=0.0,
     )
     original_ids = _game_ids(games)
+    terminals = {g.samples[-1].pos_str() for g in games.results}
+    masked_train, masked_test = games.split_train_test(
+        0.5, 1337, mask_terminal_policy=True
+    )
+    for sample in masked_train + masked_test:
+        _, policy, _, _ = sample.to_numpy()
+        assert (policy.sum() == 0) == (sample.pos_str() in terminals)
+    # Splitting must leave the saved games' original uniform terminal targets intact.
+    for game in games.results:
+        np.testing.assert_allclose(game.samples[-1].to_numpy()[1], 1 / N_COLS)
 
-    first_train, first_test = games.split_train_test(0.5, 1337)
+    first_train, first_test = games.split_train_test(
+        0.5, 1337, mask_terminal_policy=False
+    )
     assert _game_ids(games) == original_ids
 
-    second_train, second_test = games.split_train_test(0.5, 1337)
+    second_train, second_test = games.split_train_test(
+        0.5, 1337, mask_terminal_policy=False
+    )
     assert _game_ids(games) == original_ids
     assert _sample_positions(first_train) == _sample_positions(second_train)
     assert _sample_positions(first_test) == _sample_positions(second_test)
