@@ -5,15 +5,23 @@ policy over moves, game outcome without penalty, and outcome with the ply penalt
 perfect-play terminal ply.
 """
 
+import time
 from typing import Literal, Optional
 
+from loguru import logger
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping
 import torch
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import (
+    BatchSampler,
+    DataLoader,
+    RandomSampler,
+    SequentialSampler,
+    TensorDataset,
+)
 
 from c4a0.evaluation import SuiteEval
 from c4a0.labels import Labels
@@ -74,6 +82,35 @@ def _mirrored(
     )
 
 
+def _batches(
+    tensors: tuple[torch.Tensor, ...], batch_size: int, shuffle: bool, device: str
+) -> DataLoader:
+    """Whole-batch indexing into tensors kept on `device`. The default per-sample collate pins one
+    CPU core and starves the GPU (about 33% utilization for the default net)."""
+    ds = TensorDataset(*(t.to(device) for t in tensors))
+    sampler = RandomSampler(ds) if shuffle else SequentialSampler(ds)
+    return DataLoader(
+        ds, batch_size=None, sampler=BatchSampler(sampler, batch_size, False)
+    )
+
+
+class _EpochLog(pl.Callback):
+    """One log line per epoch, so a detached run's progress is visible in its log."""
+
+    def on_train_start(self, trainer, pl_module):
+        self.t0 = time.perf_counter()
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        m = trainer.callback_metrics
+        logger.info(
+            "epoch {} train_loss {:.4f} val_loss {:.4f} elapsed {:.0f}s",
+            trainer.current_epoch,
+            float(m.get("train_loss", float("nan"))),
+            float(m.get("val_loss", float("nan"))),
+            time.perf_counter() - self.t0,
+        )
+
+
 def fit_supervised(
     model: ConnectFourNet,
     train: Labels,
@@ -85,8 +122,11 @@ def fit_supervised(
 ) -> tuple[ConnectFourNet, int]:
     """Trains on `train` (plus mirror images) with the self-play loss, early stopping on `val`
     loss. Returns the best model and the number of epochs run."""
-    train_ds = TensorDataset(*_mirrored(solver_targets(train, c_ply_penalty)))
-    val_ds = TensorDataset(*solver_targets(val, c_ply_penalty))
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    train_dl = _batches(
+        _mirrored(solver_targets(train, c_ply_penalty)), batch_size, True, device
+    )
+    val_dl = _batches(solver_targets(val, c_ply_penalty), batch_size, False, device)
     best_model_cb = BestModelCheckpoint(monitor="val_loss", mode="min")
     trainer = pl.Trainer(
         max_epochs=max_epochs,
@@ -99,14 +139,12 @@ def fit_supervised(
         num_sanity_val_steps=0,
         logger=False,
         enable_checkpointing=False,
+        enable_progress_bar=False,
     )
     trainer.gen_n = 0  # type: ignore
+    trainer.callbacks.append(_EpochLog())  # type: ignore
     model.train()
-    trainer.fit(
-        model,
-        DataLoader(train_ds, batch_size=batch_size, shuffle=True),
-        DataLoader(val_ds, batch_size=batch_size),
-    )
+    trainer.fit(model, train_dl, val_dl)
     return best_model_cb.get_best_model(), trainer.current_epoch
 
 
