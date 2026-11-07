@@ -39,6 +39,8 @@ def test_split_train_test_is_deterministic_and_non_mutating() -> None:
         0.01,
         _uniform_eval,
         greedy_after_ply=None,
+        root_noise_alpha=None,
+        root_noise_frac=0.0,
     )
     original_ids = _game_ids(games)
 
@@ -148,6 +150,8 @@ def test_greedy_cutoff_plays_most_visited_move() -> None:
         0.01,
         _uniform_eval,
         greedy_after_ply=4,
+        root_noise_alpha=None,
+        root_noise_frac=0.0,
     )
     for game in games.results:
         for ply, (sample, following) in enumerate(
@@ -159,3 +163,52 @@ def test_greedy_cutoff_plays_most_visited_move() -> None:
             next_pos, _, _, _ = following.to_numpy()
             col = (next_pos.sum(axis=(0, 1)) - pos.sum(axis=(0, 1))).argmax()
             assert policy[col] == policy.max()
+
+
+@pytest.mark.parametrize(
+    "alpha,frac",
+    [
+        (0.0, 0.25),
+        (-1.0, 0.25),
+        (float("nan"), 0.25),
+        (None, 0.25),
+        (0.3, -0.1),
+        (0.3, 1.1),
+        (0.3, float("nan")),
+    ],
+)
+def test_root_noise_rejects_invalid_parameters(
+    alpha: float | None, frac: float
+) -> None:
+    with pytest.raises(ValueError):
+        c4a0_rust.play_games(
+            [],
+            8,
+            32,
+            2.0,
+            0.01,
+            _uniform_eval,
+            greedy_after_ply=None,
+            root_noise_alpha=alpha,
+            root_noise_frac=frac,
+        )
+
+
+def test_root_noise_off_preserves_games_and_on_changes_them() -> None:
+    def play(alpha: float | None, frac: float) -> dict[int, list[str]]:
+        games = c4a0_rust.play_games(
+            [c4a0_rust.GameMetadata(i, 0, 0) for i in range(4)],
+            8,
+            32,
+            2.0,
+            0.01,
+            _uniform_eval,
+            greedy_after_ply=None,
+            root_noise_alpha=alpha,
+            root_noise_frac=frac,
+        )
+        return {g.metadata.game_id: _sample_positions(g.samples) for g in games.results}
+
+    baseline = play(None, 0.0)
+    assert play(0.3, 0.0) == baseline
+    assert play(0.3, 0.25) != baseline

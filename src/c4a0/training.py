@@ -52,6 +52,8 @@ class TrainingGen(BaseModel):
     self_play_batch_size: int
     training_batch_size: int
     greedy_after_ply: int | None = None
+    root_noise_alpha: float | None = None
+    root_noise_frac: float = 0.0
     parent: datetime | None = None
     val_loss: float | None = None
     solver_score: float | None = None
@@ -160,6 +162,8 @@ class TrainingGen(BaseModel):
         model_config: ModelConfig,
         eval_config: EvalConfig,
         greedy_after_ply: int | None = None,
+        root_noise_alpha: float | None = None,
+        root_noise_frac: float = 0.0,
     ) -> "TrainingGen":
         try:
             return TrainingGen.load_latest(base_dir)
@@ -174,6 +178,8 @@ class TrainingGen(BaseModel):
                 self_play_batch_size=self_play_batch_size,
                 training_batch_size=training_batch_size,
                 greedy_after_ply=greedy_after_ply,
+                root_noise_alpha=root_noise_alpha,
+                root_noise_frac=root_noise_frac,
             )
             model = ConnectFourNet(model_config)
             gen.publish(base_dir, None, model, eval_config)
@@ -204,6 +210,8 @@ def train_single_gen(
     training_batch_size: int,
     eval_config: EvalConfig,
     greedy_after_ply: int | None = None,
+    root_noise_alpha: float | None = None,
+    root_noise_frac: float = 0.0,
 ) -> TrainingGen:
     """
     Trains a new generation from the given parent.
@@ -228,6 +236,8 @@ def train_single_gen(
         c_ply_penalty,
         lambda player_id, pos: model.forward_numpy(pos),
         greedy_after_ply=greedy_after_ply,
+        root_noise_alpha=root_noise_alpha,
+        root_noise_frac=root_noise_frac,
     )
 
     # Training
@@ -261,6 +271,8 @@ def train_single_gen(
         self_play_batch_size=self_play_batch_size,
         training_batch_size=training_batch_size,
         greedy_after_ply=greedy_after_ply,
+        root_noise_alpha=root_noise_alpha,
+        root_noise_frac=root_noise_frac,
         parent=parent.created_at,
         val_loss=best_model_cb.best_score,
     )
@@ -281,6 +293,8 @@ def training_loop(
     max_gens: int | None = None,
     eval_config: EvalConfig | None = None,
     greedy_after_ply: int | None = None,
+    root_noise_alpha: float | None = None,
+    root_noise_frac: float = 0.0,
 ) -> TrainingGen:
     """Main training loop. Sequentially trains generation after generation. Each generation's
     saved model is scored on `eval_config` (default: raw network on the v1 dev suite)."""
@@ -311,6 +325,8 @@ def training_loop(
         model_config=model_config,
         eval_config=eval_config,
         greedy_after_ply=greedy_after_ply,
+        root_noise_alpha=root_noise_alpha,
+        root_noise_frac=root_noise_frac,
     )
 
     while True:
@@ -326,6 +342,8 @@ def training_loop(
             training_batch_size=training_batch_size,
             eval_config=eval_config,
             greedy_after_ply=greedy_after_ply,
+            root_noise_alpha=root_noise_alpha,
+            root_noise_frac=root_noise_frac,
         )
         if max_gens is not None and gen.gen_n >= max_gens:
             return gen

@@ -5,7 +5,7 @@ use std::{
 };
 
 use rand::{
-    distr::{weighted::WeightedIndex, Distribution},
+    distr::{weighted::WeightedIndex, Distribution, Open01},
     rngs::StdRng,
     SeedableRng,
 };
@@ -29,6 +29,7 @@ pub struct MctsGame {
     root: Rc<RefCell<Node>>,
     leaf: Rc<RefCell<Node>>,
     moves: Vec<RecordedMove>,
+    root_noise_applied: bool,
 }
 
 impl Default for MctsGame {
@@ -52,6 +53,7 @@ impl MctsGame {
             root: Rc::clone(&root_node),
             leaf: root_node,
             moves: Vec::new(),
+            root_noise_applied: false,
         }
     }
 
@@ -200,6 +202,7 @@ impl MctsGame {
             Rc::clone(&child)
         };
         self.root = child;
+        self.root_noise_applied = false;
 
         // We must select a new leaf as the old leaf might not be in the subtree of the new root
         self.select_new_leaf(c_exploration);
@@ -221,6 +224,34 @@ impl MctsGame {
         self.make_move(mov, c_exploration);
     }
 
+    /// Mix noise into this root's legal priors once. Called only by self-play.
+    /// An unexpanded root waits until its first evaluation; a retained subtree can mix now.
+    pub fn add_root_noise(&mut self, alpha: f32, fraction: f32, c_exploration: f32) {
+        if fraction == 0.0 || self.root_noise_applied {
+            return;
+        }
+        let root = self.root.borrow();
+        let Some(children) = &root.children else {
+            return;
+        };
+        // Separate from the move-sampling stream, stable across worker scheduling.
+        let seed = self.metadata.game_id.wrapping_mul(0x9e3779b97f4a7c15)
+            ^ root.pos.ply() as u64
+            ^ 0xd1b54a32d192ed03;
+        let mut rng = StdRng::seed_from_u64(seed);
+        let noise = dirichlet_noise(root.pos.legal_moves(), alpha, &mut rng);
+        for (col, child) in children.iter().enumerate() {
+            if let Some(child) = child {
+                let mut child = child.borrow_mut();
+                child.initial_policy_value =
+                    (1.0 - fraction) * child.initial_policy_value + fraction * noise[col];
+            }
+        }
+        drop(root);
+        self.root_noise_applied = true;
+        self.select_new_leaf(c_exploration);
+    }
+
     /// Resets the game to the starting position.
     pub fn reset_game(&mut self) {
         while self.undo_move() {}
@@ -240,6 +271,7 @@ impl MctsGame {
         let root = Rc::new(RefCell::new(root));
         self.root = Rc::clone(&root);
         self.leaf = root;
+        self.root_noise_applied = false;
         self.moves = moves;
         true
     }
@@ -420,6 +452,46 @@ impl Node {
     }
 }
 
+/// Independent Gamma(alpha, 1) samples normalized over legal moves form a Dirichlet.
+/// Work in log space so small positive alpha does not underflow every component to zero.
+fn dirichlet_noise(legal: [bool; Pos::N_COLS], alpha: f32, rng: &mut impl rand::Rng) -> Policy {
+    let logs: [f64; Pos::N_COLS] = array::from_fn(|col| {
+        if legal[col] {
+            log_gamma_sample(alpha as f64, rng)
+        } else {
+            f64::NEG_INFINITY
+        }
+    });
+    let max = logs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let weights = logs.map(|x| (x - max).exp());
+    let sum: f64 = weights.iter().sum();
+    weights.map(|x| (x / sum) as f32)
+}
+
+/// Marsaglia-Tsang rejection sampler with the shape-boost identity for alpha < 1.
+fn log_gamma_sample(alpha: f64, rng: &mut impl rand::Rng) -> f64 {
+    if alpha < 1.0 {
+        let u: f64 = Open01.sample(rng);
+        return log_gamma_sample(alpha + 1.0, rng) + u.ln() / alpha;
+    }
+    let d = alpha - 1.0 / 3.0;
+    let c = 1.0 / (9.0 * d).sqrt();
+    loop {
+        let u1: f64 = Open01.sample(rng);
+        let u2: f64 = Open01.sample(rng);
+        let x = (-2.0 * u1.ln()).sqrt() * (std::f64::consts::TAU * u2).cos();
+        let v = 1.0 + c * x;
+        if v <= 0.0 {
+            continue;
+        }
+        let v = v * v * v;
+        let u: f64 = Open01.sample(rng);
+        if u < 1.0 - 0.0331 * x.powi(4) || u.ln() < 0.5 * x * x + d * (1.0 - v + v.ln()) {
+            return d.ln() + v.ln();
+        }
+    }
+}
+
 /// Softmax function for a policy.
 fn softmax(policy_logprobs: Policy) -> Policy {
     let max = policy_logprobs
@@ -508,6 +580,67 @@ mod tests {
         }
         let policy = game.root_policy();
         assert!(policy[1..].iter().all(|&p| policy[0] > p), "{policy:?}");
+    }
+
+    fn root_priors(game: &MctsGame) -> Policy {
+        array::from_fn(|col| {
+            game.root.borrow().children.as_ref().unwrap()[col]
+                .as_ref()
+                .map_or(0.0, |child| child.borrow().initial_policy_value)
+        })
+    }
+
+    #[test]
+    fn root_noise_mixes_once_and_resets_on_retained_root() {
+        let mut game = MctsGame::default();
+        let prior: Policy = [0.05, 0.1, 0.15, 0.4, 0.15, 0.1, 0.05];
+        game.on_received_policy(prior.map(f32::ln), 0.0, 0.0, 2.0, 0.01);
+        let original = root_priors(&game);
+        game.add_root_noise(0.3, 0.0, 2.0);
+        assert_eq!(root_priors(&game), original);
+        let mut all_noise = MctsGame::default();
+        all_noise.on_received_policy(prior.map(f32::ln), 0.0, 0.0, 2.0, 0.01);
+        all_noise.add_root_noise(0.3, 1.0, 2.0);
+        let noise = root_priors(&all_noise);
+        game.add_root_noise(0.3, 0.25, 2.0);
+        let mixed = root_priors(&game);
+        for col in 0..Pos::N_COLS {
+            assert_relative_eq!(mixed[col], 0.75 * original[col] + 0.25 * noise[col]);
+        }
+        game.add_root_noise(0.3, 0.25, 2.0);
+        assert_eq!(root_priors(&game), mixed);
+        // Expand every child before promotion: mixing must also work on a retained subtree.
+        for _ in 0..100 {
+            game.on_received_policy([0.0; Pos::N_COLS], 0.0, 0.0, 2.0, 0.01);
+        }
+        game.make_move(3, 2.0);
+        let original = root_priors(&game);
+        game.add_root_noise(0.3, 0.25, 2.0);
+        assert_ne!(root_priors(&game), original);
+        assert_policy_sum_1(&root_priors(&game));
+    }
+
+    #[test]
+    fn dirichlet_respects_legal_moves_and_moments() {
+        let legal = [false, true, true, false, true, false, false];
+        let mut rng = StdRng::seed_from_u64(42);
+        for alpha in [0.3, 2.0] {
+            let mut sum = 0.0;
+            let mut sum_sq = 0.0;
+            for _ in 0..10_000 {
+                let noise = dirichlet_noise(legal, alpha, &mut rng);
+                assert_policy_sum_1(&noise);
+                assert_eq!([noise[0], noise[3], noise[5], noise[6]], [0.0; 4]);
+                sum += noise[1];
+                sum_sq += noise[1] * noise[1];
+            }
+            assert_relative_eq!(sum / 10_000.0, 1.0 / 3.0, epsilon = 0.01);
+            let second_moment = (alpha + 1.0) / (3.0 * (3.0 * alpha + 1.0));
+            assert_relative_eq!(sum_sq / 10_000.0, second_moment, epsilon = 0.01);
+        }
+        for alpha in [1e-30, 1e30] {
+            assert_policy_sum_1(&dirichlet_noise(legal, alpha, &mut rng));
+        }
     }
 
     #[test]

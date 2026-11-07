@@ -21,9 +21,35 @@ use crate::{
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SelfPlayOptions {
     pub greedy_after_ply: Option<usize>,
+    pub root_noise_alpha: Option<f32>,
+    pub root_noise_frac: f32,
 }
 
 impl SelfPlayOptions {
+    pub fn validate(self) -> Result<(), &'static str> {
+        if self
+            .root_noise_alpha
+            .is_some_and(|a| !a.is_finite() || a <= 0.0)
+        {
+            return Err("root_noise_alpha must be finite and positive");
+        }
+        if !self.root_noise_frac.is_finite() || !(0.0..=1.0).contains(&self.root_noise_frac) {
+            return Err("root_noise_frac must be between 0 and 1");
+        }
+        if self.root_noise_frac > 0.0 && self.root_noise_alpha.is_none() {
+            return Err("root_noise_alpha is required when root_noise_frac > 0");
+        }
+        Ok(())
+    }
+
+    fn add_root_noise(self, game: &mut MctsGame, c_exploration: f32) {
+        if let Some(alpha) = self.root_noise_alpha {
+            if self.root_noise_frac > 0.0 {
+                game.add_root_noise(alpha, self.root_noise_frac, c_exploration);
+            }
+        }
+    }
+
     fn temperature(self, ply: usize) -> f32 {
         match () {
             _ if self.greedy_after_ply.is_some_and(|cutoff| ply >= cutoff) => 0.0,
@@ -307,6 +333,8 @@ impl MctsThread {
                     self.c_ply_penalty,
                 );
 
+                self.options.add_root_noise(&mut game, self.c_exploration);
+
                 // If we haven't reached the requisite number of MCTS iterations, send back to NN
                 // to evaluate the next leaf.
                 if game.root_visit_count() < self.n_mcts_iterations {
@@ -323,6 +351,7 @@ impl MctsThread {
                     let ply = root_pos.ply();
                     let temperature = self.options.temperature(ply);
                     game.make_random_move(self.c_exploration, temperature);
+                    self.options.add_root_noise(&mut game, self.c_exploration);
                     self.nn_queue_tx.send(game).unwrap();
                 } else {
                     // Game is over. Send to done_queue.
@@ -632,6 +661,7 @@ pub mod tests {
             for cutoff in [0, 4, 8, 20, 42] {
                 let options = SelfPlayOptions {
                     greedy_after_ply: Some(cutoff),
+                    ..SelfPlayOptions::default()
                 };
                 assert_eq!(
                     options.temperature(ply),

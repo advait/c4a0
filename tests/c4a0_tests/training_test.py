@@ -45,6 +45,8 @@ def _tiny_loop(
     eval_config: EvalConfig,
     max_gens: int = 1,
     greedy_after_ply: int | None = None,
+    root_noise_alpha: float | None = None,
+    root_noise_frac: float = 0.0,
 ) -> TrainingGen:
     return training_loop(
         base_dir=str(base_dir),
@@ -59,6 +61,8 @@ def _tiny_loop(
         max_gens=max_gens,
         eval_config=eval_config,
         greedy_after_ply=greedy_after_ply,
+        root_noise_alpha=root_noise_alpha,
+        root_noise_frac=root_noise_frac,
     )
 
 
@@ -92,7 +96,16 @@ def _sum_abs_model_diff(left: ConnectFourNet, right: ConnectFourNet) -> float:
 def test_training_loop_saves_trained_best_model_and_matching_metadata(
     tmp_path: Path,
 ) -> None:
-    gen = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()), greedy_after_ply=4)
+    gen = _tiny_loop(
+        tmp_path,
+        EvalConfig(_tiny_suite()),
+        greedy_after_ply=4,
+        root_noise_alpha=0.3,
+        root_noise_frac=0.25,
+    )
+    assert gen.root_noise_alpha == 0.3
+    assert gen.root_noise_frac == 0.25
+    assert TrainingGen.load(str(tmp_path), gen.created_at).root_noise_frac == 0.25
     assert gen.greedy_after_ply == 4
     assert TrainingGen.load(str(tmp_path), gen.created_at).greedy_after_ply == 4
 
@@ -169,3 +182,5 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     assert gen.solver_score == pytest.approx(0.6789)
     assert gen.evals == {}
     assert gen.greedy_after_ply is None
+    assert gen.root_noise_alpha is None
+    assert gen.root_noise_frac == 0.0
