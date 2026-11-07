@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -9,6 +10,12 @@ from c4a0.training import GenConfig
 
 if TYPE_CHECKING:
     from c4a0_rust import EvalPosCb
+
+
+def _plain(output: str) -> str:
+    """CLI output without terminal escape codes. Rich styles errors when it detects CI (e.g.
+    GITHUB_ACTIONS), and the codes can split an option name."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", output)
 
 
 @pytest.mark.parametrize(
@@ -88,28 +95,28 @@ def test_train_cli_rejects_invalid_window(flags: list[str]) -> None:
 def test_train_cli_rejects_invalid_training_length(flag: str, value: str) -> None:
     result = CliRunner().invoke(main.app, ["train", flag, value])
     assert result.exit_code == 2
-    assert flag in result.output
+    assert flag in _plain(result.output)
 
 
 @pytest.mark.parametrize("frac", ["-0.1", "1.1", "nan", "inf", "-inf"])
 def test_train_cli_rejects_invalid_random_start_fraction(frac: str) -> None:
     result = CliRunner().invoke(main.app, ["train", "--random-start-frac", frac])
     assert result.exit_code == 2
-    assert "random-start-frac" in result.output
+    assert "random-start-frac" in _plain(result.output)
 
 
 @pytest.mark.parametrize("ply", ["0", "-1"])
 def test_train_cli_rejects_invalid_random_start_max_ply(ply: str) -> None:
     result = CliRunner().invoke(main.app, ["train", "--random-start-max-ply", ply])
     assert result.exit_code == 2
-    assert "random-start-max-ply" in result.output
+    assert "random-start-max-ply" in _plain(result.output)
 
 
 @pytest.mark.parametrize("weight", ["-0.1", "1.1", "nan", "inf", "-inf"])
 def test_train_cli_rejects_invalid_value_target_weight(weight: str) -> None:
     result = CliRunner().invoke(main.app, ["train", "--value-target-q-weight", weight])
     assert result.exit_code == 2
-    assert "value-target-q-weight" in result.output
+    assert "value-target-q-weight" in _plain(result.output)
 
 
 @pytest.mark.parametrize("device", ["auto", "cpu"])
