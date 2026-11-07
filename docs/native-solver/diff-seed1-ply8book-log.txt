@@ -1,0 +1,13 @@
+[solver:native:build] $ cargo build --release --bin c4native
+[solver:native:book] $ test -f native-solver/book-ply8.bin && { echo "native-solver/book-ply8.bin exists; delete it to rebuild"; exit 0; }
+native-solver/book-ply8.bin exists; delete it to rebuild
+[solver:diff] $ timeout 7200 rust/target/release/c4native diff --pons "${C4A0_SOLVER:-solver/c4solver}" --pons-book "${C4A0_BOOK:-solver/7x6.book}" --book native-solver/book-ply8.bin --per-ply "${DIFF_PER_PLY:-1000}" --seed "${DIFF_SEED:-1}" --tt-mb "${DIFF_TT_MB:-2048}" --suite src/c4a0/suite/v1/dev.tsv --suite src/c4a0/suite/v1/test.tsv --out "native-solver/diff-seed${DIFF_SEED:-1}"
+[    2.9s] 113966 cases (109091 sampled, 4875 suite rows)
+[   69.7s] pons: 113966 rows in 66.8s
+[  470.9s] native: 113966 rows in 401.2s
+[  740.4s] pons children: 528876 rows in 269.4s
+[  822.4s] brute force: 59560 late cases in 82.0s
+[  822.4s] 0 suspect cases
+[  822.5s] 113966 compared, 113966 agree, 0 pons_bug, 0 native_bug, 0 protocol, 0 unexplained; brute checked 59560 (native wrong 0, pons wrong 0); pons self-inconsistent 0; suite rows where live pons != committed 0
+Finished in 827.80s
+exit=0

@@ -140,7 +140,9 @@ from this mix, not a measured label run.
   a 256 MiB table and 2,064 MiB with a 2 GiB table. A diff run peaks higher (4,557 MiB with a 2 GiB
   table) from 32 concurrent brute-force memo tables.
 - **Book build.** Ply 8 took 1,255 s and ply 10 took 1,337 s, on 32 threads at nice 10, one run
-  each.
+  each. The build is reproducible. Rebuilding the ply-8 book with a 1 GiB table instead of 4 GiB
+  gave the same sha256 (`ef3c11b8...ce94`), so the scores depend on neither table contents nor
+  thread scheduling. The ply-10 book's sha256 is `7b3cf7c6...6d15`.
 
 ## Rerun
 
