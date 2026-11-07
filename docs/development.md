@@ -55,7 +55,7 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `--c-exploration` | 2.0 | PUCT exploration constant. |
 | `--c-ply-penalty` | 0.01 | Value penalty per ply, which makes faster wins worth more. |
 | `--root-noise-alpha`, `--root-noise-frac` | 1.0, 0.25 | Dirichlet noise mixed into the root prior, in self-play only. |
-| `--random-start-frac`, `--random-start-max-ply` | 0.5, 20 | Share of games that start from a random opening, and that opening's maximum length. |
+| `--random-start-frac`, `--random-start-max-ply` | 0.5, 12 | Share of games that start from a random opening, and that opening's maximum length. |
 | `--value-target-q-weight` | 1.0 | Value target = `(1 - w) * game result + w * root search value`. |
 | `--replay-gens` | 8 | Train on the games of this many recent generations. |
 | `--train-max-epochs`, `--train-patience` | 20, 3 | Per-generation training length and early-stopping patience. |

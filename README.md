@@ -117,7 +117,7 @@ mise run plot
 2. Train a copy of the network on the last 8 generations' games. The policy target is the MCTS visit distribution and the value target is the search's own root value.
 3. Save the child and score it on the dev suite before publishing its metadata.
 
-Half of the self-play games start from a random opening of up to 20 moves, so the network sees more than the lines it already likes. Every setting is a field of `GenConfig` and a `train` option.
+Half of the self-play games start from a random opening of up to 12 moves, so the network sees more than the lines it already likes. Every setting is a field of `GenConfig` and a `train` option.
 
 ### Evaluation
 

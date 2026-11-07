@@ -20,7 +20,7 @@ if TYPE_CHECKING:
                 "root_noise_alpha": 1.0,
                 "root_noise_frac": 0.25,
                 "random_start_frac": 0.5,
-                "random_start_max_ply": 20,
+                "random_start_max_ply": 12,
                 "value_target_q_weight": 1.0,
                 "replay_gens": 8,
                 "train_max_epochs": 20,

@@ -71,7 +71,7 @@ def train(
         0.5, min=0.0, max=1.0, help="Fraction of self-play games using random openings."
     ),
     random_start_max_ply: int = typer.Option(
-        20, min=1, help="Maximum random opening length; capped at 41 plies."
+        12, min=1, help="Maximum random opening length; capped at 41 plies."
     ),
     value_target_q_weight: float = typer.Option(1.0, min=0.0, max=1.0),
     replay_gens: int = typer.Option(8, min=1),
