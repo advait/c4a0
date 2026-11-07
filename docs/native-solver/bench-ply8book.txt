@@ -1,0 +1,31 @@
+workload: 791 walk positions, 20 per ply 0-41, seed 1; tt 256 MiB; book ply Some(8)
+run 0 Native(1): 46.53 s, 17 positions/s (load average before: 12.81 18.07 29.67)
+run 0 Native(8): 6.35 s, 125 positions/s (load average before: 6.32 15.50 28.18)
+run 0 Native(32): 3.11 s, 254 positions/s (load average before: 6.45 15.37 28.07)
+run 0 Pons(32): 0.54 s, 1456 positions/s (load average before: 6.45 15.37 28.07)
+run 1 Native(8): 6.37 s, 124 positions/s (load average before: 8.34 15.62 28.09)
+run 1 Native(32): 3.11 s, 254 positions/s (load average before: 8.39 15.51 27.98)
+run 1 Pons(32): 0.57 s, 1396 positions/s (load average before: 8.39 15.51 27.98)
+run 1 Native(1): 46.49 s, 17 positions/s (load average before: 10.36 15.80 28.01)
+run 2 Native(32): 3.19 s, 248 positions/s (load average before: 5.59 13.77 26.75)
+run 2 Pons(32): 0.58 s, 1372 positions/s (load average before: 5.22 13.56 26.61)
+run 2 Native(1): 47.66 s, 17 positions/s (load average before: 5.22 13.56 26.61)
+run 2 Native(8): 6.47 s, 122 positions/s (load average before: 3.37 11.90 25.43)
+run 3 Pons(32): 0.56 s, 1408 positions/s (load average before: 3.74 11.83 25.33)
+run 3 Native(1): 48.29 s, 16 positions/s (load average before: 6.40 12.25 25.39)
+run 3 Native(8): 6.41 s, 123 positions/s (load average before: 4.05 10.80 24.28)
+run 3 Native(32): 3.18 s, 248 positions/s (load average before: 4.81 10.74 24.12)
+run 4 Native(1): 48.53 s, 16 positions/s (load average before: 4.81 10.74 24.12)
+run 4 Native(8): 6.69 s, 118 positions/s (load average before: 3.40 9.40 22.96)
+run 4 Native(32): 3.34 s, 237 positions/s (load average before: 4.09 9.44 22.90)
+run 4 Pons(32): 0.60 s, 1318 positions/s (load average before: 6.40 9.83 22.95)
+summary (median, range over runs):
+  Native(1): 47.66 s (46.49-48.53), 17 positions/s (16-17), 5 runs
+  Native(8): 6.41 s (6.35-6.69), 123 positions/s (118-125), 5 runs
+  Native(32): 3.18 s (3.11-3.34), 248 positions/s (237-254), 5 runs
+  Pons(32): 0.57 s (0.54-0.60), 1396 positions/s (1318-1456), 5 runs
+hardest position: "52204610" (ply 8), 4.05 s in the first 1-thread run
+  alone, cold table, 1 threads: 4.21 s (4.15-4.32), 5 runs
+  alone, cold table, 32 threads: 1.77 s (1.75-1.79), 5 runs
+1-thread seconds by ply bucket (first run): 0-5: 0.1 6-11: 43.7 12-17: 2.7 18-23: 0.1 24-29: 0.0 30-35: 0.0 36-41: 0.0
+peak RSS of this process: 259 MiB

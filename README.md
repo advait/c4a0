@@ -95,7 +95,9 @@ writeup](http://blog.gamesolver.org/) on how to build a perfect solver. We can u
 to objectively measure our NN's performance. Self-play **never trains on these solutions**; only
 the opt-in supervised ceiling (`main.py ceiling`) does, to show what the architecture can learn.
 
-`solver.rs` runs the solver over stdin/out with strict response checks. `labels.rs` samples
+`solver.rs` runs the solver over stdin/out with strict response checks. A clean-room native solver,
+`rust/src/native_solver/`, matches it on every position compared so far, but is not used yet. See
+[docs/native-solver.md](docs/native-solver.md). `labels.rs` samples
 held-out positions and assigns each to train, dev or test by a hash of its mirror-canonical board.
 Each generation's saved model is scored on the committed dev suite and the result is stored in its
 `metadata.json` under `evals`: the share of non-trivial positions where the network's top move

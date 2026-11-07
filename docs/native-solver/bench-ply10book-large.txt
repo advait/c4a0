@@ -1,0 +1,11 @@
+workload: 11341 walk positions, 300 per ply 0-41, seed 1; tt 2048 MiB; book ply Some(10)
+run 0 Native(32): 10.05 s, 1129 positions/s (load average before: 28.02 26.50 27.47)
+run 0 Pons(32): 6.49 s, 1746 positions/s (load average before: 29.02 26.76 27.55)
+run 1 Pons(32): 6.45 s, 1758 positions/s (load average before: 25.45 26.08 27.32)
+run 1 Native(32): 9.59 s, 1182 positions/s (load average before: 23.65 25.70 27.19)
+run 2 Native(32): 9.77 s, 1161 positions/s (load average before: 25.01 25.92 27.24)
+run 2 Pons(32): 6.93 s, 1636 positions/s (load average before: 26.49 26.20 27.32)
+summary (median, range over runs):
+  Native(32): 9.77 s (9.59-10.05), 1161 positions/s (1129-1182), 3 runs
+  Pons(32): 6.49 s (6.45-6.93), 1746 positions/s (1636-1758), 3 runs
+peak RSS of this process: 2064 MiB
