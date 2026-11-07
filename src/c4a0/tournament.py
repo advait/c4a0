@@ -152,6 +152,7 @@ def play_tournament(
         root_noise_alpha=None,
         root_noise_frac=0.0,
         value_target_q_weight=0.0,
+        temperature_schedule=None,
     )
     logger.info(f"Finished tournament with {len(tournament.games.results)} games")
 

@@ -3,6 +3,7 @@ Generation-based network training, alternating between self-play and training.
 """
 
 import copy
+import math
 import os
 import pickle
 from collections.abc import Sequence
@@ -24,6 +25,9 @@ from c4a0.labels import Split, Suite, load_suite
 from c4a0.nn import ConnectFourNet, ModelConfig
 from c4a0.utils import BestModelCheckpoint, GenerationTrainer, lightning_accelerator
 from c4a0_rust import BUF_N_CHANNELS, N_COLS, N_ROWS, PlayGamesResult, Sample
+
+TemperatureSchedule = list[tuple[int, float]]
+DEFAULT_TEMPERATURE_SCHEDULE: tuple[tuple[int, float], ...] = ((4, 4.0), (8, 2.0))
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,9 @@ class TrainingGen(BaseModel):
     root_noise_alpha: float | None = None
     root_noise_frac: float = 0.0
     value_target_q_weight: float = Field(default=0.0, ge=0.0, le=1.0)
+    temperature_schedule: TemperatureSchedule = Field(
+        default_factory=lambda: list(DEFAULT_TEMPERATURE_SCHEDULE)
+    )
     mask_terminal_policy: bool = False
     replay_gens: int = Field(default=1, ge=1)
     parent: datetime | None = None
@@ -168,9 +175,12 @@ class TrainingGen(BaseModel):
         root_noise_alpha: float | None = None,
         root_noise_frac: float = 0.0,
         value_target_q_weight: float = 0.0,
+        temperature_schedule: TemperatureSchedule | None = None,
         mask_terminal_policy: bool = False,
         replay_gens: int = 1,
     ) -> "TrainingGen":
+        if temperature_schedule is None:
+            temperature_schedule = list(DEFAULT_TEMPERATURE_SCHEDULE)
         try:
             return TrainingGen.load_latest(base_dir)
         except FileNotFoundError:
@@ -187,6 +197,7 @@ class TrainingGen(BaseModel):
                 root_noise_alpha=root_noise_alpha,
                 root_noise_frac=root_noise_frac,
                 value_target_q_weight=value_target_q_weight,
+                temperature_schedule=temperature_schedule,
                 mask_terminal_policy=mask_terminal_policy,
                 replay_gens=replay_gens,
             )
@@ -241,6 +252,7 @@ def train_single_gen(
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
     value_target_q_weight: float = 0.0,
+    temperature_schedule: TemperatureSchedule | None = None,
     mask_terminal_policy: bool = False,
     replay_gens: int = 1,
 ) -> TrainingGen:
@@ -250,6 +262,8 @@ def train_single_gen(
     Then train a new model based on the parent model using the generated samples.
     Finally, publish the games and model, scoring the saved model with `eval_config`.
     """
+    if temperature_schedule is None:
+        temperature_schedule = list(DEFAULT_TEMPERATURE_SCHEDULE)
     gen_n = parent.gen_n + 1
     logger.info(f"Beginning new generation {gen_n} from {parent.gen_n}")
 
@@ -275,6 +289,7 @@ def train_single_gen(
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
         value_target_q_weight=value_target_q_weight,
+        temperature_schedule=temperature_schedule,
     )
 
     # Training
@@ -319,6 +334,7 @@ def train_single_gen(
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
         value_target_q_weight=value_target_q_weight,
+        temperature_schedule=temperature_schedule,
         mask_terminal_policy=mask_terminal_policy,
         replay_gens=replay_gens,
         parent=parent.created_at,
@@ -344,6 +360,7 @@ def training_loop(
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
     value_target_q_weight: float = 0.0,
+    temperature_schedule: TemperatureSchedule | None = None,
     mask_terminal_policy: bool = False,
     replay_gens: int = 1,
 ) -> TrainingGen:
@@ -351,6 +368,8 @@ def training_loop(
     saved model is scored on `eval_config` (default: raw network on the v1 dev suite)."""
     if replay_gens < 1:
         raise ValueError("replay_gens must be at least 1")
+    if temperature_schedule is None:
+        temperature_schedule = list(DEFAULT_TEMPERATURE_SCHEDULE)
     eval_config = eval_config or default_eval_config()
     logger.info("Beginning training loop")
     logger.info("device: {}", device)
@@ -381,6 +400,7 @@ def training_loop(
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
         value_target_q_weight=value_target_q_weight,
+        temperature_schedule=temperature_schedule,
         mask_terminal_policy=mask_terminal_policy,
         replay_gens=replay_gens,
     )
@@ -401,6 +421,7 @@ def training_loop(
             root_noise_alpha=root_noise_alpha,
             root_noise_frac=root_noise_frac,
             value_target_q_weight=value_target_q_weight,
+            temperature_schedule=temperature_schedule,
             mask_terminal_policy=mask_terminal_policy,
             replay_gens=replay_gens,
         )
@@ -484,4 +505,29 @@ def parse_lr_schedule(floats: list[float]) -> dict[int, float]:
         )
         lr = floats[i + 1]
         schedule[threshold] = lr
+    return schedule
+
+
+def parse_temperature_schedule(spec: str) -> TemperatureSchedule:
+    """Parse exclusive ply boundaries and their move temperatures."""
+    schedule: TemperatureSchedule = []
+    for pair in spec.split(","):
+        parts = pair.split(":")
+        if len(parts) != 2:
+            raise ValueError("expected a comma list of until_ply:temperature pairs")
+        try:
+            until_ply = int(parts[0])
+        except ValueError as exc:
+            raise ValueError("until_ply must be an integer") from exc
+        if until_ply < 0:
+            raise ValueError("until_ply must be non-negative")
+        if schedule and until_ply <= schedule[-1][0]:
+            raise ValueError("until_ply values must be strictly increasing")
+        try:
+            temperature = float(parts[1])
+        except ValueError as exc:
+            raise ValueError("temperature must be a number") from exc
+        if not math.isfinite(temperature) or temperature <= 0:
+            raise ValueError("temperature must be finite and positive")
+        schedule.append((until_ply, temperature))
     return schedule

@@ -42,6 +42,7 @@ def test_split_train_test_is_deterministic_and_non_mutating() -> None:
         root_noise_alpha=None,
         root_noise_frac=0.0,
         value_target_q_weight=0.0,
+        temperature_schedule=None,
     )
     original_ids = _game_ids(games)
     terminals = {g.samples[-1].pos_str() for g in games.results}
@@ -168,6 +169,7 @@ def test_greedy_cutoff_plays_most_visited_move() -> None:
         root_noise_alpha=None,
         root_noise_frac=0.0,
         value_target_q_weight=0.0,
+        temperature_schedule=None,
     )
     for game in games.results:
         for ply, (sample, following) in enumerate(
@@ -208,6 +210,7 @@ def test_root_noise_rejects_invalid_parameters(
             root_noise_alpha=alpha,
             root_noise_frac=frac,
             value_target_q_weight=0.0,
+            temperature_schedule=None,
         )
 
 
@@ -224,6 +227,7 @@ def test_root_noise_off_preserves_games_and_on_changes_them() -> None:
             root_noise_alpha=alpha,
             root_noise_frac=frac,
             value_target_q_weight=0.0,
+            temperature_schedule=None,
         )
         return {g.metadata.game_id: _sample_positions(g.samples) for g in games.results}
 
@@ -281,3 +285,49 @@ def test_value_target_blending_preserves_moves_and_terminal_values() -> None:
                     == actual.samples[-1].to_numpy()[i].tobytes()
                 )
     assert changed
+
+
+@pytest.mark.parametrize(
+    "schedule",
+    [
+        [(4, 1.0), (4, 2.0)],
+        [(8, 1.0), (4, 2.0)],
+        [(2, 0.0)],
+        [(2, -1.0)],
+        [(2, float("nan"))],
+        [(2, float("inf"))],
+    ],
+)
+def test_temperature_schedule_rejects_invalid_parameters(
+    schedule: list[tuple[int, float]],
+) -> None:
+    with pytest.raises(ValueError, match="temperature_schedule"):
+        c4a0_rust.play_games(
+            [], 8, 16, 2.0, 0.01, _uniform_eval, temperature_schedule=schedule
+        )
+
+
+def test_temperature_schedule_default_and_greedy_preserve_samples() -> None:
+    def play(
+        schedule: list[tuple[int, float]] | None, greedy: int | None = None
+    ) -> dict[int, list[tuple[bytes, ...]]]:
+        result = c4a0_rust.play_games(
+            [c4a0_rust.GameMetadata(i, 0, 0) for i in range(4)],
+            8,
+            32,
+            2.0,
+            0.01,
+            _uniform_eval,
+            temperature_schedule=schedule,
+            greedy_after_ply=greedy,
+        )
+        return {
+            game.metadata.game_id: [
+                tuple(a.tobytes() for a in s.to_numpy()) for s in game.samples
+            ]
+            for game in result.results
+        }
+
+    assert play(None) == play([(4, 4.0), (8, 2.0)])
+    assert play(None) != play([(2, 1.5)])
+    assert play(None, 0) == play([(2, 1.5)], 0)

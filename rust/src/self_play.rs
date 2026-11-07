@@ -18,16 +18,29 @@ use crate::{
 };
 
 /// Options that affect self-play move selection and training targets.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct SelfPlayOptions {
     pub greedy_after_ply: Option<usize>,
     pub root_noise_alpha: Option<f32>,
     pub root_noise_frac: f32,
     pub value_target_q_weight: f32,
+    pub temperature_schedule: Vec<(usize, f32)>,
+}
+
+impl Default for SelfPlayOptions {
+    fn default() -> Self {
+        Self {
+            greedy_after_ply: None,
+            root_noise_alpha: None,
+            root_noise_frac: 0.0,
+            value_target_q_weight: 0.0,
+            temperature_schedule: vec![(4, 4.0), (8, 2.0)],
+        }
+    }
 }
 
 impl SelfPlayOptions {
-    pub fn validate(self) -> Result<(), &'static str> {
+    pub fn validate(&self) -> Result<(), &'static str> {
         if self
             .root_noise_alpha
             .is_some_and(|a| !a.is_finite() || a <= 0.0)
@@ -45,10 +58,20 @@ impl SelfPlayOptions {
         {
             return Err("value_target_q_weight must be finite and between 0 and 1");
         }
+        let mut previous = None;
+        for &(until_ply, temperature) in &self.temperature_schedule {
+            if previous.is_some_and(|ply| until_ply <= ply) {
+                return Err("temperature_schedule plies must be strictly increasing");
+            }
+            if !temperature.is_finite() || temperature <= 0.0 {
+                return Err("temperature_schedule temperatures must be finite and positive");
+            }
+            previous = Some(until_ply);
+        }
         Ok(())
     }
 
-    fn add_root_noise(self, game: &mut MctsGame, c_exploration: f32) {
+    fn add_root_noise(&self, game: &mut MctsGame, c_exploration: f32) {
         if let Some(alpha) = self.root_noise_alpha {
             if self.root_noise_frac > 0.0 {
                 game.add_root_noise(alpha, self.root_noise_frac, c_exploration);
@@ -56,13 +79,14 @@ impl SelfPlayOptions {
         }
     }
 
-    fn temperature(self, ply: usize) -> f32 {
-        match () {
-            _ if self.greedy_after_ply.is_some_and(|cutoff| ply >= cutoff) => 0.0,
-            _ if ply < 4 => 4.0,
-            _ if ply < 8 => 2.0,
-            _ => 1.0,
+    fn temperature(&self, ply: usize) -> f32 {
+        if self.greedy_after_ply.is_some_and(|cutoff| ply >= cutoff) {
+            return 0.0;
         }
+        self.temperature_schedule
+            .iter()
+            .find_map(|&(until_ply, temperature)| (ply < until_ply).then_some(temperature))
+            .unwrap_or(1.0)
     }
 }
 
@@ -134,6 +158,7 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
             let n_games_remaining = Arc::clone(&n_games_remaining);
             let pb_game_done = pb_game_done.clone();
             let pb_mcts_iter = pb_mcts_iter.clone();
+            let options = options.clone();
             s.builder()
                 .name(format!("mcts_thread {}", i))
                 .spawn(move |_| {
@@ -681,6 +706,40 @@ pub mod tests {
             crate::mcts::apply_temperature(&[0.1, 0.3, 0.3, 0.1, 0.1, 0.05, 0.05], 0.0),
             [0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0]
         );
+    }
+
+    #[test]
+    fn custom_temperature_schedule_and_greedy_override() {
+        let mut options = SelfPlayOptions {
+            temperature_schedule: vec![(2, 1.5)],
+            ..SelfPlayOptions::default()
+        };
+        assert!(options.validate().is_ok());
+        for ply in 0..42 {
+            assert_eq!(options.temperature(ply), if ply < 2 { 1.5 } else { 1.0 });
+        }
+        options.greedy_after_ply = Some(1);
+        assert_eq!(options.temperature(0), 1.5);
+        for ply in 1..42 {
+            assert_eq!(options.temperature(ply), 0.0);
+        }
+        options.greedy_after_ply = None;
+        options.temperature_schedule = vec![(2, 1.5), (5, 0.5), (9, 3.0)];
+        for ply in 0..42 {
+            let expected = if ply < 2 {
+                1.5
+            } else if ply < 5 {
+                0.5
+            } else if ply < 9 {
+                3.0
+            } else {
+                1.0
+            };
+            assert_eq!(options.temperature(ply), expected);
+        }
+        options.temperature_schedule.clear();
+        assert!(options.validate().is_ok());
+        assert_eq!(options.temperature(0), 1.0);
     }
 
     #[test]

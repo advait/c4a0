@@ -21,6 +21,7 @@ from c4a0.training import (
     SampleTensor,
     TrainingGen,
     parse_lr_schedule,
+    parse_temperature_schedule,
     replay_training_games,
     training_loop,
 )
@@ -51,6 +52,7 @@ def _tiny_loop(
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
     value_target_q_weight: float = 0.0,
+    temperature_schedule: list[tuple[int, float]] | None = None,
     mask_terminal_policy: bool = False,
     replay_gens: int = 1,
 ) -> TrainingGen:
@@ -70,6 +72,7 @@ def _tiny_loop(
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
         value_target_q_weight=value_target_q_weight,
+        temperature_schedule=temperature_schedule,
         mask_terminal_policy=mask_terminal_policy,
         replay_gens=replay_gens,
     )
@@ -112,10 +115,15 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(
         root_noise_alpha=0.3,
         root_noise_frac=0.25,
         value_target_q_weight=0.6,
+        temperature_schedule=[(2, 1.5)],
         mask_terminal_policy=True,
         max_gens=2,
         replay_gens=2,
     )
+    assert gen.temperature_schedule == [(2, 1.5)]
+    assert TrainingGen.load(str(tmp_path), gen.created_at).temperature_schedule == [
+        (2, 1.5)
+    ]
     assert gen.value_target_q_weight == 0.6
     assert TrainingGen.load(str(tmp_path), gen.created_at).value_target_q_weight == 0.6
     assert gen.replay_gens == 2
@@ -211,6 +219,7 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     assert gen.greedy_after_ply is None
     assert gen.root_noise_alpha is None
     assert gen.root_noise_frac == 0.0
+    assert gen.temperature_schedule == [(4, 4.0), (8, 2.0)]
     assert gen.mask_terminal_policy is False
     assert gen.replay_gens == 1
 
@@ -252,6 +261,7 @@ def test_replay_window_loads_only_recent_ancestors(tmp_path: Path) -> None:
                 root_noise_alpha=None,
                 root_noise_frac=0.0,
                 value_target_q_weight=0.0,
+                temperature_schedule=None,
             )
         )
         with open(Path(gen.gen_folder(str(tmp_path))) / "games.pkl", "wb") as f:
@@ -289,3 +299,17 @@ def test_each_generation_gets_fresh_game_ids(tmp_path: Path) -> None:
         ids.append({r.metadata.game_id for r in games.results})
     assert len(ids[0]) == len(ids[1]) == 4
     assert ids[0].isdisjoint(ids[1])
+
+
+@pytest.mark.parametrize(
+    "spec,expected",
+    [
+        ("4:4.0,8:2.0", [(4, 4.0), (8, 2.0)]),
+        ("2:1.5", [(2, 1.5)]),
+        ("0:2, 2:1.5,5:0.5", [(0, 2.0), (2, 1.5), (5, 0.5)]),
+    ],
+)
+def test_parse_temperature_schedule(
+    spec: str, expected: list[tuple[int, float]]
+) -> None:
+    assert parse_temperature_schedule(spec) == expected
