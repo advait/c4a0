@@ -109,6 +109,11 @@ description = "Summarize a directory of training runs (pass the directory and re
 depends = ["build"]
 run = "uv run --locked python scripts/converge_report.py"
 
+[tasks.plot]
+description = "Regenerate the README training-progress graph from docs/data/training-progress.json"
+depends = ["install"]
+run = "uv run --locked python scripts/plot_progress.py"
+
 [tasks."train:smoke"]
 description = "Run a fast CPU end-to-end smoke training job"
 depends = ["build"]

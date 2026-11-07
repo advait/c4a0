@@ -1,0 +1,1792 @@
+{
+ "note": "Per-generation dev-suite scores from the alapin convergence runs (scripts/converge_report.py reads the same metadata). strict64 = MCTS-64 top-1 agreement with the solver's fastest-win move; keeps256 = MCTS-256 top-1 keeps the game result. Two runs per arm.",
+ "series": {
+  "search": [
+   {
+    "label": "Original search (ln-UCB)",
+    "runs": [
+     "converge-v1/current-r1",
+     "converge-v1/current-r2"
+    ],
+    "short": "ln-UCB"
+   },
+   {
+    "label": "PUCT + true-mean Q",
+    "runs": [
+     "converge-v1/puct-r1",
+     "converge-v1/puct-r2"
+    ],
+    "short": "PUCT"
+   },
+   {
+    "label": "+ root noise + replay 4",
+    "runs": [
+     "converge-v3/nr-r1",
+     "converge-v3/nr-r2"
+    ],
+    "short": "+ noise, replay"
+   },
+   {
+    "label": "+ 2,048 games/gen",
+    "runs": [
+     "converge-v3/nr-g2048-r1",
+     "converge-v3/nr-g2048-r2"
+    ],
+    "short": "+ 2,048 games"
+   }
+  ],
+  "target": [
+   {
+    "label": "1\u00d732 net, replay 8 (60 gens)",
+    "runs": [
+     "converge-v4/best-r1",
+     "converge-v4/best-r2"
+    ],
+    "short": "1\u00d732 net"
+   },
+   {
+    "label": "4\u00d764 net + search-value targets",
+    "runs": [
+     "converge-v6/q10-big-r1",
+     "converge-v6/q10-big-r2"
+    ],
+    "short": "4\u00d764 net"
+   },
+   {
+    "label": "Final: 4\u00d764 + random starts",
+    "runs": [
+     "converge-v9/b4f64-r1",
+     "converge-v9/b4f64-r2"
+    ],
+    "short": "final"
+   }
+  ]
+ },
+ "runs": {
+  "converge-v1/current-r1": [
+   {
+    "gen": 0,
+    "strict64": 0.75705,
+    "keeps256": null
+   },
+   {
+    "gen": 1,
+    "strict64": 0.72746,
+    "keeps256": null
+   },
+   {
+    "gen": 2,
+    "strict64": 0.75225,
+    "keeps256": null
+   },
+   {
+    "gen": 3,
+    "strict64": 0.73461,
+    "keeps256": null
+   },
+   {
+    "gen": 4,
+    "strict64": 0.71313,
+    "keeps256": null
+   },
+   {
+    "gen": 5,
+    "strict64": 0.65703,
+    "keeps256": null
+   },
+   {
+    "gen": 6,
+    "strict64": 0.65262,
+    "keeps256": null
+   },
+   {
+    "gen": 7,
+    "strict64": 0.62469,
+    "keeps256": null
+   },
+   {
+    "gen": 8,
+    "strict64": 0.62739,
+    "keeps256": null
+   },
+   {
+    "gen": 9,
+    "strict64": 0.60755,
+    "keeps256": null
+   },
+   {
+    "gen": 10,
+    "strict64": 0.63939,
+    "keeps256": null
+   },
+   {
+    "gen": 11,
+    "strict64": 0.62322,
+    "keeps256": null
+   },
+   {
+    "gen": 12,
+    "strict64": 0.64005,
+    "keeps256": null
+   },
+   {
+    "gen": 13,
+    "strict64": 0.61636,
+    "keeps256": null
+   },
+   {
+    "gen": 14,
+    "strict64": 0.60534,
+    "keeps256": null
+   },
+   {
+    "gen": 15,
+    "strict64": 0.60828,
+    "keeps256": null
+   },
+   {
+    "gen": 16,
+    "strict64": 0.59832,
+    "keeps256": null
+   },
+   {
+    "gen": 17,
+    "strict64": 0.60395,
+    "keeps256": null
+   },
+   {
+    "gen": 18,
+    "strict64": 0.62331,
+    "keeps256": null
+   },
+   {
+    "gen": 19,
+    "strict64": 0.58942,
+    "keeps256": null
+   },
+   {
+    "gen": 20,
+    "strict64": 0.58746,
+    "keeps256": null
+   }
+  ],
+  "converge-v1/current-r2": [
+   {
+    "gen": 0,
+    "strict64": 0.78224,
+    "keeps256": null
+   },
+   {
+    "gen": 1,
+    "strict64": 0.74114,
+    "keeps256": null
+   },
+   {
+    "gen": 2,
+    "strict64": 0.72987,
+    "keeps256": null
+   },
+   {
+    "gen": 3,
+    "strict64": 0.73665,
+    "keeps256": null
+   },
+   {
+    "gen": 4,
+    "strict64": 0.70627,
+    "keeps256": null
+   },
+   {
+    "gen": 5,
+    "strict64": 0.68937,
+    "keeps256": null
+   },
+   {
+    "gen": 6,
+    "strict64": 0.65189,
+    "keeps256": null
+   },
+   {
+    "gen": 7,
+    "strict64": 0.67728,
+    "keeps256": null
+   },
+   {
+    "gen": 8,
+    "strict64": 0.63425,
+    "keeps256": null
+   },
+   {
+    "gen": 9,
+    "strict64": 0.6416,
+    "keeps256": null
+   },
+   {
+    "gen": 10,
+    "strict64": 0.63462,
+    "keeps256": null
+   },
+   {
+    "gen": 11,
+    "strict64": 0.5895,
+    "keeps256": null
+   },
+   {
+    "gen": 12,
+    "strict64": 0.64772,
+    "keeps256": null
+   },
+   {
+    "gen": 13,
+    "strict64": 0.58762,
+    "keeps256": null
+   },
+   {
+    "gen": 14,
+    "strict64": 0.58729,
+    "keeps256": null
+   },
+   {
+    "gen": 15,
+    "strict64": 0.59187,
+    "keeps256": null
+   },
+   {
+    "gen": 16,
+    "strict64": 0.57137,
+    "keeps256": null
+   },
+   {
+    "gen": 17,
+    "strict64": 0.59726,
+    "keeps256": null
+   },
+   {
+    "gen": 18,
+    "strict64": 0.5717,
+    "keeps256": null
+   },
+   {
+    "gen": 19,
+    "strict64": 0.57153,
+    "keeps256": null
+   },
+   {
+    "gen": 20,
+    "strict64": 0.54851,
+    "keeps256": null
+   }
+  ],
+  "converge-v1/puct-r1": [
+   {
+    "gen": 0,
+    "strict64": 0.77366,
+    "keeps256": null
+   },
+   {
+    "gen": 1,
+    "strict64": 0.81489,
+    "keeps256": null
+   },
+   {
+    "gen": 2,
+    "strict64": 0.83121,
+    "keeps256": null
+   },
+   {
+    "gen": 3,
+    "strict64": 0.84403,
+    "keeps256": null
+   },
+   {
+    "gen": 4,
+    "strict64": 0.83121,
+    "keeps256": null
+   },
+   {
+    "gen": 5,
+    "strict64": 0.82092,
+    "keeps256": null
+   },
+   {
+    "gen": 6,
+    "strict64": 0.81292,
+    "keeps256": null
+   },
+   {
+    "gen": 7,
+    "strict64": 0.8152,
+    "keeps256": null
+   },
+   {
+    "gen": 8,
+    "strict64": 0.81349,
+    "keeps256": null
+   },
+   {
+    "gen": 9,
+    "strict64": 0.83611,
+    "keeps256": null
+   },
+   {
+    "gen": 10,
+    "strict64": 0.83244,
+    "keeps256": null
+   },
+   {
+    "gen": 11,
+    "strict64": 0.83023,
+    "keeps256": null
+   },
+   {
+    "gen": 12,
+    "strict64": 0.82411,
+    "keeps256": null
+   },
+   {
+    "gen": 13,
+    "strict64": 0.83219,
+    "keeps256": null
+   },
+   {
+    "gen": 14,
+    "strict64": 0.81872,
+    "keeps256": null
+   },
+   {
+    "gen": 15,
+    "strict64": 0.80622,
+    "keeps256": null
+   },
+   {
+    "gen": 16,
+    "strict64": 0.80451,
+    "keeps256": null
+   },
+   {
+    "gen": 17,
+    "strict64": 0.80328,
+    "keeps256": null
+   },
+   {
+    "gen": 18,
+    "strict64": 0.81455,
+    "keeps256": null
+   },
+   {
+    "gen": 19,
+    "strict64": 0.79422,
+    "keeps256": null
+   },
+   {
+    "gen": 20,
+    "strict64": 0.81325,
+    "keeps256": null
+   }
+  ],
+  "converge-v1/puct-r2": [
+   {
+    "gen": 0,
+    "strict64": 0.78401,
+    "keeps256": null
+   },
+   {
+    "gen": 1,
+    "strict64": 0.82476,
+    "keeps256": null
+   },
+   {
+    "gen": 2,
+    "strict64": 0.83648,
+    "keeps256": null
+   },
+   {
+    "gen": 3,
+    "strict64": 0.83268,
+    "keeps256": null
+   },
+   {
+    "gen": 4,
+    "strict64": 0.83603,
+    "keeps256": null
+   },
+   {
+    "gen": 5,
+    "strict64": 0.83048,
+    "keeps256": null
+   },
+   {
+    "gen": 6,
+    "strict64": 0.825,
+    "keeps256": null
+   },
+   {
+    "gen": 7,
+    "strict64": 0.84542,
+    "keeps256": null
+   },
+   {
+    "gen": 8,
+    "strict64": 0.84346,
+    "keeps256": null
+   },
+   {
+    "gen": 9,
+    "strict64": 0.85007,
+    "keeps256": null
+   },
+   {
+    "gen": 10,
+    "strict64": 0.84664,
+    "keeps256": null
+   },
+   {
+    "gen": 11,
+    "strict64": 0.83244,
+    "keeps256": null
+   },
+   {
+    "gen": 12,
+    "strict64": 0.8317,
+    "keeps256": null
+   },
+   {
+    "gen": 13,
+    "strict64": 0.82827,
+    "keeps256": null
+   },
+   {
+    "gen": 14,
+    "strict64": 0.82435,
+    "keeps256": null
+   },
+   {
+    "gen": 15,
+    "strict64": 0.82108,
+    "keeps256": null
+   },
+   {
+    "gen": 16,
+    "strict64": 0.80459,
+    "keeps256": null
+   },
+   {
+    "gen": 17,
+    "strict64": 0.82141,
+    "keeps256": null
+   },
+   {
+    "gen": 18,
+    "strict64": 0.82166,
+    "keeps256": null
+   },
+   {
+    "gen": 19,
+    "strict64": 0.81439,
+    "keeps256": null
+   },
+   {
+    "gen": 20,
+    "strict64": 0.80426,
+    "keeps256": null
+   }
+  ],
+  "converge-v3/nr-r1": [
+   {
+    "gen": 0,
+    "strict64": 0.75599,
+    "keeps256": null
+   },
+   {
+    "gen": 1,
+    "strict64": 0.83166,
+    "keeps256": null
+   },
+   {
+    "gen": 2,
+    "strict64": 0.85742,
+    "keeps256": null
+   },
+   {
+    "gen": 3,
+    "strict64": 0.8522,
+    "keeps256": null
+   },
+   {
+    "gen": 4,
+    "strict64": 0.86722,
+    "keeps256": null
+   },
+   {
+    "gen": 5,
+    "strict64": 0.86232,
+    "keeps256": null
+   },
+   {
+    "gen": 6,
+    "strict64": 0.86118,
+    "keeps256": null
+   },
+   {
+    "gen": 7,
+    "strict64": 0.86314,
+    "keeps256": null
+   },
+   {
+    "gen": 8,
+    "strict64": 0.87188,
+    "keeps256": null
+   },
+   {
+    "gen": 9,
+    "strict64": 0.87286,
+    "keeps256": null
+   },
+   {
+    "gen": 10,
+    "strict64": 0.86894,
+    "keeps256": null
+   },
+   {
+    "gen": 11,
+    "strict64": 0.86183,
+    "keeps256": null
+   },
+   {
+    "gen": 12,
+    "strict64": 0.86134,
+    "keeps256": null
+   },
+   {
+    "gen": 13,
+    "strict64": 0.8584,
+    "keeps256": null
+   },
+   {
+    "gen": 14,
+    "strict64": 0.866,
+    "keeps256": null
+   },
+   {
+    "gen": 15,
+    "strict64": 0.8562,
+    "keeps256": null
+   },
+   {
+    "gen": 16,
+    "strict64": 0.85873,
+    "keeps256": null
+   },
+   {
+    "gen": 17,
+    "strict64": 0.85146,
+    "keeps256": null
+   },
+   {
+    "gen": 18,
+    "strict64": 0.85906,
+    "keeps256": null
+   },
+   {
+    "gen": 19,
+    "strict64": 0.8682,
+    "keeps256": null
+   },
+   {
+    "gen": 20,
+    "strict64": 0.86355,
+    "keeps256": null
+   }
+  ],
+  "converge-v3/nr-r2": [
+   {
+    "gen": 0,
+    "strict64": 0.79159,
+    "keeps256": null
+   },
+   {
+    "gen": 1,
+    "strict64": 0.82194,
+    "keeps256": null
+   },
+   {
+    "gen": 2,
+    "strict64": 0.83358,
+    "keeps256": null
+   },
+   {
+    "gen": 3,
+    "strict64": 0.83856,
+    "keeps256": null
+   },
+   {
+    "gen": 4,
+    "strict64": 0.8611,
+    "keeps256": null
+   },
+   {
+    "gen": 5,
+    "strict64": 0.85587,
+    "keeps256": null
+   },
+   {
+    "gen": 6,
+    "strict64": 0.85473,
+    "keeps256": null
+   },
+   {
+    "gen": 7,
+    "strict64": 0.84485,
+    "keeps256": null
+   },
+   {
+    "gen": 8,
+    "strict64": 0.84607,
+    "keeps256": null
+   },
+   {
+    "gen": 9,
+    "strict64": 0.85987,
+    "keeps256": null
+   },
+   {
+    "gen": 10,
+    "strict64": 0.8562,
+    "keeps256": null
+   },
+   {
+    "gen": 11,
+    "strict64": 0.85595,
+    "keeps256": null
+   },
+   {
+    "gen": 12,
+    "strict64": 0.85546,
+    "keeps256": null
+   },
+   {
+    "gen": 13,
+    "strict64": 0.85693,
+    "keeps256": null
+   },
+   {
+    "gen": 14,
+    "strict64": 0.86036,
+    "keeps256": null
+   },
+   {
+    "gen": 15,
+    "strict64": 0.86061,
+    "keeps256": null
+   },
+   {
+    "gen": 16,
+    "strict64": 0.86845,
+    "keeps256": null
+   },
+   {
+    "gen": 17,
+    "strict64": 0.86869,
+    "keeps256": null
+   },
+   {
+    "gen": 18,
+    "strict64": 0.86028,
+    "keeps256": null
+   },
+   {
+    "gen": 19,
+    "strict64": 0.86526,
+    "keeps256": null
+   },
+   {
+    "gen": 20,
+    "strict64": 0.85644,
+    "keeps256": null
+   }
+  ],
+  "converge-v3/nr-g2048-r1": [
+   {
+    "gen": 0,
+    "strict64": 0.78439,
+    "keeps256": null
+   },
+   {
+    "gen": 1,
+    "strict64": 0.83653,
+    "keeps256": null
+   },
+   {
+    "gen": 2,
+    "strict64": 0.84999,
+    "keeps256": null
+   },
+   {
+    "gen": 3,
+    "strict64": 0.86183,
+    "keeps256": null
+   },
+   {
+    "gen": 4,
+    "strict64": 0.86232,
+    "keeps256": null
+   },
+   {
+    "gen": 5,
+    "strict64": 0.87114,
+    "keeps256": null
+   },
+   {
+    "gen": 6,
+    "strict64": 0.85865,
+    "keeps256": null
+   },
+   {
+    "gen": 7,
+    "strict64": 0.85816,
+    "keeps256": null
+   },
+   {
+    "gen": 8,
+    "strict64": 0.86967,
+    "keeps256": null
+   },
+   {
+    "gen": 9,
+    "strict64": 0.86485,
+    "keeps256": null
+   },
+   {
+    "gen": 10,
+    "strict64": 0.88021,
+    "keeps256": null
+   },
+   {
+    "gen": 11,
+    "strict64": 0.87482,
+    "keeps256": null
+   },
+   {
+    "gen": 12,
+    "strict64": 0.87139,
+    "keeps256": null
+   },
+   {
+    "gen": 13,
+    "strict64": 0.87073,
+    "keeps256": null
+   },
+   {
+    "gen": 14,
+    "strict64": 0.8731,
+    "keeps256": null
+   },
+   {
+    "gen": 15,
+    "strict64": 0.88094,
+    "keeps256": null
+   },
+   {
+    "gen": 16,
+    "strict64": 0.87457,
+    "keeps256": null
+   },
+   {
+    "gen": 17,
+    "strict64": 0.87972,
+    "keeps256": null
+   },
+   {
+    "gen": 18,
+    "strict64": 0.88021,
+    "keeps256": null
+   },
+   {
+    "gen": 19,
+    "strict64": 0.8807,
+    "keeps256": null
+   },
+   {
+    "gen": 20,
+    "strict64": 0.88217,
+    "keeps256": null
+   }
+  ],
+  "converge-v3/nr-g2048-r2": [
+   {
+    "gen": 0,
+    "strict64": 0.77809,
+    "keeps256": null
+   },
+   {
+    "gen": 1,
+    "strict64": 0.8326,
+    "keeps256": null
+   },
+   {
+    "gen": 2,
+    "strict64": 0.83178,
+    "keeps256": null
+   },
+   {
+    "gen": 3,
+    "strict64": 0.8486,
+    "keeps256": null
+   },
+   {
+    "gen": 4,
+    "strict64": 0.85791,
+    "keeps256": null
+   },
+   {
+    "gen": 5,
+    "strict64": 0.84338,
+    "keeps256": null
+   },
+   {
+    "gen": 6,
+    "strict64": 0.866,
+    "keeps256": null
+   },
+   {
+    "gen": 7,
+    "strict64": 0.86281,
+    "keeps256": null
+   },
+   {
+    "gen": 8,
+    "strict64": 0.86698,
+    "keeps256": null
+   },
+   {
+    "gen": 9,
+    "strict64": 0.87245,
+    "keeps256": null
+   },
+   {
+    "gen": 10,
+    "strict64": 0.878,
+    "keeps256": null
+   },
+   {
+    "gen": 11,
+    "strict64": 0.87261,
+    "keeps256": null
+   },
+   {
+    "gen": 12,
+    "strict64": 0.87776,
+    "keeps256": null
+   },
+   {
+    "gen": 13,
+    "strict64": 0.87825,
+    "keeps256": null
+   },
+   {
+    "gen": 14,
+    "strict64": 0.8731,
+    "keeps256": null
+   },
+   {
+    "gen": 15,
+    "strict64": 0.87139,
+    "keeps256": null
+   },
+   {
+    "gen": 16,
+    "strict64": 0.87392,
+    "keeps256": null
+   },
+   {
+    "gen": 17,
+    "strict64": 0.87547,
+    "keeps256": null
+   },
+   {
+    "gen": 18,
+    "strict64": 0.87653,
+    "keeps256": null
+   },
+   {
+    "gen": 19,
+    "strict64": 0.87359,
+    "keeps256": null
+   },
+   {
+    "gen": 20,
+    "strict64": 0.87482,
+    "keeps256": null
+   }
+  ],
+  "converge-v4/best-r1": [
+   {
+    "gen": 0,
+    "strict64": 0.78304,
+    "keeps256": 0.87186
+   },
+   {
+    "gen": 1,
+    "strict64": 0.83995,
+    "keeps256": 0.91678
+   },
+   {
+    "gen": 2,
+    "strict64": 0.84027,
+    "keeps256": 0.9316
+   },
+   {
+    "gen": 3,
+    "strict64": 0.85669,
+    "keeps256": 0.93464
+   },
+   {
+    "gen": 4,
+    "strict64": 0.8602,
+    "keeps256": 0.93531
+   },
+   {
+    "gen": 5,
+    "strict64": 0.87408,
+    "keeps256": 0.93598
+   },
+   {
+    "gen": 6,
+    "strict64": 0.86747,
+    "keeps256": 0.94508
+   },
+   {
+    "gen": 7,
+    "strict64": 0.86869,
+    "keeps256": 0.93969
+   },
+   {
+    "gen": 8,
+    "strict64": 0.87555,
+    "keeps256": 0.93666
+   },
+   {
+    "gen": 9,
+    "strict64": 0.87359,
+    "keeps256": 0.9471
+   },
+   {
+    "gen": 10,
+    "strict64": 0.87433,
+    "keeps256": 0.94609
+   },
+   {
+    "gen": 11,
+    "strict64": 0.87384,
+    "keeps256": 0.94474
+   },
+   {
+    "gen": 12,
+    "strict64": 0.88511,
+    "keeps256": 0.95013
+   },
+   {
+    "gen": 13,
+    "strict64": 0.87457,
+    "keeps256": 0.94609
+   },
+   {
+    "gen": 14,
+    "strict64": 0.87482,
+    "keeps256": 0.94811
+   },
+   {
+    "gen": 15,
+    "strict64": 0.88045,
+    "keeps256": 0.95115
+   },
+   {
+    "gen": 16,
+    "strict64": 0.88143,
+    "keeps256": 0.95148
+   },
+   {
+    "gen": 17,
+    "strict64": 0.87874,
+    "keeps256": 0.95283
+   },
+   {
+    "gen": 18,
+    "strict64": 0.87433,
+    "keeps256": 0.9562
+   },
+   {
+    "gen": 19,
+    "strict64": 0.88094,
+    "keeps256": 0.95418
+   },
+   {
+    "gen": 20,
+    "strict64": 0.88462,
+    "keeps256": 0.95822
+   },
+   {
+    "gen": 21,
+    "strict64": 0.88192,
+    "keeps256": 0.9535
+   },
+   {
+    "gen": 22,
+    "strict64": 0.89123,
+    "keeps256": 0.95755
+   },
+   {
+    "gen": 23,
+    "strict64": 0.89286,
+    "keeps256": 0.95721
+   },
+   {
+    "gen": 24,
+    "strict64": 0.88568,
+    "keeps256": 0.95889
+   },
+   {
+    "gen": 25,
+    "strict64": 0.87457,
+    "keeps256": 0.95451
+   },
+   {
+    "gen": 26,
+    "strict64": 0.87972,
+    "keeps256": 0.95586
+   },
+   {
+    "gen": 27,
+    "strict64": 0.88756,
+    "keeps256": 0.96092
+   },
+   {
+    "gen": 28,
+    "strict64": 0.89025,
+    "keeps256": 0.96159
+   },
+   {
+    "gen": 29,
+    "strict64": 0.8829,
+    "keeps256": 0.96159
+   },
+   {
+    "gen": 30,
+    "strict64": 0.87996,
+    "keeps256": 0.96327
+   },
+   {
+    "gen": 31,
+    "strict64": 0.88266,
+    "keeps256": 0.95923
+   },
+   {
+    "gen": 32,
+    "strict64": 0.88633,
+    "keeps256": 0.96159
+   },
+   {
+    "gen": 33,
+    "strict64": 0.88707,
+    "keeps256": 0.96496
+   },
+   {
+    "gen": 34,
+    "strict64": 0.88241,
+    "keeps256": 0.96631
+   },
+   {
+    "gen": 35,
+    "strict64": 0.88878,
+    "keeps256": 0.96429
+   },
+   {
+    "gen": 36,
+    "strict64": 0.88707,
+    "keeps256": 0.96496
+   },
+   {
+    "gen": 37,
+    "strict64": 0.88315,
+    "keeps256": 0.96226
+   },
+   {
+    "gen": 38,
+    "strict64": 0.89221,
+    "keeps256": 0.96934
+   },
+   {
+    "gen": 39,
+    "strict64": 0.89074,
+    "keeps256": 0.96765
+   },
+   {
+    "gen": 40,
+    "strict64": 0.88951,
+    "keeps256": 0.96631
+   },
+   {
+    "gen": 41,
+    "strict64": 0.89237,
+    "keeps256": 0.96765
+   },
+   {
+    "gen": 42,
+    "strict64": 0.89147,
+    "keeps256": 0.96799
+   },
+   {
+    "gen": 43,
+    "strict64": 0.8945,
+    "keeps256": 0.96294
+   },
+   {
+    "gen": 44,
+    "strict64": 0.89074,
+    "keeps256": 0.96294
+   },
+   {
+    "gen": 45,
+    "strict64": 0.89466,
+    "keeps256": 0.96226
+   },
+   {
+    "gen": 46,
+    "strict64": 0.89564,
+    "keeps256": 0.96968
+   },
+   {
+    "gen": 47,
+    "strict64": 0.88486,
+    "keeps256": 0.96631
+   },
+   {
+    "gen": 48,
+    "strict64": 0.89441,
+    "keeps256": 0.96193
+   },
+   {
+    "gen": 49,
+    "strict64": 0.89907,
+    "keeps256": 0.96563
+   },
+   {
+    "gen": 50,
+    "strict64": 0.89074,
+    "keeps256": 0.96294
+   },
+   {
+    "gen": 51,
+    "strict64": 0.90176,
+    "keeps256": 0.96496
+   },
+   {
+    "gen": 52,
+    "strict64": 0.89294,
+    "keeps256": 0.96833
+   },
+   {
+    "gen": 53,
+    "strict64": 0.89809,
+    "keeps256": 0.96867
+   },
+   {
+    "gen": 54,
+    "strict64": 0.89833,
+    "keeps256": 0.969
+   },
+   {
+    "gen": 55,
+    "strict64": 0.89417,
+    "keeps256": 0.969
+   },
+   {
+    "gen": 56,
+    "strict64": 0.89646,
+    "keeps256": 0.96462
+   },
+   {
+    "gen": 57,
+    "strict64": 0.8949,
+    "keeps256": 0.96698
+   },
+   {
+    "gen": 58,
+    "strict64": 0.90078,
+    "keeps256": 0.96664
+   },
+   {
+    "gen": 59,
+    "strict64": 0.89817,
+    "keeps256": 0.96968
+   },
+   {
+    "gen": 60,
+    "strict64": 0.89025,
+    "keeps256": 0.96496
+   }
+  ],
+  "converge-v4/best-r2": [
+   {
+    "gen": 0,
+    "strict64": 0.76224,
+    "keeps256": 0.86489
+   },
+   {
+    "gen": 1,
+    "strict64": 0.82419,
+    "keeps256": 0.9033
+   },
+   {
+    "gen": 2,
+    "strict64": 0.84501,
+    "keeps256": 0.91509
+   },
+   {
+    "gen": 3,
+    "strict64": 0.84934,
+    "keeps256": 0.92554
+   },
+   {
+    "gen": 4,
+    "strict64": 0.85914,
+    "keeps256": 0.93329
+   },
+   {
+    "gen": 5,
+    "strict64": 0.8571,
+    "keeps256": 0.93329
+   },
+   {
+    "gen": 6,
+    "strict64": 0.866,
+    "keeps256": 0.93127
+   },
+   {
+    "gen": 7,
+    "strict64": 0.86722,
+    "keeps256": 0.92925
+   },
+   {
+    "gen": 8,
+    "strict64": 0.87686,
+    "keeps256": 0.93632
+   },
+   {
+    "gen": 9,
+    "strict64": 0.87163,
+    "keeps256": 0.94171
+   },
+   {
+    "gen": 10,
+    "strict64": 0.87547,
+    "keeps256": 0.94003
+   },
+   {
+    "gen": 11,
+    "strict64": 0.87147,
+    "keeps256": 0.93733
+   },
+   {
+    "gen": 12,
+    "strict64": 0.87555,
+    "keeps256": 0.9434
+   },
+   {
+    "gen": 13,
+    "strict64": 0.87776,
+    "keeps256": 0.94306
+   },
+   {
+    "gen": 14,
+    "strict64": 0.87996,
+    "keeps256": 0.95283
+   },
+   {
+    "gen": 15,
+    "strict64": 0.87972,
+    "keeps256": 0.9535
+   },
+   {
+    "gen": 16,
+    "strict64": 0.88731,
+    "keeps256": 0.95182
+   },
+   {
+    "gen": 17,
+    "strict64": 0.87531,
+    "keeps256": 0.94879
+   },
+   {
+    "gen": 18,
+    "strict64": 0.88682,
+    "keeps256": 0.95283
+   },
+   {
+    "gen": 19,
+    "strict64": 0.87947,
+    "keeps256": 0.95485
+   },
+   {
+    "gen": 20,
+    "strict64": 0.88935,
+    "keeps256": 0.95687
+   },
+   {
+    "gen": 21,
+    "strict64": 0.88796,
+    "keeps256": 0.95485
+   },
+   {
+    "gen": 22,
+    "strict64": 0.88021,
+    "keeps256": 0.9562
+   },
+   {
+    "gen": 23,
+    "strict64": 0.89025,
+    "keeps256": 0.95755
+   },
+   {
+    "gen": 24,
+    "strict64": 0.87914,
+    "keeps256": 0.95553
+   },
+   {
+    "gen": 25,
+    "strict64": 0.88976,
+    "keeps256": 0.96024
+   },
+   {
+    "gen": 26,
+    "strict64": 0.88535,
+    "keeps256": 0.95822
+   },
+   {
+    "gen": 27,
+    "strict64": 0.88805,
+    "keeps256": 0.95755
+   },
+   {
+    "gen": 28,
+    "strict64": 0.89049,
+    "keeps256": 0.95957
+   },
+   {
+    "gen": 29,
+    "strict64": 0.88829,
+    "keeps256": 0.96159
+   },
+   {
+    "gen": 30,
+    "strict64": 0.88878,
+    "keeps256": 0.96429
+   },
+   {
+    "gen": 31,
+    "strict64": 0.89074,
+    "keeps256": 0.9626
+   },
+   {
+    "gen": 32,
+    "strict64": 0.88878,
+    "keeps256": 0.96496
+   },
+   {
+    "gen": 33,
+    "strict64": 0.89221,
+    "keeps256": 0.96563
+   },
+   {
+    "gen": 34,
+    "strict64": 0.90078,
+    "keeps256": 0.96597
+   },
+   {
+    "gen": 35,
+    "strict64": 0.87955,
+    "keeps256": 0.96765
+   },
+   {
+    "gen": 36,
+    "strict64": 0.88707,
+    "keeps256": 0.96631
+   },
+   {
+    "gen": 37,
+    "strict64": 0.88462,
+    "keeps256": 0.96968
+   },
+   {
+    "gen": 38,
+    "strict64": 0.89539,
+    "keeps256": 0.96765
+   },
+   {
+    "gen": 39,
+    "strict64": 0.88854,
+    "keeps256": 0.96395
+   },
+   {
+    "gen": 40,
+    "strict64": 0.88707,
+    "keeps256": 0.96698
+   },
+   {
+    "gen": 41,
+    "strict64": 0.89221,
+    "keeps256": 0.96631
+   },
+   {
+    "gen": 42,
+    "strict64": 0.89074,
+    "keeps256": 0.96361
+   },
+   {
+    "gen": 43,
+    "strict64": 0.88878,
+    "keeps256": 0.96294
+   },
+   {
+    "gen": 44,
+    "strict64": 0.89319,
+    "keeps256": 0.96429
+   },
+   {
+    "gen": 45,
+    "strict64": 0.88854,
+    "keeps256": 0.96159
+   },
+   {
+    "gen": 46,
+    "strict64": 0.88666,
+    "keeps256": 0.96226
+   },
+   {
+    "gen": 47,
+    "strict64": 0.89515,
+    "keeps256": 0.96294
+   },
+   {
+    "gen": 48,
+    "strict64": 0.8856,
+    "keeps256": 0.96092
+   },
+   {
+    "gen": 49,
+    "strict64": 0.88927,
+    "keeps256": 0.96125
+   },
+   {
+    "gen": 50,
+    "strict64": 0.89294,
+    "keeps256": 0.96833
+   },
+   {
+    "gen": 51,
+    "strict64": 0.88854,
+    "keeps256": 0.969
+   },
+   {
+    "gen": 52,
+    "strict64": 0.90054,
+    "keeps256": 0.96968
+   },
+   {
+    "gen": 53,
+    "strict64": 0.89466,
+    "keeps256": 0.969
+   },
+   {
+    "gen": 54,
+    "strict64": 0.89833,
+    "keeps256": 0.96765
+   },
+   {
+    "gen": 55,
+    "strict64": 0.89147,
+    "keeps256": 0.96361
+   },
+   {
+    "gen": 56,
+    "strict64": 0.89809,
+    "keeps256": 0.97035
+   },
+   {
+    "gen": 57,
+    "strict64": 0.89098,
+    "keeps256": 0.96631
+   },
+   {
+    "gen": 58,
+    "strict64": 0.89294,
+    "keeps256": 0.96226
+   },
+   {
+    "gen": 59,
+    "strict64": 0.89058,
+    "keeps256": 0.96597
+   },
+   {
+    "gen": 60,
+    "strict64": 0.88845,
+    "keeps256": 0.96563
+   }
+  ],
+  "converge-v6/q10-big-r1": [
+   {
+    "gen": 0,
+    "strict64": 0.76603,
+    "keeps256": 0.85804
+   },
+   {
+    "gen": 1,
+    "strict64": 0.83695,
+    "keeps256": 0.90319
+   },
+   {
+    "gen": 2,
+    "strict64": 0.86722,
+    "keeps256": 0.91139
+   },
+   {
+    "gen": 3,
+    "strict64": 0.87792,
+    "keeps256": 0.91577
+   },
+   {
+    "gen": 4,
+    "strict64": 0.89372,
+    "keeps256": 0.9188
+   },
+   {
+    "gen": 5,
+    "strict64": 0.8947,
+    "keeps256": 0.93115
+   },
+   {
+    "gen": 6,
+    "strict64": 0.8967,
+    "keeps256": 0.92925
+   },
+   {
+    "gen": 7,
+    "strict64": 0.90168,
+    "keeps256": 0.93363
+   },
+   {
+    "gen": 8,
+    "strict64": 0.90348,
+    "keeps256": 0.94239
+   },
+   {
+    "gen": 9,
+    "strict64": 0.91842,
+    "keeps256": 0.94441
+   },
+   {
+    "gen": 10,
+    "strict64": 0.91859,
+    "keeps256": 0.95013
+   },
+   {
+    "gen": 11,
+    "strict64": 0.92324,
+    "keeps256": 0.95216
+   },
+   {
+    "gen": 12,
+    "strict64": 0.92487,
+    "keeps256": 0.95317
+   },
+   {
+    "gen": 13,
+    "strict64": 0.92438,
+    "keeps256": 0.95687
+   },
+   {
+    "gen": 14,
+    "strict64": 0.92585,
+    "keeps256": 0.95519
+   },
+   {
+    "gen": 15,
+    "strict64": 0.93328,
+    "keeps256": 0.96429
+   },
+   {
+    "gen": 16,
+    "strict64": 0.92822,
+    "keeps256": 0.96327
+   },
+   {
+    "gen": 17,
+    "strict64": 0.92553,
+    "keeps256": 0.96294
+   },
+   {
+    "gen": 18,
+    "strict64": 0.93034,
+    "keeps256": 0.97136
+   },
+   {
+    "gen": 19,
+    "strict64": 0.93451,
+    "keeps256": 0.969
+   }
+  ],
+  "converge-v6/q10-big-r2": [
+   {
+    "gen": 0,
+    "strict64": 0.7967,
+    "keeps256": 0.87208
+   },
+   {
+    "gen": 1,
+    "strict64": 0.84655,
+    "keeps256": 0.90869
+   },
+   {
+    "gen": 2,
+    "strict64": 0.86774,
+    "keeps256": 0.90869
+   },
+   {
+    "gen": 3,
+    "strict64": 0.88293,
+    "keeps256": 0.91611
+   },
+   {
+    "gen": 4,
+    "strict64": 0.89637,
+    "keeps256": 0.93093
+   },
+   {
+    "gen": 5,
+    "strict64": 0.89029,
+    "keeps256": 0.93565
+   },
+   {
+    "gen": 6,
+    "strict64": 0.90127,
+    "keeps256": 0.93868
+   },
+   {
+    "gen": 7,
+    "strict64": 0.90528,
+    "keeps256": 0.94441
+   },
+   {
+    "gen": 8,
+    "strict64": 0.90879,
+    "keeps256": 0.94474
+   },
+   {
+    "gen": 9,
+    "strict64": 0.9183,
+    "keeps256": 0.94632
+   },
+   {
+    "gen": 10,
+    "strict64": 0.91908,
+    "keeps256": 0.95182
+   },
+   {
+    "gen": 11,
+    "strict64": 0.92593,
+    "keeps256": 0.95822
+   },
+   {
+    "gen": 12,
+    "strict64": 0.92332,
+    "keeps256": 0.95923
+   },
+   {
+    "gen": 13,
+    "strict64": 0.92683,
+    "keeps256": 0.95755
+   },
+   {
+    "gen": 14,
+    "strict64": 0.92504,
+    "keeps256": 0.96429
+   },
+   {
+    "gen": 15,
+    "strict64": 0.92847,
+    "keeps256": 0.96294
+   },
+   {
+    "gen": 16,
+    "strict64": 0.92504,
+    "keeps256": 0.96294
+   },
+   {
+    "gen": 17,
+    "strict64": 0.93288,
+    "keeps256": 0.96294
+   },
+   {
+    "gen": 18,
+    "strict64": 0.92887,
+    "keeps256": 0.96024
+   },
+   {
+    "gen": 19,
+    "strict64": 0.93067,
+    "keeps256": 0.96833
+   },
+   {
+    "gen": 20,
+    "strict64": 0.93239,
+    "keeps256": 0.969
+   }
+  ],
+  "converge-v9/b4f64-r1": [
+   {
+    "gen": 0,
+    "strict64": 0.78468,
+    "keeps256": 0.87332
+   },
+   {
+    "gen": 1,
+    "strict64": 0.82876,
+    "keeps256": 0.89825
+   },
+   {
+    "gen": 2,
+    "strict64": 0.82867,
+    "keeps256": 0.90398
+   }
+  ],
+  "converge-v9/b4f64-r2": [
+   {
+    "gen": 0,
+    "strict64": 0.75916,
+    "keeps256": 0.85636
+   },
+   {
+    "gen": 1,
+    "strict64": 0.83333,
+    "keeps256": 0.89724
+   },
+   {
+    "gen": 2,
+    "strict64": 0.85048,
+    "keeps256": 0.90566
+   }
+  ],
+  "converge-v9/b8f128-r1": [
+   {
+    "gen": 0,
+    "strict64": 0.79564,
+    "keeps256": 0.87713
+   },
+   {
+    "gen": 1,
+    "strict64": 0.81518,
+    "keeps256": 0.88208
+   }
+  ]
+ }
+}
