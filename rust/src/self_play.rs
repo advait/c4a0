@@ -310,13 +310,16 @@ impl MctsThread {
                     self.nn_queue_tx.send(game).unwrap();
                 } else {
                     // Game is over. Send to done_queue.
-                    self.n_games_remaining.fetch_sub(1, Ordering::Relaxed);
+                    let remaining_before = self.n_games_remaining.fetch_sub(1, Ordering::AcqRel);
                     self.done_queue_tx
                         .send(game.to_result(self.c_ply_penalty))
                         .unwrap();
                     self.pb_game_done.inc(1);
 
-                    if self.n_games_remaining.load(Ordering::Relaxed) == 0 {
+                    // Only the thread that finished the last game shuts down. A separate load()
+                    // let two threads both see zero and both send poison pills, overfilling the
+                    // bounded job queue and blocking forever.
+                    if remaining_before == 1 {
                         // We wrote the last game. Send poison pills to remaining threads.
                         self.terminate_and_poison_other_threads();
                         return Loop::Break;
