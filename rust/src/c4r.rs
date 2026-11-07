@@ -134,100 +134,34 @@ impl Pos {
         self
     }
 
-    /// Generates a horizontal win mask starting from the given cell.
-    const fn _gen_h_win_mask(row: usize, col: usize) -> u64 {
-        Self::_idx_mask_unsafe(row, col)
-            | Self::_idx_mask_unsafe(row, col + 1)
-            | Self::_idx_mask_unsafe(row, col + 2)
-            | Self::_idx_mask_unsafe(row, col + 3)
-    }
-
-    /// Generates a vertical win mask starting from the given cell.
-    const fn _gen_v_win_mask(row: usize, col: usize) -> u64 {
-        Self::_idx_mask_unsafe(row, col)
-            | Self::_idx_mask_unsafe(row + 1, col)
-            | Self::_idx_mask_unsafe(row + 2, col)
-            | Self::_idx_mask_unsafe(row + 3, col)
-    }
-
-    /// Generates a diagonal (top-left to bottom-right) win mask starting from the given cell.
-    const fn _gen_d1_win_mask(row: usize, col: usize) -> u64 {
-        Self::_idx_mask_unsafe(row, col)
-            | Self::_idx_mask_unsafe(row + 1, col + 1)
-            | Self::_idx_mask_unsafe(row + 2, col + 2)
-            | Self::_idx_mask_unsafe(row + 3, col + 3)
-    }
-
-    /// Generates a diagonal (bottom-left to top-right) win mask starting from the given cell.
-    const fn _gen_d2_win_mask(row: usize, col: usize) -> u64 {
-        Self::_idx_mask_unsafe(row, col)
-            | Self::_idx_mask_unsafe(row - 1, col + 1)
-            | Self::_idx_mask_unsafe(row - 2, col + 2)
-            | Self::_idx_mask_unsafe(row - 3, col + 3)
-    }
-
-    /// Represents the set of all possible wins.
-    /// Each item is a bitmask representing the required locations of consecutive pieces.
-    const WIN_MASKS: [u64; 69] = {
-        // Note rust doesn't support for loops in const functions so we have to resort to while:
-        // See: https://github.com/rust-lang/rust/issues/87575
-
-        let mut masks = [0u64; 69];
-        let mut index = 0;
-
-        // Horizontal wins
+    /// Bits of every cell in columns `lo..=hi`.
+    const fn cols_mask(lo: usize, hi: usize) -> u64 {
+        let mut mask = 0;
         let mut row = 0;
         while row < Self::N_ROWS {
-            let mut col = 0;
-            while col <= Self::N_COLS - 4 {
-                masks[index] = Self::_gen_h_win_mask(row, col);
-                index += 1;
+            let mut col = lo;
+            while col <= hi {
+                mask |= Self::_idx_mask_unsafe(row, col);
                 col += 1;
             }
             row += 1;
         }
+        mask
+    }
 
-        // Vertical wins
-        let mut col = 0;
-        while col < Self::N_COLS {
-            let mut row = 0;
-            while row <= Self::N_ROWS - 4 {
-                masks[index] = Self::_gen_v_win_mask(row, col);
-                index += 1;
-                row += 1;
-            }
-            col += 1;
-        }
-
-        // Diagonal (top-left to bottom-right) wins
-        row = 0;
-        while row <= Self::N_ROWS - 4 {
-            let mut col = 0;
-            while col <= Self::N_COLS - 4 {
-                masks[index] = Self::_gen_d1_win_mask(row, col);
-                index += 1;
-                col += 1;
-            }
-            row += 1;
-        }
-
-        // Diagonal (bottom-left to top-right) wins
-        row = 3;
-        while row < Self::N_ROWS {
-            let mut col = 0;
-            while col <= Self::N_COLS - 4 {
-                masks[index] = Self::_gen_d2_win_mask(row, col);
-                index += 1;
-                col += 1;
-            }
-            row += 1;
-        }
-
-        if index != 69 {
-            panic!("expected 69 win masks");
-        }
-        masks
-    };
+    /// Whether `tokens` holds four in a row. A run starting at bit i in direction s covers i,
+    /// i+s, i+2s and i+3s (s = 1 horizontal, 7 vertical, 8 and 6 diagonal). Runs that would
+    /// wrap across a row edge are dropped by keeping only valid start columns; runs past the
+    /// top row fall off the 42-bit board.
+    fn has_four(tokens: u64) -> bool {
+        const LEFT: u64 = Pos::cols_mask(0, 3);
+        const RIGHT: u64 = Pos::cols_mask(3, Pos::N_COLS - 1);
+        let run = |s: u32, starts: u64| {
+            let pairs = tokens & (tokens >> s);
+            pairs & (pairs >> (2 * s)) & starts != 0
+        };
+        run(1, LEFT) || run(7, u64::MAX) || run(8, LEFT) || run(6, RIGHT)
+    }
 
     /// Determines if the game is over, and if so, who won.
     /// If the game is not over, returns None.
@@ -245,13 +179,7 @@ impl Pos {
 
     /// Determines if the current player has won.
     fn _is_terminal_for_player(&self) -> bool {
-        let player_tokens = self.mask & self.value;
-        for win_mask in Self::WIN_MASKS {
-            if u64::count_ones(player_tokens & win_mask) == 4 {
-                return true;
-            }
-        }
-        false
+        Self::has_four(self.mask & self.value)
     }
 
     /// Returns the f32 terminal value of the position. The first value is with the ply penalty
@@ -634,7 +562,50 @@ pub mod tests {
         }
     }
 
+    /// Cell-by-cell four-in-a-row check, the oracle for [Pos::has_four].
+    fn has_four_naive(tokens: u64) -> bool {
+        let at = |row: isize, col: isize| {
+            (0..Pos::N_ROWS as isize).contains(&row)
+                && (0..Pos::N_COLS as isize).contains(&col)
+                && tokens & Pos::_idx_mask_unsafe(row as usize, col as usize) != 0
+        };
+        (0..Pos::N_ROWS as isize).any(|row| {
+            (0..Pos::N_COLS as isize).any(|col| {
+                [(0, 1), (1, 0), (1, 1), (1, -1)]
+                    .iter()
+                    .any(|&(dr, dc)| (0..4).all(|k| at(row + k * dr, col + k * dc)))
+            })
+        })
+    }
+
+    #[test]
+    fn has_four_finds_every_line_and_no_wrapped_runs() {
+        let cells = |cells: &[(usize, usize)]| {
+            cells
+                .iter()
+                .fold(0, |m, &(r, c)| m | Pos::_idx_mask_unsafe(r, c))
+        };
+        // Runs that wrap across a row edge in the bit layout are not lines.
+        assert!(!Pos::has_four(cells(&[(0, 5), (0, 6), (1, 0), (1, 1)])));
+        assert!(!Pos::has_four(cells(&[(0, 6), (2, 0), (3, 1), (4, 2)])));
+        assert!(!Pos::has_four(cells(&[(0, 1), (1, 0), (1, 6), (2, 5)])));
+        assert!(Pos::has_four(cells(&[(2, 3), (3, 4), (4, 5), (5, 6)])));
+        assert!(Pos::has_four(cells(&[(2, 3), (3, 2), (4, 1), (5, 0)])));
+        assert!(Pos::has_four(cells(&[(2, 6), (3, 6), (4, 6), (5, 6)])));
+        assert!(Pos::has_four(cells(&[(5, 3), (5, 4), (5, 5), (5, 6)])));
+    }
+
     proptest! {
+        /// The shift-based check agrees with the cell-by-cell one on any set of cells, dense or
+        /// sparse.
+        #[test]
+        fn has_four_matches_naive(a in any::<u64>(), b in any::<u64>(), c in any::<u64>()) {
+            let board = (1u64 << (Pos::N_ROWS * Pos::N_COLS)) - 1;
+            for tokens in [a & board, a & b & board, a & b & c & board, (a | b) & board] {
+                assert_eq!(Pos::has_four(tokens), has_four_naive(tokens), "{tokens:#b}");
+            }
+        }
+
         /// Double flipping the position should result in the same position.
         #[test]
         fn flip_h(pos in random_pos()) {
