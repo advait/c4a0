@@ -7,7 +7,10 @@
 //! [board::Board] is the search position, [brute] the exhaustive cross-check over [crate::c4r::Pos].
 
 pub mod board;
+pub mod book;
 pub mod brute;
+pub mod search;
+pub mod tt;
 
 #[cfg(test)]
 pub use tests::{live_pos, suite_rows};
