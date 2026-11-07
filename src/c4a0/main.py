@@ -66,6 +66,7 @@ def train(
     ),
     l2_reg: float = 4e-4,
     max_gens: int | None = None,
+    greedy_after_ply: int | None = typer.Option(None, min=0),
     eval_mcts_iterations: list[int] = typer.Option(default_factory=list),
 ) -> None:
     """Trains a model via self-play. Each generation's saved model is scored on the v1 dev
@@ -92,6 +93,7 @@ def train(
         model_config=model_config,
         max_gens=max_gens,
         eval_config=default_eval_config(eval_mcts_iterations),
+        greedy_after_ply=greedy_after_ply,
     )
 
 

@@ -17,6 +17,23 @@ use crate::{
     types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, ModelID},
 };
 
+/// Options that affect self-play move selection only.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SelfPlayOptions {
+    pub greedy_after_ply: Option<usize>,
+}
+
+impl SelfPlayOptions {
+    fn temperature(self, ply: usize) -> f32 {
+        match () {
+            _ if self.greedy_after_ply.is_some_and(|cutoff| ply >= cutoff) => 0.0,
+            _ if ply < 4 => 4.0,
+            _ if ply < 8 => 2.0,
+            _ => 1.0,
+        }
+    }
+}
+
 /// Generate training samples with self play and MCTS.
 ///
 /// We use a batched NN forward pass to expand a given node (to determine the initial policy values
@@ -43,6 +60,7 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
     n_mcts_iterations: usize,
     c_exploration: f32,
     c_ply_penalty: f32,
+    options: SelfPlayOptions,
 ) -> Vec<GameResult> {
     let n_games = reqs.len();
     let (pb_game_done, pb_nn_eval, pb_mcts_iter) = init_progress_bars(n_games);
@@ -97,6 +115,7 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
                         n_mcts_threads,
                         c_exploration,
                         c_ply_penalty,
+                        options,
                         pb_game_done,
                         pb_mcts_iter,
                     }
@@ -268,6 +287,7 @@ struct MctsThread {
     n_mcts_threads: usize,
     c_exploration: f32,
     c_ply_penalty: f32,
+    options: SelfPlayOptions,
     pb_game_done: ProgressBar,
     pb_mcts_iter: ProgressBar,
 }
@@ -301,11 +321,7 @@ impl MctsThread {
                     // If we are in the early game, use a higher temperature to encourage
                     // generating more diverse (but suboptimal) games.
                     let ply = root_pos.ply();
-                    let temperature = match () {
-                        _ if ply < 4 => 4.0,
-                        _ if ply < 8 => 2.0,
-                        _ => 1.0,
-                    };
+                    let temperature = self.options.temperature(ply);
                     game.make_random_move(self.c_exploration, temperature);
                     self.nn_queue_tx.send(game).unwrap();
                 } else {
@@ -603,6 +619,33 @@ pub mod tests {
     }
 
     #[test]
+    fn temperature_schedule_and_greedy_boundary() {
+        for ply in 0..42 {
+            let legacy = if ply < 4 {
+                4.0
+            } else if ply < 8 {
+                2.0
+            } else {
+                1.0
+            };
+            assert_eq!(SelfPlayOptions::default().temperature(ply), legacy);
+            for cutoff in [0, 4, 8, 20, 42] {
+                let options = SelfPlayOptions {
+                    greedy_after_ply: Some(cutoff),
+                };
+                assert_eq!(
+                    options.temperature(ply),
+                    if ply >= cutoff { 0.0 } else { legacy }
+                );
+            }
+        }
+        assert_eq!(
+            crate::mcts::apply_temperature(&[0.1, 0.3, 0.3, 0.1, 0.1, 0.05, 0.05], 0.0),
+            [0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0]
+        );
+    }
+
+    #[test]
     fn test_self_play() {
         let n_games = 1;
         let mcts_iterations = 50;
@@ -621,6 +664,7 @@ pub mod tests {
             mcts_iterations,
             c_exploration,
             c_ply_penalty,
+            SelfPlayOptions::default(),
         );
 
         for result in results {

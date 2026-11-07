@@ -13,7 +13,7 @@ use crate::{
     analysis::search_positions,
     c4r::{Move, Pos},
     labels::{moves_string, parse_moves, sample_positions, Split},
-    self_play::self_play,
+    self_play::{self_play, SelfPlayOptions},
     solver::solve_parallel,
     tui,
     types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, ModelID, Sample},
@@ -23,7 +23,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 /// Play games via MCTS. This is a python wrapper around [self_play].
 /// `reqs` is a list of [GameMetadata] that describes the games to play.
 /// The `py_eval_pos_cb` callback is expected to be a pytorch model that runs on the GPU.
-#[pyfunction]
+#[pyfunction(signature = (reqs, max_nn_batch_size, n_mcts_iterations, c_exploration, c_ply_penalty, py_eval_pos_cb, greedy_after_ply=None))]
 pub fn play_games<'py>(
     py: Python<'py>,
     reqs: &Bound<'py, PyList>,
@@ -32,6 +32,7 @@ pub fn play_games<'py>(
     c_exploration: f32,
     c_ply_penalty: f32,
     py_eval_pos_cb: &Bound<'py, PyAny>,
+    greedy_after_ply: Option<usize>,
 ) -> PyResult<PlayGamesResult> {
     let reqs: Vec<GameMetadata> = reqs.extract().expect("error extracting reqs");
 
@@ -51,6 +52,7 @@ pub fn play_games<'py>(
                 n_mcts_iterations,
                 c_exploration,
                 c_ply_penalty,
+                SelfPlayOptions { greedy_after_ply },
             )
         })
     };

@@ -38,6 +38,7 @@ def test_split_train_test_is_deterministic_and_non_mutating() -> None:
         1.4,
         0.01,
         _uniform_eval,
+        greedy_after_ply=None,
     )
     original_ids = _game_ids(games)
 
@@ -136,3 +137,25 @@ def test_nan_value_from_callback_raises_instead_of_panicking() -> None:
 
     with pytest.raises(ValueError, match="non-finite"):
         c4a0_rust.mcts_policies(["3"], 4, 1.0, 0.01, nan_cb)
+
+
+def test_greedy_cutoff_plays_most_visited_move() -> None:
+    games = c4a0_rust.play_games(
+        [c4a0_rust.GameMetadata(i, 0, 0) for i in range(4)],
+        8,
+        32,
+        2.0,
+        0.01,
+        _uniform_eval,
+        greedy_after_ply=4,
+    )
+    for game in games.results:
+        for ply, (sample, following) in enumerate(
+            zip(game.samples, game.samples[1:], strict=False)
+        ):
+            if ply < 4:
+                continue
+            pos, policy, _, _ = sample.to_numpy()
+            next_pos, _, _, _ = following.to_numpy()
+            col = (next_pos.sum(axis=(0, 1)) - pos.sum(axis=(0, 1))).argmax()
+            assert policy[col] == policy.max()

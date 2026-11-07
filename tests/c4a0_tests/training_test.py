@@ -41,7 +41,10 @@ def _tiny_suite() -> Suite:
 
 
 def _tiny_loop(
-    base_dir: Path, eval_config: EvalConfig, max_gens: int = 1
+    base_dir: Path,
+    eval_config: EvalConfig,
+    max_gens: int = 1,
+    greedy_after_ply: int | None = None,
 ) -> TrainingGen:
     return training_loop(
         base_dir=str(base_dir),
@@ -55,6 +58,7 @@ def _tiny_loop(
         model_config=TINY_CONFIG,
         max_gens=max_gens,
         eval_config=eval_config,
+        greedy_after_ply=greedy_after_ply,
     )
 
 
@@ -88,7 +92,9 @@ def _sum_abs_model_diff(left: ConnectFourNet, right: ConnectFourNet) -> float:
 def test_training_loop_saves_trained_best_model_and_matching_metadata(
     tmp_path: Path,
 ) -> None:
-    gen = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()))
+    gen = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()), greedy_after_ply=4)
+    assert gen.greedy_after_ply == 4
+    assert TrainingGen.load(str(tmp_path), gen.created_at).greedy_after_ply == 4
 
     assert gen.parent is not None
     parent = TrainingGen.load(str(tmp_path), gen.parent)
@@ -162,3 +168,4 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     assert gen.gen_n == 3
     assert gen.solver_score == pytest.approx(0.6789)
     assert gen.evals == {}
+    assert gen.greedy_after_ply is None

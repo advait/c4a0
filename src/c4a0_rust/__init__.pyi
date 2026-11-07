@@ -57,6 +57,7 @@ def play_games(
     c_exploration: float,
     c_ply_penalty: float,
     py_eval_pos_cb: EvalPosCb,
+    greedy_after_ply: int | None = None,
 ) -> PlayGamesResult: ...
 def encode_positions(moves: Sequence[str]) -> NDArray[np.float32]:
     """Network input (N,2,6,7) for 0-indexed move strings. Raises ValueError on invalid moves."""
