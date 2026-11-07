@@ -4,6 +4,7 @@ use std::io::{BufRead, Write};
 use std::path::PathBuf;
 use std::time::Instant;
 
+use c4a0_rust::native_solver::bench::BenchConfig;
 use c4a0_rust::native_solver::board::Board;
 use c4a0_rust::native_solver::book::{positions_at, Book};
 use c4a0_rust::native_solver::diff::{run, Config};
@@ -24,6 +25,11 @@ c4native diff --pons BIN --pons-book FILE --book FILE --out DIR [--per-ply N] [-
     adjudicates each disagreement and writes diffs.jsonl, cases.tsv and summary.json to DIR.
     Exits 1 if any disagreement is unexplained.
 
+c4native bench --book FILE [--per-ply N] [--seed S] [--threads-list 1,8,32] [--runs R]
+        [--tt-mb N] [--pons BIN --pons-book FILE]
+    Times analysis of the seeded walk positions at each thread count (and Pons, if given),
+    interleaved, each with a cold table, checking every run's rows against the first.
+
 --tt-mb is the shared transposition table size (default 256); --threads defaults to the
 available parallelism.";
 
@@ -40,6 +46,8 @@ struct Opts {
     per_ply: usize,
     seed: u64,
     suites: Vec<PathBuf>,
+    threads_list: Vec<usize>,
+    runs: usize,
 }
 
 fn parse(args: &[String]) -> Result<Opts, String> {
@@ -56,6 +64,8 @@ fn parse(args: &[String]) -> Result<Opts, String> {
         per_ply: 200,
         seed: 1,
         suites: vec![],
+        threads_list: vec![1, 8, 32],
+        runs: 5,
     };
     let mut it = args.iter();
     while let Some(flag) = it.next() {
@@ -74,6 +84,16 @@ fn parse(args: &[String]) -> Result<Opts, String> {
             "--per-ply" => o.per_ply = num(value()?)?,
             "--seed" => o.seed = num(value()?)? as u64,
             "--suite" => o.suites.push(value()?.into()),
+            "--runs" => o.runs = num(value()?)?.max(1),
+            "--threads-list" => {
+                o.threads_list = value()?
+                    .split(',')
+                    .map(|t| {
+                        t.parse::<usize>()
+                            .map_err(|e| format!("--threads-list: {}", e))
+                    })
+                    .collect::<Result<_, _>>()?
+            }
             _ => return Err(format!("unknown flag {}", flag)),
         }
     }
@@ -203,14 +223,36 @@ fn diff(o: &Opts) -> Result<bool, String> {
     Ok(run(&cfg)? == 0)
 }
 
+fn bench(o: &Opts) -> Result<(), String> {
+    let pons = match (&o.pons, &o.pons_book) {
+        (Some(p), Some(b)) => Some((p.clone(), b.clone())),
+        (None, None) => None,
+        _ => return Err("--pons and --pons-book go together".into()),
+    };
+    let cfg = BenchConfig {
+        per_ply: o.per_ply,
+        seed: o.seed,
+        threads: o.threads_list.clone(),
+        runs: o.runs,
+        tt_bytes: o.tt_mb << 20,
+        book: load_book(&o.book)?,
+        pons,
+    };
+    print!("{}", c4a0_rust::native_solver::bench::run(&cfg)?);
+    Ok(())
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
-        Some(cmd @ ("analyze" | "book" | "diff")) => parse(&args[1..]).and_then(|o| match cmd {
-            "analyze" => analyze(&o).map(|_| true),
-            "book" => book(&o).map(|_| true),
-            _ => diff(&o),
-        }),
+        Some(cmd @ ("analyze" | "book" | "diff" | "bench")) => {
+            parse(&args[1..]).and_then(|o| match cmd {
+                "analyze" => analyze(&o).map(|_| true),
+                "book" => book(&o).map(|_| true),
+                "bench" => bench(&o).map(|_| true),
+                _ => diff(&o),
+            })
+        }
         _ => Err(USAGE.into()),
     };
     match result {

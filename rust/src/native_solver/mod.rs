@@ -6,6 +6,7 @@
 //!
 //! [board::Board] is the search position, [brute] the exhaustive cross-check over [crate::c4r::Pos].
 
+pub mod bench;
 pub mod board;
 pub mod book;
 pub mod brute;
