@@ -14,7 +14,7 @@ from typing import NewType
 import pytorch_lightning as pl
 import torch
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from pytorch_lightning.callbacks import EarlyStopping
 from torch.utils.data import DataLoader, Dataset
 
@@ -55,6 +55,7 @@ class TrainingGen(BaseModel):
     root_noise_alpha: float | None = None
     root_noise_frac: float = 0.0
     mask_terminal_policy: bool = False
+    replay_gens: int = Field(default=1, ge=1)
     parent: datetime | None = None
     val_loss: float | None = None
     solver_score: float | None = None
@@ -166,6 +167,7 @@ class TrainingGen(BaseModel):
         root_noise_alpha: float | None = None,
         root_noise_frac: float = 0.0,
         mask_terminal_policy: bool = False,
+        replay_gens: int = 1,
     ) -> "TrainingGen":
         try:
             return TrainingGen.load_latest(base_dir)
@@ -183,6 +185,7 @@ class TrainingGen(BaseModel):
                 root_noise_alpha=root_noise_alpha,
                 root_noise_frac=root_noise_frac,
                 mask_terminal_policy=mask_terminal_policy,
+                replay_gens=replay_gens,
             )
             model = ConnectFourNet(model_config)
             gen.publish(base_dir, None, model, eval_config)
@@ -201,6 +204,25 @@ class TrainingGen(BaseModel):
             return model
 
 
+def replay_training_games(
+    base_dir: str, parent: TrainingGen, current: PlayGamesResult, replay_gens: int
+) -> PlayGamesResult:
+    """Current games plus up to G-1 ancestors' games, newest first. Follow the parent
+    chain so an unrelated generation in the same directory cannot enter the window."""
+    if replay_gens < 1:
+        raise ValueError("replay_gens must be at least 1")
+    combined = current
+    ancestor = parent
+    for history_index in range(1, replay_gens):
+        games = ancestor.get_games(base_dir)
+        if games is not None:  # Generation zero has no self-play games.
+            combined = combined + games
+        if ancestor.parent is None or history_index == replay_gens - 1:
+            break
+        ancestor = TrainingGen.load(base_dir, ancestor.parent)
+    return combined
+
+
 def train_single_gen(
     base_dir: str,
     device: torch.device,
@@ -216,6 +238,7 @@ def train_single_gen(
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
     mask_terminal_policy: bool = False,
+    replay_gens: int = 1,
 ) -> TrainingGen:
     """
     Trains a new generation from the given parent.
@@ -247,7 +270,13 @@ def train_single_gen(
     # Training
     logger.info("Beginning training")
     model = copy.deepcopy(model)
-    train, test = games.split_train_test(
+    training_games = replay_training_games(base_dir, parent, games, replay_gens)
+    logger.info(
+        "Training on {} games from up to {} generations",
+        len(training_games.results),
+        replay_gens,
+    )
+    train, test = training_games.split_train_test(
         0.8, 1337, mask_terminal_policy=mask_terminal_policy
     )
     data_module = SampleDataModule(train, test, training_batch_size)
@@ -280,6 +309,7 @@ def train_single_gen(
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
         mask_terminal_policy=mask_terminal_policy,
+        replay_gens=replay_gens,
         parent=parent.created_at,
         val_loss=best_model_cb.best_score,
     )
@@ -303,9 +333,12 @@ def training_loop(
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
     mask_terminal_policy: bool = False,
+    replay_gens: int = 1,
 ) -> TrainingGen:
     """Main training loop. Sequentially trains generation after generation. Each generation's
     saved model is scored on `eval_config` (default: raw network on the v1 dev suite)."""
+    if replay_gens < 1:
+        raise ValueError("replay_gens must be at least 1")
     eval_config = eval_config or default_eval_config()
     logger.info("Beginning training loop")
     logger.info("device: {}", device)
@@ -336,6 +369,7 @@ def training_loop(
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
         mask_terminal_policy=mask_terminal_policy,
+        replay_gens=replay_gens,
     )
 
     while True:
@@ -354,6 +388,7 @@ def training_loop(
             root_noise_alpha=root_noise_alpha,
             root_noise_frac=root_noise_frac,
             mask_terminal_policy=mask_terminal_policy,
+            replay_gens=replay_gens,
         )
         if max_gens is not None and gen.gen_n >= max_gens:
             return gen

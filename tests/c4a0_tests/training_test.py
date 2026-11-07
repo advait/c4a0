@@ -1,14 +1,16 @@
 import pickle
 import shutil
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Never
 
 import numpy as np
 import pytest
 import torch
+from numpy.typing import NDArray
 
+import c4a0_rust
 from c4a0 import training
 from c4a0.evaluation import evaluate_model
 from c4a0.labels import Split, Suite, load_suite
@@ -19,6 +21,7 @@ from c4a0.training import (
     SampleTensor,
     TrainingGen,
     parse_lr_schedule,
+    replay_training_games,
     training_loop,
 )
 
@@ -48,6 +51,7 @@ def _tiny_loop(
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
     mask_terminal_policy: bool = False,
+    replay_gens: int = 1,
 ) -> TrainingGen:
     return training_loop(
         base_dir=str(base_dir),
@@ -65,6 +69,7 @@ def _tiny_loop(
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
         mask_terminal_policy=mask_terminal_policy,
+        replay_gens=replay_gens,
     )
 
 
@@ -105,7 +110,11 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(
         root_noise_alpha=0.3,
         root_noise_frac=0.25,
         mask_terminal_policy=True,
+        max_gens=2,
+        replay_gens=2,
     )
+    assert gen.replay_gens == 2
+    assert TrainingGen.load(str(tmp_path), gen.created_at).replay_gens == 2
     assert gen.mask_terminal_policy is True
     assert TrainingGen.load(str(tmp_path), gen.created_at).mask_terminal_policy is True
     assert gen.root_noise_alpha == 0.3
@@ -122,6 +131,11 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(
 
     games = gen.get_games(str(tmp_path))
     assert games is not None
+    assert (
+        len(games.results) == 4
+    )  # Save only new games, never duplicate replay in games.pkl.
+    games = replay_training_games(str(tmp_path), parent, games, gen.replay_gens)
+    assert len(games.results) == 8
     train, validation = games.split_train_test(
         0.8, 1337, mask_terminal_policy=gen.mask_terminal_policy
     )
@@ -192,3 +206,66 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     assert gen.root_noise_alpha is None
     assert gen.root_noise_frac == 0.0
     assert gen.mask_terminal_policy is False
+    assert gen.replay_gens == 1
+
+
+def test_replay_window_loads_only_recent_ancestors(tmp_path: Path) -> None:
+    def uniform_eval(
+        _model_id: int, pos: NDArray[np.float32]
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]:
+        return (
+            np.zeros((len(pos), 7), dtype=np.float32),
+            np.zeros(len(pos), dtype=np.float32),
+            np.zeros(len(pos), dtype=np.float32),
+        )
+
+    generations: list[TrainingGen] = []
+    for n in [0, 1, 2, 3, 99]:
+        gen = TrainingGen(
+            created_at=datetime(2024, 1, 1) + timedelta(seconds=n),
+            gen_n=n,
+            n_mcts_iterations=2,
+            c_exploration=2.0,
+            c_ply_penalty=0.01,
+            self_play_batch_size=8,
+            training_batch_size=8,
+            parent=generations[-1].created_at if generations and n != 99 else None,
+        )
+        gen.save_metadata(str(tmp_path))
+        games = (
+            None
+            if n == 0
+            else c4a0_rust.play_games(
+                [c4a0_rust.GameMetadata(n * 10 + i, 0, 0) for i in range(2)],
+                8,
+                2,
+                2.0,
+                0.01,
+                uniform_eval,
+                greedy_after_ply=None,
+                root_noise_alpha=None,
+                root_noise_frac=0.0,
+            )
+        )
+        with open(Path(gen.gen_folder(str(tmp_path))) / "games.pkl", "wb") as f:
+            pickle.dump(games, f)
+        generations.append(gen)
+
+    current = generations[3].get_games(str(tmp_path))
+    assert current is not None
+    parent = generations[2]
+    for window, expected_ids in [
+        (1, [30, 31]),
+        (2, [20, 21, 30, 31]),
+        (99, [10, 11, 20, 21, 30, 31]),
+    ]:
+        combined = replay_training_games(str(tmp_path), parent, current, window)
+        assert sorted(g.metadata.game_id for g in combined.results) == expected_ids
+    # A two-generation window does not even load metadata beyond its boundary.
+    (Path(generations[1].gen_folder(str(tmp_path))) / "metadata.json").unlink()
+    assert len(replay_training_games(str(tmp_path), parent, current, 2).results) == 4
+    # Default returns exactly the current object and requires no history files.
+    (Path(parent.gen_folder(str(tmp_path))) / "games.pkl").unlink()
+    assert replay_training_games(str(tmp_path), parent, current, 1) is current
+    with pytest.raises(ValueError, match="at least 1"):
+        replay_training_games(str(tmp_path), parent, current, 0)

@@ -70,6 +70,7 @@ def train(
     root_noise_alpha: float | None = None,
     root_noise_frac: float = typer.Option(0.0, min=0.0, max=1.0),
     mask_terminal_policy: bool = False,
+    replay_gens: int = typer.Option(1, min=1),
     eval_mcts_iterations: list[int] = typer.Option(default_factory=list),
 ) -> None:
     """Trains a model via self-play. Each generation's saved model is scored on the v1 dev
@@ -100,6 +101,7 @@ def train(
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
         mask_terminal_policy=mask_terminal_policy,
+        replay_gens=replay_gens,
     )
 
 
