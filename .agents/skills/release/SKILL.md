@@ -9,8 +9,9 @@ Status: implemented
 
 Nothing is deployed. Landing means a commit on `master` of `advait/c4a0`.
 
-- Work on a branch. Commit there. `master` has no branch protection, but agents never push
-  to it.
+- Work on a branch. Commit there. `master` has no branch protection. Agents update it only
+  when the maintainer explicitly says to merge into it, and only by fast-forward or a merge
+  commit pushed without force.
 - Push a branch only when the maintainer says to push, merge or open a PR for that work.
   An approval for one change does not cover the next.
 - CI (`.github/workflows/ci.yaml`) runs `mise run ci` on every push and on manual dispatch,
