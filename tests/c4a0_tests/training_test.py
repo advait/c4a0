@@ -1,9 +1,11 @@
+import hashlib
+import json
 import pickle
 import shutil
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Never
+from typing import Concatenate, Never, ParamSpec
 
 import numpy as np
 import pytest
@@ -35,6 +37,30 @@ TINY_CONFIG = ModelConfig(
     lr_schedule=parse_lr_schedule([0, 1e-3]),
     l2_reg=0.0,
 )
+P = ParamSpec("P")
+
+
+def _serial_games(
+    play_games: Callable[
+        Concatenate[Sequence[c4a0_rust.GameMetadata], P], c4a0_rust.PlayGamesResult
+    ],
+) -> Callable[
+    Concatenate[Sequence[c4a0_rust.GameMetadata], P], c4a0_rust.PlayGamesResult
+]:
+    """Fix completion order and inference batch size for the before/after golden run."""
+
+    def play(
+        reqs: Sequence[c4a0_rust.GameMetadata],
+        /,
+        *args: P.args,
+        **kwargs: P.kwargs,
+    ) -> c4a0_rust.PlayGamesResult:
+        result = c4a0_rust.PlayGamesResult()
+        for req in reqs:
+            result = result + play_games([req], *args, **kwargs)
+        return result
+
+    return play
 
 
 def _tiny_suite() -> Suite:
@@ -103,6 +129,70 @@ def _sum_abs_model_diff(left: ConnectFourNet, right: ConnectFourNet) -> float:
         )
         for key, value in left.state_dict().items()
     )
+
+
+def test_two_generation_behavior_matches_before_config_refactor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Golden run captured at 21d5ff8, before replacing the flat training arguments.
+
+    Serial self-play avoids worker completion order affecting the split.
+    One torch thread and a fixed seed reproduce initialization and training shuffles.
+    Rust seeds move sampling and root noise from game IDs. Compare sample bytes, all
+    saved weights, losses and evaluations; only wall-clock dates and pickle hashes vary.
+    """
+    monkeypatch.setattr(c4a0_rust, "play_games", _serial_games(c4a0_rust.play_games))
+    n_threads = torch.get_num_threads()
+    try:
+        torch.set_num_threads(1)
+        with torch.random.fork_rng():
+            torch.manual_seed(20261107)
+            _tiny_loop(
+                tmp_path,
+                EvalConfig(_tiny_suite()),
+                max_gens=2,
+                greedy_after_ply=4,
+                root_noise_alpha=0.3,
+                root_noise_frac=0.25,
+                value_target_q_weight=0.6,
+                temperature_schedule=[(2, 1.5)],
+                mask_terminal_policy=True,
+                replay_gens=2,
+            )
+    finally:
+        torch.set_num_threads(n_threads)
+
+    expected = json.loads((FIXTURES / "training_two_gen.json").read_text())
+    generations = list(reversed(TrainingGen.load_all(str(tmp_path))))
+    assert len(generations) == len(expected) == 3
+    with np.load(FIXTURES / "training_two_gen_weights.npz") as weights:
+        for gen, record in zip(generations, expected, strict=True):
+            assert gen.parent == (
+                generations[gen.gen_n - 1].created_at if gen.gen_n else None
+            )
+            metadata = gen.model_dump(mode="json", exclude={"created_at", "parent"})
+            for evaluation in metadata["evals"].values():
+                evaluation.pop("model_sha256")
+            # Additional knobs may add metadata keys; every pre-refactor key stays equal.
+            assert {key: metadata[key] for key in record["metadata"]} == record[
+                "metadata"
+            ]
+            digest = hashlib.sha256()
+            games = gen.get_games(str(tmp_path))
+            if games is not None:
+                for game in sorted(games.results, key=lambda g: g.metadata.game_id):
+                    digest.update(str(game.metadata.game_id).encode())
+                    for sample in game.samples:
+                        for array in sample.to_numpy():
+                            digest.update(array.tobytes())
+            assert digest.hexdigest() == record["games_sha256"]
+            for key, value in gen.get_model(str(tmp_path)).state_dict().items():
+                np.testing.assert_allclose(
+                    value.cpu().numpy(),
+                    weights[f"{gen.gen_n}/{key}"],
+                    rtol=1e-6,
+                    atol=1e-7,
+                )
 
 
 def test_training_loop_saves_trained_best_model_and_matching_metadata(
