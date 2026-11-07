@@ -72,6 +72,12 @@ def train(
     greedy_after_ply: int | None = typer.Option(None, min=0),
     root_noise_alpha: float | None = None,
     root_noise_frac: float = typer.Option(0.0, min=0.0, max=1.0),
+    random_start_frac: float = typer.Option(
+        0.0, min=0.0, max=1.0, help="Fraction of self-play games using random openings."
+    ),
+    random_start_max_ply: int = typer.Option(
+        12, min=1, help="Maximum random opening length; capped at 41 plies."
+    ),
     value_target_q_weight: float = typer.Option(0.0, min=0.0, max=1.0),
     temperature_schedule: str = "4:4.0,8:2.0",
     mask_terminal_policy: bool = False,
@@ -86,6 +92,10 @@ def train(
     if not math.isfinite(value_target_q_weight):
         raise typer.BadParameter(
             "must be finite and between 0 and 1", param_hint="--value-target-q-weight"
+        )
+    if not math.isfinite(random_start_frac):
+        raise typer.BadParameter(
+            "must be finite and between 0 and 1", param_hint="--random-start-frac"
         )
     try:
         parsed_temperature_schedule = parse_temperature_schedule(temperature_schedule)
@@ -110,6 +120,8 @@ def train(
         greedy_after_ply=greedy_after_ply,
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
+        random_start_frac=random_start_frac,
+        random_start_max_ply=random_start_max_ply,
         value_target_q_weight=value_target_q_weight,
         temperature_schedule=tuple(parsed_temperature_schedule),
         mask_terminal_policy=mask_terminal_policy,

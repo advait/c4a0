@@ -14,6 +14,8 @@ from c4a0.training import GenConfig
                 "greedy_after_ply": None,
                 "root_noise_alpha": None,
                 "root_noise_frac": 0.0,
+                "random_start_frac": 0.0,
+                "random_start_max_ply": 12,
                 "value_target_q_weight": 0.0,
                 "temperature_schedule": ((4, 4.0), (8, 2.0)),
                 "mask_terminal_policy": False,
@@ -30,6 +32,10 @@ from c4a0.training import GenConfig
                 "0.3",
                 "--root-noise-frac",
                 "0.25",
+                "--random-start-frac",
+                "0.5",
+                "--random-start-max-ply",
+                "17",
                 "--value-target-q-weight",
                 "0.6",
                 "--temperature-schedule",
@@ -46,6 +52,8 @@ from c4a0.training import GenConfig
                 "greedy_after_ply": 8,
                 "root_noise_alpha": 0.3,
                 "root_noise_frac": 0.25,
+                "random_start_frac": 0.5,
+                "random_start_max_ply": 17,
                 "value_target_q_weight": 0.6,
                 "temperature_schedule": ((2, 1.5),),
                 "mask_terminal_policy": True,
@@ -88,6 +96,20 @@ def test_train_cli_rejects_invalid_training_length(flag: str, value: str) -> Non
     result = CliRunner().invoke(main.app, ["train", flag, value])
     assert result.exit_code == 2
     assert flag in result.output
+
+
+@pytest.mark.parametrize("frac", ["-0.1", "1.1", "nan", "inf", "-inf"])
+def test_train_cli_rejects_invalid_random_start_fraction(frac: str) -> None:
+    result = CliRunner().invoke(main.app, ["train", "--random-start-frac", frac])
+    assert result.exit_code == 2
+    assert "random-start-frac" in result.output
+
+
+@pytest.mark.parametrize("ply", ["0", "-1"])
+def test_train_cli_rejects_invalid_random_start_max_ply(ply: str) -> None:
+    result = CliRunner().invoke(main.app, ["train", "--random-start-max-ply", ply])
+    assert result.exit_code == 2
+    assert "random-start-max-ply" in result.output
 
 
 @pytest.mark.parametrize("weight", ["-0.1", "1.1", "nan", "inf", "-inf"])

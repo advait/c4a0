@@ -67,6 +67,8 @@ class GenConfig(BaseModel):
     greedy_after_ply: int | None = None
     root_noise_alpha: float | None = None
     root_noise_frac: float = 0.0
+    random_start_frac: float = Field(default=0.0, ge=0.0, le=1.0)
+    random_start_max_ply: int = Field(default=12, ge=1)
     value_target_q_weight: float = Field(default=0.0, ge=0.0, le=1.0)
     temperature_schedule: tuple[tuple[int, float], ...] = DEFAULT_TEMPERATURE_SCHEDULE
     mask_terminal_policy: bool = False
@@ -257,8 +259,8 @@ def train_single_gen(
     # Self play
     model = parent.get_model(base_dir)
     model.to(device)
-    # game_id seeds move sampling and root noise in Rust. Ids unique across generations give
-    # each generation fresh random streams instead of replaying the previous one's.
+    # game_id seeds random starts, move sampling and root noise in Rust. Ids unique
+    # across generations give each generation fresh random streams.
     first_id = gen_n * config.n_self_play_games
     reqs = [
         c4a0_rust.GameMetadata(first_id + i, 0, 0)
@@ -276,6 +278,8 @@ def train_single_gen(
         root_noise_frac=config.root_noise_frac,
         value_target_q_weight=config.value_target_q_weight,
         temperature_schedule=config.temperature_schedule,
+        random_start_frac=config.random_start_frac,
+        random_start_max_ply=config.random_start_max_ply,
     )
 
     # Training

@@ -33,7 +33,10 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   replay union. It also compares a fixed two-generation run with the pre-GenConfig
   baseline and checks epoch caps and patience in real Lightning fits.
   `main_test.py` checks CLI defaults, flag forwarding through `GenConfig`, and invalid
-  training-length values.
+  training-length values. `self_play.rs` compares default games byte for byte with a
+  pre-random-start fixture, and checks deterministic non-terminal random starts and
+  samples without opening prefixes. `training_test.py` runs one generation with random
+  starts enabled and checks root and child metadata, including legacy defaults.
 - Raw-network dev eval of a default model (2447 positions, suite load through `SuiteEval`)
   took a median 0.15 s (0.148 to 0.166 s, 3 runs, load average 5, 16 torch threads); the
   forward pass is about 0.08 s of it. MCTS-64 on the dev suite took 1.7 s (one run).
@@ -48,7 +51,8 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   command with `--max-gens 2 --greedy-after-ply 8 --root-noise-alpha 0.3
   --root-noise-frac 0.25 --mask-terminal-policy --replay-gens 2
   --value-target-q-weight 0.6 --temperature-schedule 2:1.5
-  --train-max-epochs 2 --train-patience 1`. Generation two trains on
+  --train-max-epochs 2 --train-patience 1
+  --random-start-frac 0.5 --random-start-max-ply 12`. Generation two trains on
   eight games but saves only its four new games. This proves plumbing, not convergence.
 - One realistic generation (256 games, 256 MCTS iterations, default 1-block 32-filter
   network, `--device cpu`) took 276 s. Self-play was 229 s and training 43 s. Use a
@@ -116,6 +120,8 @@ the architecture's raw top-1 is not a bound on MCTS play.
   2 below ply 8, then 1; `greedy_after_ply=None` leaves that schedule in effect;
   `value_target_q_weight=0.0` keeps the exact final-outcome value targets;
   `root_noise_alpha=None` and `root_noise_frac=0` disable noise;
+  `random_start_frac=0.0` keeps every game starting from the empty board;
+  `random_start_max_ply=12` sets the maximum random opening length when enabled;
   `mask_terminal_policy=False` keeps terminal policy supervision; `replay_gens=1` uses
   only new games; `train_max_epochs=100` and `train_patience=10` preserve the previous
   training limits. These are also the defaults when loading old metadata.
@@ -123,6 +129,15 @@ the architecture's raw top-1 is not a bound on MCTS play.
   `--train-patience P` stops after P validation checks without improved `val_loss`.
   Validation runs once per epoch. Both must be at least 1 and are recorded as flat
   metadata fields through `GenConfig`.
+- `--random-start-frac F` starts a fraction of self-play games from random openings.
+  F must be finite and in [0, 1]. `--random-start-max-ply K` must be at least 1 and
+  defaults to 12. Rust caps K at 41, the last possible non-terminal ply, and samples
+  an opening length uniformly from 1 through that cap. Each walk chooses uniformly
+  among legal moves and restarts at the same length if it reaches a terminal position.
+  The coin flip and walks use a separate game-ID-seeded stream. The random prefix
+  produces no training samples; temperature and greedy cutoffs use the board's ply.
+  Both settings are flat `GenConfig` metadata fields. Component and smoke tests prove
+  plumbing and default compatibility, not improved convergence.
 - `--value-target-q-weight W` blends each non-terminal head's final-outcome target z
   with that head's root MCTS mean, `(1-W)*z + W*q_root`. Root means are captured before
   advancing the root and use the player-to-move perspective. W must be finite and in

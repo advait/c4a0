@@ -314,6 +314,8 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     assert gen.greedy_after_ply is None
     assert gen.root_noise_alpha is None
     assert gen.root_noise_frac == 0.0
+    assert gen.random_start_frac == 0.0
+    assert gen.random_start_max_ply == 12
     assert gen.temperature_schedule == ((4, 4.0), (8, 2.0))
     assert gen.mask_terminal_policy is False
     assert gen.replay_gens == 1
@@ -336,6 +338,53 @@ def test_generation_config_is_frozen() -> None:
         config.__setattr__("n_mcts_iterations", 8)
     # An immutable schedule prevents mutation through a frozen model's containers.
     assert isinstance(config.temperature_schedule, tuple)
+
+
+def test_random_starts_run_one_generation_and_reach_metadata(tmp_path: Path) -> None:
+    config = TINY_GEN_CONFIG.model_copy(
+        update={
+            "random_start_frac": 1.0,
+            "random_start_max_ply": 17,
+            "train_max_epochs": 1,
+        }
+    )
+    gen = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()), config=config)
+    assert gen.gen_n == 1
+    for published in TrainingGen.load_all(str(tmp_path)):
+        metadata = json.loads(
+            (Path(published.gen_folder(str(tmp_path))) / "metadata.json").read_text()
+        )
+        assert metadata["random_start_frac"] == 1.0
+        assert metadata["random_start_max_ply"] == 17
+        assert TrainingGen.load(str(tmp_path), published.created_at).config == config
+    games = gen.get_games(str(tmp_path))
+    assert games is not None
+    assert len(games.results) == config.n_self_play_games
+    for game in games.results:
+        first_ply = int(game.samples[0].to_numpy()[0].sum())
+        assert 1 <= first_ply <= 17
+        assert all(
+            int(sample.to_numpy()[0].sum()) == first_ply + offset
+            for offset, sample in enumerate(game.samples)
+        )
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("random_start_frac", -0.1),
+        ("random_start_frac", 1.1),
+        ("random_start_frac", float("nan")),
+        ("random_start_frac", float("inf")),
+        ("random_start_max_ply", 0),
+        ("random_start_max_ply", -1),
+    ],
+)
+def test_generation_config_rejects_invalid_random_starts(
+    field: str, value: float
+) -> None:
+    with pytest.raises(ValidationError, match=field):
+        GenConfig.model_validate({**TINY_GEN_CONFIG.model_dump(), field: value})
 
 
 @pytest.mark.parametrize("field", ["train_max_epochs", "train_patience"])
