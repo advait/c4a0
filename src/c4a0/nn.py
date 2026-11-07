@@ -1,4 +1,6 @@
-from typing import Dict, Tuple
+from typing import Dict, Tuple, cast
+
+from c4a0.utils import GenerationTrainer
 
 from loguru import logger
 import numpy as np
@@ -10,7 +12,7 @@ import pytorch_lightning as pl
 from torch.optim.adam import Adam
 from einops import rearrange
 
-from c4a0_rust import N_COLS, N_ROWS  # type: ignore
+from c4a0_rust import N_COLS, N_ROWS
 
 
 class ModelConfig(BaseModel):
@@ -138,7 +140,7 @@ class ConnectFourNet(pl.LightningModule):
         return int(torch.numel(dummy_output))
 
     def configure_optimizers(self):
-        gen_n: int = self.trainer.gen_n  # type: ignore
+        gen_n: int = cast(GenerationTrainer, self.trainer).gen_n
         assert gen_n is not None, "please pass gen_n to trainer"
         schedule = sorted(list(self.lr_schedule.items()))
         _, lr = schedule.pop(0)

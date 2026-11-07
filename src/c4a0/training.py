@@ -15,15 +15,15 @@ from pydantic import BaseModel
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 from c4a0.evaluation import SuiteEval, evaluate_model
 from c4a0.labels import Split, Suite, load_suite
 from c4a0.nn import ConnectFourNet, ModelConfig
-from c4a0.utils import BestModelCheckpoint
+from c4a0.utils import BestModelCheckpoint, GenerationTrainer
 
-import c4a0_rust  # type: ignore
-from c4a0_rust import PlayGamesResult, BUF_N_CHANNELS, N_COLS, N_ROWS, Sample  # type: ignore
+import c4a0_rust
+from c4a0_rust import PlayGamesResult, BUF_N_CHANNELS, N_COLS, N_ROWS, Sample
 
 
 @dataclass(frozen=True)
@@ -215,23 +215,23 @@ def train_single_gen(
     # Self play
     model = parent.get_model(base_dir)
     model.to(device)
-    reqs = [c4a0_rust.GameMetadata(id, 0, 0) for id in range(n_self_play_games)]  # type: ignore
-    games = c4a0_rust.play_games(  # type: ignore
+    reqs = [c4a0_rust.GameMetadata(id, 0, 0) for id in range(n_self_play_games)]
+    games = c4a0_rust.play_games(
         reqs,
         self_play_batch_size,
         n_mcts_iterations,
         c_exploration,
         c_ply_penalty,
-        lambda player_id, pos: model.forward_numpy(pos),  # type: ignore
+        lambda player_id, pos: model.forward_numpy(pos),
     )
 
     # Training
     logger.info("Beginning training")
     model = copy.deepcopy(model)
-    train, test = games.split_train_test(0.8, 1337)  # type: ignore
+    train, test = games.split_train_test(0.8, 1337)
     data_module = SampleDataModule(train, test, training_batch_size)
-    best_model_cb = BestModelCheckpoint(monitor="val_loss", mode="min")
-    trainer = pl.Trainer(
+    best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
+    trainer = GenerationTrainer(
         max_epochs=100,
         accelerator="auto",
         devices="auto",
@@ -241,7 +241,7 @@ def train_single_gen(
         ],
         num_sanity_val_steps=0,
     )
-    trainer.gen_n = gen_n  # type: ignore
+    trainer.gen_n = gen_n
     model.train()  # Switch batch normalization to train mode for training bn params
     trainer.fit(model, data_module)
     logger.info("Finished training")
@@ -333,6 +333,19 @@ SampleTensor = NewType(
 )
 
 
+class SampleDataset(Dataset[SampleTensor]):
+    """Map-style adapter for the precomputed samples consumed by DataLoader."""
+
+    def __init__(self, samples: list[SampleTensor]) -> None:
+        self.samples = samples
+
+    def __len__(self) -> int:
+        return len(self.samples)
+
+    def __getitem__(self, index: int) -> SampleTensor:
+        return self.samples[index]
+
+
 class SampleDataModule(pl.LightningDataModule):
     def __init__(
         self,
@@ -362,14 +375,14 @@ class SampleDataModule(pl.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(
-            self.training_data,  # type: ignore
+            SampleDataset(self.training_data),
             batch_size=self.batch_size,
             shuffle=True,
         )
 
     def val_dataloader(self):
         return DataLoader(
-            self.validation_data,  # type: ignore
+            SampleDataset(self.validation_data),
             batch_size=self.batch_size,
         )
 

@@ -3,6 +3,7 @@ Round-robin tournament to determine which model is the best.
 """
 
 import abc
+from collections.abc import Sequence
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -15,8 +16,8 @@ from tabulate import tabulate
 import torch
 
 from c4a0.nn import ConnectFourNet
-import c4a0_rust  # type: ignore
-from c4a0_rust import N_COLS  # type: ignore
+import c4a0_rust
+from c4a0_rust import N_COLS
 
 PlayerName = NewType("PlayerName", str)
 
@@ -110,7 +111,7 @@ class TournamentResult:
 
 
 def play_tournament(
-    players: List[Player],
+    players: Sequence[Player],
     games_per_match: int,
     batch_size: int,
     mcts_iterations: int,

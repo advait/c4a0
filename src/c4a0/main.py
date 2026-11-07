@@ -113,7 +113,7 @@ def play(
     else:
         raise ValueError(f"unrecognized model: {model}")
 
-    c4a0_rust.run_tui(  # type: ignore
+    c4a0_rust.run_tui(
         lambda model_id, x: nn.forward_numpy(x),
         max_mcts_iters,
         c_exploration,

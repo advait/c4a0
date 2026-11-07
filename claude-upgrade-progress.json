@@ -35,19 +35,6 @@
   "dependencies": [],
   "completed": [
     {
-      "name": "pyright",
-      "from": "1.1.396",
-      "to": "1.1.411",
-      "breaking_changes": [],
-      "fixes_applied": [
-        "Raised dev dependency lower bound to pyright>=1.1.411; uv.lock resolved pyright==1.1.411."
-      ],
-      "tests": [
-        "mise run typecheck"
-      ],
-      "timestamp": "2026-06-29T19:25:00Z"
-    },
-    {
       "name": "ruff",
       "from": "0.9.9",
       "to": "0.15.20",

@@ -83,7 +83,8 @@ def _sum_abs_model_diff(left, right):
 def test_training_loop_saves_trained_best_model_and_matching_metadata(tmp_path):
     gen = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()))
 
-    parent = TrainingGen.load(str(tmp_path), gen.parent)  # type: ignore[arg-type]
+    assert gen.parent is not None
+    parent = TrainingGen.load(str(tmp_path), gen.parent)
     parent_model = parent.get_model(str(tmp_path))
     saved_model = gen.get_model(str(tmp_path))
     assert _sum_abs_model_diff(parent_model, saved_model) > 0.0
@@ -107,7 +108,8 @@ def test_each_generation_records_evals_of_its_own_saved_model(tmp_path):
     suite = _tiny_suite()
     gen = _tiny_loop(tmp_path, EvalConfig(suite, mcts_iterations=(4,)))
 
-    for g in [gen, TrainingGen.load(str(tmp_path), gen.parent)]:  # type: ignore[arg-type]
+    assert gen.parent is not None
+    for g in [gen, TrainingGen.load(str(tmp_path), gen.parent)]:
         reloaded = TrainingGen.load(str(tmp_path), g.created_at)
         assert list(reloaded.evals) == ["v1/dev-50"]
         recorded = reloaded.evals["v1/dev-50"]

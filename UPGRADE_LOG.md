@@ -38,18 +38,6 @@ Slices:
 
 ## Successfully Updated
 
-### pyright: 1.1.396 → 1.1.411
-
-**Changelog:** GitHub releases / PyPI metadata reviewed via web search.
-
-**Breaking changes:** None found in release-note search for 1.1.396 → 1.1.411.
-
-**Notable changes:** Type checker bug fixes and inference/narrowing improvements across patch releases.
-
-**Migration applied:** Raised dev dependency lower bound to `pyright>=1.1.411`; `uv.lock` resolved `pyright==1.1.411`. First `uv add` also normalized `uv.lock` to the newer uv lock revision with upload-time metadata.
-
-**Tests:** ✓ `mise run typecheck` passed with 0 errors, 0 warnings.
-
 ### ruff: 0.9.9 → 0.15.20
 
 **Changelog:** Ruff release notes/versioning docs reviewed.
@@ -440,8 +428,6 @@ _To be filled after audits._
 ```bash
 mise exec -- uv lock --check
 mise run ci
-mise exec -- uv add --dev pyright --upgrade-package pyright
-mise exec -- uv add --dev 'pyright>=1.1.411'
 mise run typecheck
 mise exec -- uv add --dev ruff --upgrade-package ruff
 mise exec -- uv add --dev 'ruff>=0.15.20'
@@ -594,7 +580,7 @@ mise run ci
 
 - Baseline CI passed locally and remotely on `chore/mise-ci-packaging` before dependency work began.
 - Dependency upgrades are being performed on `chore/dependency-upgrades`.
-- Slice 1 (dev/tooling) completed: `pyright`, `ruff`, `maturin`, `pytest`, and `pytest-asyncio` updated; final `mise run ci` passed.
+- Slice 1 (dev/tooling) completed: `ruff`, `maturin`, `pytest`, and `pytest-asyncio` updated; final `mise run ci` passed.
 - Slice 2 (small Python libraries) completed: `einops`, `tqdm`, `tensorboardX`, `tensorboard`, `pydantic`, `tabulate`, `matplotlib`, `optuna`, `optuna-dashboard`, and `typer` updated; final `mise run ci` passed.
 - Slice 3 (small Rust crates) completed: `crossbeam-channel`, `log`, `env_logger`, `num_cpus`, `parking_lot`, `serde`, `proptest`, and `indicatif` updated; final `mise run ci` passed.
 - Slice 4 (medium-risk Rust crates) completed: `rand`, `ratatui`, and `rocksdb` updated; final `mise run ci` passed.

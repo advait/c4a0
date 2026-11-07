@@ -51,9 +51,9 @@ depends = ["install"]
 run = "uv run --locked ruff check"
 
 [tasks.typecheck]
-description = "Run Pyright type checks"
+description = "Run ty type checks"
 depends = ["install"]
-run = "uv run --locked pyright"
+run = "uv run --locked ty check"
 
 [tasks.test]
 description = "Run all Rust and Python tests"

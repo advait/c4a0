@@ -8,7 +8,7 @@ from pytorch_lightning.callbacks import EarlyStopping
 
 from c4a0.training import SampleDataModule, TrainingGen
 from c4a0.nn import ConnectFourNet, ModelConfig
-from c4a0_rust import Sample  # type: ignore
+from c4a0_rust import Sample
 
 
 def load_samples(base_dir: str, n_gens: int = 5) -> List[Sample]:

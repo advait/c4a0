@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+from pytorch_lightning import Trainer
 
 import pytest
 import torch
@@ -28,20 +28,17 @@ def test_best_model_checkpoint_ignores_sanity_validation():
     )
     model = make_model()
 
-    sanity_trainer = SimpleNamespace(
-        sanity_checking=True,
-        callback_metrics={"val_loss": torch.tensor(0.01)},
-    )
-    callback.on_validation_end(sanity_trainer, model)  # type: ignore[arg-type]
+    sanity_trainer = Trainer(logger=False, enable_checkpointing=False)
+    sanity_trainer.callback_metrics["val_loss"] = torch.tensor(0.01)
+    sanity_trainer.sanity_checking = True
+    callback.on_validation_end(sanity_trainer, model)
 
     assert callback.best_model is None
     assert callback.best_score == float("inf")
 
-    trainer = SimpleNamespace(
-        sanity_checking=False,
-        callback_metrics={"val_loss": torch.tensor(1.25)},
-    )
-    callback.on_validation_end(trainer, model)  # type: ignore[arg-type]
+    trainer = Trainer(logger=False, enable_checkpointing=False)
+    trainer.callback_metrics["val_loss"] = torch.tensor(1.25)
+    callback.on_validation_end(trainer, model)
 
     assert callback.best_model is not None
     assert callback.best_score == pytest.approx(1.25)

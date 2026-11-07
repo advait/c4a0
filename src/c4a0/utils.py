@@ -1,6 +1,6 @@
 import copy
 from sys import platform
-from typing import Generic, Optional, TypeVar
+from typing import Generic, Optional, TypeVar, cast
 
 import torch
 import pytorch_lightning as pl
@@ -32,6 +32,14 @@ def get_torch_device() -> torch.device:
 M = TypeVar("M", bound=pl.LightningModule)
 
 
+class GenerationTrainer(Trainer):
+    """Lightning trainer with the generation metadata consumed by the LR schedule."""
+
+    gen_n: int
+    # Lightning initializes this through its callback connector.
+    callbacks: list[Callback]
+
+
 class BestModelCheckpoint(Callback, Generic[M]):
     """
     PyTorch Lightning callback that keeps track of the best model in memory during training.
@@ -55,7 +63,7 @@ class BestModelCheckpoint(Callback, Generic[M]):
         self.best_model: Optional[M] = None
         self.best_score = float("inf") if mode == "min" else float("-inf")
 
-    def on_validation_end(self, trainer: Trainer, pl_module: M) -> None:
+    def on_validation_end(self, trainer: Trainer, pl_module: pl.LightningModule) -> None:
         """
         Check if the current model is the best so far.
 
@@ -79,11 +87,11 @@ class BestModelCheckpoint(Callback, Generic[M]):
         if self.mode == "min":
             if current_score < self.best_score:
                 self.best_score = current_score
-                self.best_model = copy.deepcopy(pl_module)
+                self.best_model = cast(M, copy.deepcopy(pl_module))
         elif self.mode == "max":
             if current_score > self.best_score:
                 self.best_score = current_score
-                self.best_model = copy.deepcopy(pl_module)
+                self.best_model = cast(M, copy.deepcopy(pl_module))
 
     def get_best_model(self) -> M:
         """

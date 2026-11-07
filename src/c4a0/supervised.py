@@ -26,7 +26,7 @@ from torch.utils.data import (
 from c4a0.evaluation import SuiteEval
 from c4a0.labels import Labels
 from c4a0.nn import ConnectFourNet, ModelConfig
-from c4a0.utils import BestModelCheckpoint
+from c4a0.utils import BestModelCheckpoint, GenerationTrainer
 
 import c4a0_rust
 
@@ -84,7 +84,7 @@ def _mirrored(
 
 def _batches(
     tensors: tuple[torch.Tensor, ...], batch_size: int, shuffle: bool, device: str
-) -> DataLoader:
+) -> DataLoader[tuple[torch.Tensor, ...]]:
     """Whole-batch indexing into tensors kept on `device`. The default per-sample collate pins one
     CPU core and starves the GPU (about 33% utilization for the default net)."""
     ds = TensorDataset(*(t.to(device) for t in tensors))
@@ -127,8 +127,8 @@ def fit_supervised(
         _mirrored(solver_targets(train, c_ply_penalty)), batch_size, True, device
     )
     val_dl = _batches(solver_targets(val, c_ply_penalty), batch_size, False, device)
-    best_model_cb = BestModelCheckpoint(monitor="val_loss", mode="min")
-    trainer = pl.Trainer(
+    best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
+    trainer = GenerationTrainer(
         max_epochs=max_epochs,
         accelerator="auto",
         devices="auto",
@@ -141,8 +141,8 @@ def fit_supervised(
         enable_checkpointing=False,
         enable_progress_bar=False,
     )
-    trainer.gen_n = 0  # type: ignore
-    trainer.callbacks.append(_EpochLog())  # type: ignore
+    trainer.gen_n = 0
+    trainer.callbacks.append(_EpochLog())
     model.train()
     trainer.fit(model, train_dl, val_dl)
     return best_model_cb.get_best_model(), trainer.current_epoch

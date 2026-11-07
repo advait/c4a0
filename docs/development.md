@@ -286,7 +286,7 @@ Verified in this environment:
 
 - `mise run build`: builds and installs the mixed Python/Rust package
 - `mise run lint`: Ruff passed
-- `mise run typecheck`: Pyright passed with 0 errors
+- `mise run typecheck`: ty passed with 0 errors
 - `mise run test:rust`: 46 passed
 - `mise run test:python`: 60 passed (pybridge self-play test can hang on the known shutdown race; exit 124)
 - `mise run train:smoke`: runs end-to-end self-play + model training

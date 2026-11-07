@@ -37,15 +37,39 @@ dev = [
   "maturin==1.14.1",
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
-  "pyright>=1.1.411",
+  "ty==0.0.99",
   "ruff>=0.15.20",
 ]
 
 notebook = ["jupyterlab>=4.6.1", "pandas>=3.0.3", "rankit>=0.3.3"]
 
-[tool.pyright]
-typeCheckingMode = "basic"
-extraPaths = ["src", "tests"]
+# Both ty and Ruff infer the target Python version from project.requires-python.
+[tool.ty.environment]
+root = ["src", "tests"]
+
+[tool.ty.src]
+include = ["src", "tests"]
+# Exploratory notebooks are not part of the training package or CI.
+exclude = ["**/*.ipynb"]
+
+[tool.ty.analysis]
+respect-type-ignore-comments = false
+
+[tool.ty.rules]
+# Keep all default diagnostics, and make these boundaries explicit errors.
+invalid-argument-type = "error"
+invalid-assignment = "error"
+invalid-return-type = "error"
+invalid-method-override = "error"
+missing-argument = "error"
+missing-type-argument = "error"
+call-non-callable = "error"
+import-not-found = "error"
+unresolved-reference = "error"
+unresolved-attribute = "error"
+unused-ignore-comment = "error"
+ignore-comment-unknown-rule = "error"
+blanket-ignore-comment = "error"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
