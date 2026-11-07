@@ -107,7 +107,7 @@ mise run plot
 
 ### Game and search
 
-`rust/src/c4r.rs` holds the bitboard position and every Connect Four rule. `rust/src/mcts.rs` runs PUCT search: each child is scored by its mean value plus `c * prior * sqrt(N_parent) / (1 + n)`, with root Dirichlet noise mixed in during self-play only. `rust/src/self_play.rs` plays thousands of games in parallel. It batches positions from every game into one network call, caches evaluations within a generation, and samples moves from the visit counts.
+`rust/src/c4r.rs` holds the bitboard position and every Connect Four rule. `rust/src/mcts.rs` runs PUCT search: each child is scored by its mean value plus `c * prior * sqrt(N_parent) / (1 + n)`, with root Dirichlet noise mixed in during self-play only. The search also proves outcomes from the rules, in the style of MCTS-Solver. A finished position is proven, a position with a move into a proven loss for the opponent is a proven win, and a position whose moves are all proven takes the best of them. Search never descends below a proven node. A proven root stops searching, puts all its policy mass on the proven-best moves, and reports its exact value. `rust/src/self_play.rs` plays thousands of games in parallel. It batches positions from every game into one network call, caches evaluations within a generation, and samples moves from the visit counts.
 
 ### Network and training loop
 

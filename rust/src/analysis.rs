@@ -10,10 +10,11 @@ use crate::{
 };
 
 /// Runs `n_iterations` MCTS iterations from every (non-terminal) root and returns each root's
-/// visit policy. Each round takes one leaf per unfinished root, dedups the non-terminal leaves,
-/// makes ONE `eval` call on them and applies the results; terminal leaves back up their exact
-/// value without an evaluation. Deterministic for a deterministic evaluator. No root noise and
-/// no temperature.
+/// visit policy. A root stops early once the search proves it, and its policy is then all mass
+/// on the proven-best moves. Each round takes one leaf per unfinished root, dedups the unproven
+/// leaves, makes ONE `eval` call on them and applies the results; proven leaves (terminal or
+/// proven by search) back up their exact value without an evaluation. Deterministic for a
+/// deterministic evaluator. No root noise and no temperature.
 pub fn search_positions<F, E>(
     mut eval: F,
     roots: &[Pos],
@@ -34,7 +35,7 @@ where
 
     loop {
         let active: Vec<usize> = (0..games.len())
-            .filter(|&i| games[i].root_visit_count() < n_iterations)
+            .filter(|&i| games[i].needs_search(n_iterations))
             .collect();
         if active.is_empty() {
             break;
@@ -44,7 +45,7 @@ where
         let mut batch = Vec::new();
         for &i in &active {
             let leaf = games[i].leaf_pos();
-            if leaf.is_terminal_state().is_none() && !batch_index.contains_key(&leaf) {
+            if games[i].leaf_needs_eval() && !batch_index.contains_key(&leaf) {
                 batch_index.insert(leaf.clone(), batch.len());
                 batch.push(leaf);
             }
@@ -63,7 +64,7 @@ where
                     results[j].q_penalty,
                     results[j].q_no_penalty,
                 ),
-                // Terminal leaf: on_received_policy ignores these and backs up the exact value.
+                // Proven leaf: on_received_policy ignores these and backs up the exact value.
                 None => (MctsGame::UNIFORM_POLICY, 0.0, 0.0),
             };
             game.on_received_policy(

@@ -7,7 +7,7 @@ This page describes the code layout, tasks, tooling and training options. For in
 | Path | Owns |
 |---|---|
 | `rust/src/c4r.rs` | Bitboard position, move rules, terminal detection, network input encoding. |
-| `rust/src/mcts.rs` | PUCT search, root noise, visit-count policies, training samples. |
+| `rust/src/mcts.rs` | PUCT search with proven-outcome backup (MCTS-Solver), root noise, visit-count policies, training samples. |
 | `rust/src/self_play.rs` | Multi-threaded self-play, batched network calls, the per-run evaluation cache, random starts. |
 | `rust/src/analysis.rs` | Single-threaded, batched MCTS over caller-supplied positions, used by evaluation. |
 | `rust/src/labels.rs` | Mirror-canonical position keys, the dev/test/train split, the position sampler. |

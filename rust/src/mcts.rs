@@ -11,7 +11,7 @@ use rand::{
 };
 
 use crate::{
-    c4r::{Move, Pos},
+    c4r::{Move, Pos, TerminalState},
     types::{policy_from_iter, GameMetadata, GameResult, ModelID, Policy, QValue, Sample},
     utils::OrdF32,
 };
@@ -79,9 +79,13 @@ impl MctsGame {
 
     /// Called when we receive a new policy/value from the NN forward pass for this leaf node.
     /// This is the heart of the MCTS algorithm:
-    /// 1. Expands the current leaf with the given policy (if it is non-terminal)
-    /// 2. Backpropagates up the tree with the given value (or the objective terminal value)
+    /// 1. Expands the current leaf with the given policy (if it is not proven)
+    /// 2. Backpropagates up the tree with the given value (or the leaf's exact proven value),
+    ///    proving ancestors whose children now settle their outcome
     /// 3. selects a new leaf for the next MCTS iteration.
+    ///
+    /// A proven leaf (a terminal position, a proven child chosen for its exact value, or a proven
+    /// root) ignores the received policy and value.
     pub fn on_received_policy(
         &mut self,
         mut policy_logprobs: Policy,
@@ -90,34 +94,20 @@ impl MctsGame {
         c_exploration: f32,
         c_ply_penalty: f32,
     ) {
-        let leaf_pos = self.leaf_pos();
-        if let Some((q_penalty, q_no_penalty)) =
-            leaf_pos.terminal_value_with_ply_penalty(c_ply_penalty)
-        {
-            // If this is a terminal state, the received policy is irrelevant. We backpropagate
-            // the objective terminal value and select a new leaf.
-            self.backpropagate_value(q_penalty, q_no_penalty);
-            self.select_new_leaf(c_exploration);
-        } else {
-            // If this is a non-terminal state, we use the received policy to expand the leaf,
-            // backpropagate the received value, and select a new leaf.
+        if self.leaf.borrow().proof.is_none() {
+            let leaf_pos = self.leaf_pos();
             leaf_pos.mask_policy(&mut policy_logprobs);
-            let policy_probs = softmax(policy_logprobs);
-            self.expand_leaf(policy_probs);
-            self.backpropagate_value(q_penalty, q_no_penalty);
-            self.select_new_leaf(c_exploration);
+            self.expand_leaf(softmax(policy_logprobs));
         }
+        self.backpropagate_value(q_penalty, q_no_penalty, c_ply_penalty);
+        self.select_new_leaf(c_exploration);
     }
 
     /// Expands the the leaf by adding child nodes to it which then be eligible for exploration via
     /// subsequent MCTS iterations. Each child node's [Node::initial_policy_value] is determined by
-    /// the provided policy.
-    /// Noop for terminal nodes.
+    /// the provided policy. Terminal children are proven on creation.
     fn expand_leaf(&self, policy_probs: Policy) {
         let leaf_pos = self.leaf_pos();
-        if leaf_pos.is_terminal_state().is_some() {
-            return;
-        }
         let legal_moves = leaf_pos.legal_moves();
 
         let children: [Option<Rc<RefCell<Node>>>; Pos::N_COLS] = std::array::from_fn(|m| {
@@ -134,18 +124,29 @@ impl MctsGame {
     }
 
     /// Backpropagate value up the tree, alternating value signs for each step.
-    /// If the leaf node is a non-terminal node, the value is taken from the NN forward pass.
-    /// If the leaf node is a terminal node, the value is the objective value of the win/loss/draw.
-    fn backpropagate_value(&self, mut q_penalty: QValue, mut q_no_penalty: QValue) {
+    /// The value starts as the NN's estimate for the leaf. Any proven node on the path (the leaf
+    /// included) replaces it with its exact value, so its ancestors average exact outcomes.
+    /// Proofs propagate upward: a node is re-proven only when the node below it was proven in
+    /// this backup, so far from any terminal this costs one comparison per step.
+    fn backpropagate_value(&self, q_penalty: QValue, q_no_penalty: QValue, c_ply_penalty: f32) {
+        let mut value = (q_penalty, q_no_penalty);
         let mut node_ref = Rc::clone(&self.leaf);
+        let mut reprove = true;
         loop {
             let mut node = node_ref.borrow_mut();
+            if reprove && node.proof.is_none() {
+                node.proof = node.proof_from_children();
+                reprove = node.proof.is_some();
+            } else {
+                reprove = false;
+            }
+            if let Some(proof) = node.proof {
+                value = proof.q(c_ply_penalty);
+            }
             node.visit_count += 1;
-            node.q_sum_penalty += q_penalty;
-            node.q_sum_no_penalty += q_no_penalty;
-
-            q_penalty = -q_penalty;
-            q_no_penalty = -q_no_penalty;
+            node.q_sum_penalty += value.0;
+            node.q_sum_no_penalty += value.1;
+            value = (-value.0, -value.1);
 
             if let Some(parent) = node.parent.upgrade() {
                 drop(node); // Drop node_ref borrow so we can reassign node_ref
@@ -158,12 +159,17 @@ impl MctsGame {
 
     /// Select the next leaf node by traversing from the root node, repeatedly selecting the child
     /// with the highest [Node::uct_value] until we reach a node with no expanded children (leaf
-    /// node).
+    /// node) or a proven node. Selection never descends below a proven node: a proven root stays
+    /// the leaf, and a proven child chosen for its exact value is the leaf.
     fn select_new_leaf(&mut self, c_exploration: f32) {
         let mut node_ref = Rc::clone(&self.root);
 
         loop {
-            let next = node_ref.borrow().children.as_ref().and_then(|children| {
+            let node = node_ref.borrow();
+            if node.proof.is_some() {
+                break;
+            }
+            let next = node.children.as_ref().and_then(|children| {
                 children
                     .iter()
                     .flatten()
@@ -173,6 +179,7 @@ impl MctsGame {
                     })
                     .cloned()
             });
+            drop(node);
 
             if let Some(next) = next {
                 node_ref = Rc::clone(&next)
@@ -185,13 +192,14 @@ impl MctsGame {
     }
 
     /// Makes a move, updating the root node to be the child node corresponding to the move.
-    /// Stores the previous position and policy in the [Self::moves] vector.
-    pub fn make_move(&mut self, m: Move, c_exploration: f32) {
+    /// Stores the previous position, policy and root Q in the [Self::moves] vector.
+    pub fn make_move(&mut self, m: Move, c_exploration: f32, c_ply_penalty: f32) {
+        let (q_penalty, q_no_penalty) = self.root_q(c_ply_penalty);
         self.moves.push(RecordedMove {
             pos: self.root_pos(),
             policy: self.root_policy(),
-            q_penalty: self.root_q_with_penalty(),
-            q_no_penalty: self.root_q_no_penalty(),
+            q_penalty,
+            q_no_penalty,
             mov: m,
         });
 
@@ -216,7 +224,7 @@ impl MctsGame {
     /// The temperature parameter scales the policy probabilities, with values > 1.0 making the
     /// sampled distribution more uniform and values < 1.0 making the sampled distribution favor
     /// the most lucrative moves.
-    pub fn make_random_move(&mut self, c_exploration: f32, temperature: f32) {
+    pub fn make_random_move(&mut self, c_exploration: f32, c_ply_penalty: f32, temperature: f32) {
         let seed = self.metadata.game_id * ((Pos::N_ROWS * Pos::N_COLS) + self.moves.len()) as u64;
         let mut rng = StdRng::seed_from_u64(seed);
         let mut policy = self.root_policy();
@@ -232,7 +240,7 @@ impl MctsGame {
         let policy = apply_temperature(&policy, temperature);
         let dist = WeightedIndex::new(policy).unwrap();
         let mov = dist.sample(&mut rng);
-        self.make_move(mov, c_exploration);
+        self.make_move(mov, c_exploration, c_ply_penalty);
     }
 
     /// Mix noise into this root's legal priors once. Called only by self-play.
@@ -292,22 +300,29 @@ impl MctsGame {
         self.root.borrow().visit_count
     }
 
-    /// After performing many MCTS iterations, the resulting policy is determined by the visit count
-    /// of each child (more visits implies more lucrative).
+    /// Whether the root needs more iterations to reach `n_iterations`. A proven root needs none:
+    /// further search cannot change its policy or Q.
+    pub fn needs_search(&self, n_iterations: usize) -> bool {
+        let root = self.root.borrow();
+        root.proof.is_none() && root.visit_count < n_iterations
+    }
+
+    /// Whether the leaf needs a network evaluation. A proven leaf backs up its exact value, so
+    /// [Self::on_received_policy] ignores whatever is passed for it.
+    pub fn leaf_needs_eval(&self) -> bool {
+        self.leaf.borrow().proof.is_none()
+    }
+
+    /// The move policy at the root: normally visit counts, all mass on the proven-best moves once
+    /// the root is proven (see [Node::policy]).
     pub fn root_policy(&self) -> Policy {
         self.root.borrow().policy()
     }
 
-    /// The average [QValue] of the root node as a consequence of performing MCTS iterations
-    /// (with ply penalties applied).
-    pub fn root_q_with_penalty(&self) -> QValue {
-        self.root.borrow().q_with_penalty()
-    }
-
-    /// The average [QValue] of the root node as a consequence of performing MCTS iterations
-    /// (without ply penalties applied).
-    pub fn root_q_no_penalty(&self) -> QValue {
-        self.root.borrow().q_no_penalty()
+    /// The root's [QValue]s with and without ply penalties, from the player-to-move perspective:
+    /// the mean over MCTS iterations, or the exact value once the root is proven.
+    pub fn root_q(&self, c_ply_penalty: f32) -> (QValue, QValue) {
+        self.root.borrow().q(c_ply_penalty)
     }
 
     /// Converts a finished game into a Vec of [Sample] for future NN training.
@@ -378,6 +393,58 @@ struct RecordedMove {
     mov: Move,
 }
 
+/// A game-theoretic outcome proven inside the search tree, from the perspective of the player to
+/// move at the node. `end_ply` is the ply of the terminal position reached under the best play the
+/// proof knows, so faster wins and slower losses rank higher and the existing ply penalty applies
+/// unchanged. A Win proven while some siblings of its winning move were unproven records the
+/// fastest win found, which can be slower than the fastest win that exists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Proof {
+    Win { end_ply: u8 },
+    Draw,
+    Loss { end_ply: u8 },
+}
+
+impl Proof {
+    /// The rules' verdict on a finished position.
+    fn of_terminal(pos: &Pos) -> Option<Proof> {
+        let end_ply = pos.ply() as u8;
+        pos.is_terminal_state().map(|t| match t {
+            TerminalState::PlayerWin => Proof::Win { end_ply },
+            TerminalState::OpponentWin => Proof::Loss { end_ply },
+            TerminalState::Draw => Proof::Draw,
+        })
+    }
+
+    /// The same outcome from the parent's perspective (the other player).
+    fn negate(self) -> Proof {
+        match self {
+            Proof::Win { end_ply } => Proof::Loss { end_ply },
+            Proof::Draw => Proof::Draw,
+            Proof::Loss { end_ply } => Proof::Win { end_ply },
+        }
+    }
+
+    /// Larger is better for the player to move: fastest win > slower win > draw > slowest loss.
+    fn rank(self) -> i16 {
+        match self {
+            Proof::Win { end_ply } => 100 - end_ply as i16,
+            Proof::Draw => 0,
+            Proof::Loss { end_ply } => end_ply as i16 - 100,
+        }
+    }
+
+    /// The exact (with ply penalty, without) values, matching
+    /// [Pos::terminal_value_with_ply_penalty] at the terminal position the proof reaches.
+    fn q(self, c_ply_penalty: f32) -> (QValue, QValue) {
+        match self {
+            Proof::Win { end_ply } => (1.0 - c_ply_penalty * end_ply as f32, 1.0),
+            Proof::Draw => (0.0, 0.0),
+            Proof::Loss { end_ply } => (-1.0 + c_ply_penalty * end_ply as f32, -1.0),
+        }
+    }
+}
+
 /// A node within an MCTS tree.
 /// [Self::parent] is a weak reference to the parent node to avoid reference cycles.
 /// [Self::children] is an array of optional child nodes. If a child is None, it means that the
@@ -385,6 +452,8 @@ struct RecordedMove {
 /// We maintain two separate Q values: one with ply penalties applied ([Self::q_sum_penalty]) and
 /// one without ([Self::q_sum_no_penalty]). These are normalized with [Self::visit_count] to get the
 /// average [QValue]s in [Self::q_with_penalty()] and [Self::q_no_penalty()].
+/// [Self::proof] is the node's exact outcome once the rules (terminal nodes) or its children
+/// settle it; None while unproven.
 #[derive(Debug, Clone)]
 struct Node {
     pos: Pos,
@@ -394,12 +463,14 @@ struct Node {
     q_sum_no_penalty: f32,
     initial_policy_value: QValue,
     children: Option<[Option<Rc<RefCell<Node>>>; Pos::N_COLS]>,
+    proof: Option<Proof>,
 }
 
 impl Node {
     const EPS: f32 = 1e-8;
 
     fn new(pos: Pos, parent: Weak<RefCell<Node>>, initial_policy_value: QValue) -> Node {
+        let proof = Proof::of_terminal(&pos);
         Node {
             pos,
             parent,
@@ -408,6 +479,36 @@ impl Node {
             q_sum_no_penalty: 0.0,
             initial_policy_value,
             children: None,
+            proof,
+        }
+    }
+
+    /// MCTS-Solver's rule over the expanded children: a node is won if any move reaches a proven
+    /// loss for the opponent (the fastest such win), and otherwise proven only once every legal
+    /// child is, with the best of the negated outcomes. None while that is still open.
+    fn proof_from_children(&self) -> Option<Proof> {
+        let children = self.children.as_ref()?;
+        let mut best: Option<Proof> = None;
+        let mut all_proven = true;
+        for child in children.iter().flatten() {
+            match child.borrow().proof.map(Proof::negate) {
+                Some(p) if best.is_none_or(|b| p.rank() > b.rank()) => best = Some(p),
+                Some(_) => {}
+                None => all_proven = false,
+            }
+        }
+        match best {
+            Some(Proof::Win { .. }) => best,
+            _ if all_proven => best,
+            _ => None,
+        }
+    }
+
+    /// The node's (with ply penalty, without) Q: exact once proven, otherwise the MCTS mean.
+    fn q(&self, c_ply_penalty: f32) -> (QValue, QValue) {
+        match self.proof {
+            Some(proof) => proof.q(c_ply_penalty),
+            None => (self.q_with_penalty(), self.q_no_penalty()),
         }
     }
 
@@ -447,33 +548,55 @@ impl Node {
 
     /// The UCT value of this node. Represents the lucrativeness of this node according to MCTS.
     /// Because [Self::uct_value] is called from the perspective of the *parent* node, we negate
-    /// the exploration value.
+    /// the exploitation value. A proven child uses its exact value: a loss for the child's mover
+    /// (a win for the parent) dominates, a win for it is never chosen, and a draw scores 0.
     fn uct_value(&self, c_exploration: f32) -> QValue {
-        -self.q_with_penalty() + c_exploration * self.exploration_value()
+        let q = match self.proof {
+            Some(Proof::Loss { .. }) => return f32::INFINITY,
+            Some(Proof::Win { .. }) => return f32::NEG_INFINITY,
+            Some(Proof::Draw) => 0.0,
+            None => self.q_with_penalty(),
+        };
+        -q + c_exploration * self.exploration_value()
     }
 
-    /// Whether the game is over (won, los, draw) from this position.
-    fn is_terminal(&self) -> bool {
-        self.pos.is_terminal_state().is_some()
-    }
-
-    /// Uses the child counts as weights to determine the implied policy from this position.
+    /// The implied move policy from this position.
+    /// - Proven: all mass, split evenly, on the children whose outcome equals the node's, i.e.
+    ///   the fastest proven win, a proven draw, or the slowest loss.
+    /// - Unproven: child visit counts, except that children proven lost for the mover get none.
+    ///   With no counted visits, uniform over the remaining legal moves.
+    /// - Unexpanded: uniform over all columns.
     fn policy(&self) -> Policy {
-        if let Some(children) = &self.children {
-            let child_counts = policy_from_iter(children.iter().map(|maybe_child| {
-                maybe_child
-                    .as_ref()
-                    .map_or(0., |child_ref| child_ref.borrow().visit_count as f32)
-            }));
-            let child_counts_sum = child_counts.iter().sum::<f32>();
-            if child_counts_sum == 0.0 {
-                MctsGame::UNIFORM_POLICY
-            } else {
-                child_counts.map(|c| c / child_counts_sum)
+        let Some(children) = &self.children else {
+            return MctsGame::UNIFORM_POLICY;
+        };
+        let weights = |weight: &dyn Fn(&Node) -> f32| {
+            policy_from_iter(
+                children
+                    .iter()
+                    .map(|child| child.as_ref().map_or(0.0, |c| weight(&c.borrow()))),
+            )
+        };
+        let not_lost = |c: &Node| !matches!(c.proof, Some(Proof::Win { .. }));
+        let counts = match self.proof {
+            Some(proof) => weights(&|c| (c.proof.map(Proof::negate) == Some(proof)) as u8 as f32),
+            None => {
+                let visits = weights(&|c| {
+                    if not_lost(c) {
+                        c.visit_count as f32
+                    } else {
+                        0.0
+                    }
+                });
+                if visits.iter().sum::<f32>() > 0.0 {
+                    visits
+                } else {
+                    weights(&|c| not_lost(c) as u8 as f32)
+                }
             }
-        } else {
-            MctsGame::UNIFORM_POLICY
-        }
+        };
+        let sum = counts.iter().sum::<f32>();
+        counts.map(|c| c / sum)
     }
 }
 
@@ -582,11 +705,8 @@ mod tests {
                 TEST_C_PLY_PENALTY,
             )
         }
-        (
-            game.root_policy(),
-            game.root_q_with_penalty(),
-            game.root_q_no_penalty(),
-        )
+        let (q_penalty, q_no_penalty) = game.root_q(TEST_C_PLY_PENALTY);
+        (game.root_policy(), q_penalty, q_no_penalty)
     }
 
     #[test]
@@ -597,8 +717,8 @@ mod tests {
             for _ in 0..16 {
                 game.on_received_policy([0.0; Pos::N_COLS], 0.2, -0.3, 2.0, 0.01);
             }
-            roots.push((game.root_q_with_penalty(), game.root_q_no_penalty()));
-            game.make_random_move(2.0, 1.0);
+            roots.push(game.root_q(0.01));
+            game.make_random_move(2.0, 0.01, 1.0);
         }
         let terminal = game
             .root_pos()
@@ -637,7 +757,7 @@ mod tests {
         let mut game = MctsGame::default();
         for col in moves {
             game.on_received_policy([0.0; Pos::N_COLS], 0.2, -0.3, 2.0, 0.01);
-            game.make_move(col, 2.0);
+            game.make_move(col, 2.0, 0.01);
         }
         let result = game.to_result(0.01, 0.0);
         for (ply, sample) in result.samples.iter().enumerate() {
@@ -655,9 +775,9 @@ mod tests {
             for _ in 0..256 {
                 game.on_received_policy([0.0; Pos::N_COLS], 0.0, 0.0, 2.0, 0.01);
             }
-            let root_q = (game.root_q_with_penalty(), game.root_q_no_penalty());
+            let root_q = game.root_q(0.01);
             assert!(root_q.0 > 0.0 && root_q.1 > 0.0, "{root_q:?}");
-            game.make_move(0, 2.0);
+            game.make_move(0, 2.0, 0.01);
             for weight in [0.0, 0.25, 1.0] {
                 let result = game.clone().to_result(0.01, weight);
                 assert!(result.samples[0].q_penalty > 0.0);
@@ -720,7 +840,7 @@ mod tests {
         for _ in 0..100 {
             game.on_received_policy([0.0; Pos::N_COLS], 0.0, 0.0, 2.0, 0.01);
         }
-        game.make_move(3, 2.0);
+        game.make_move(3, 2.0, 0.01);
         let original = root_priors(&game);
         game.add_root_noise(0.3, 0.25, 2.0);
         assert_ne!(root_priors(&game), original);
@@ -763,7 +883,7 @@ mod tests {
                 },
             );
             game.on_received_policy([0.0; Pos::N_COLS], 0.0, 0.0, 2.0, 0.01);
-            game.make_random_move(2.0, 0.0);
+            game.make_random_move(2.0, 0.01, 0.0);
             selected[game.moves.last().unwrap().mov] = true;
         }
         assert_eq!(selected, [false, true, true, true, true, true, true]);
@@ -994,6 +1114,134 @@ mod tests {
         node.q_sum_no_penalty = 1.5;
         assert_eq!(node.q_with_penalty(), 0.5);
         assert_eq!(node.q_no_penalty(), 0.75);
+    }
+
+    /// Independent oracle: exact negamax outcome if the game is decided within `depth` plies.
+    /// A win found within the horizon is the fastest, since any undecided move ends later.
+    fn solve(pos: &Pos, depth: usize) -> Option<Proof> {
+        if let Some(proof) = Proof::of_terminal(pos) {
+            return Some(proof);
+        }
+        if depth == 0 {
+            return None;
+        }
+        let mut best: Option<Proof> = None;
+        let mut open = false;
+        for child in (0..Pos::N_COLS).filter_map(|m| pos.make_move(m)) {
+            match solve(&child, depth - 1).map(Proof::negate) {
+                Some(p) if best.is_none_or(|b| p.rank() > b.rank()) => best = Some(p),
+                Some(_) => {}
+                None => open = true,
+            }
+        }
+        match best {
+            Some(Proof::Win { .. }) => best,
+            _ if !open => best,
+            _ => None,
+        }
+    }
+
+    /// Moves whose oracle outcome equals the position's, i.e. the solver-best moves.
+    fn best_moves(pos: &Pos, depth: usize) -> Vec<Move> {
+        let value = solve(pos, depth).expect("decided within the horizon");
+        (0..Pos::N_COLS)
+            .filter(|&m| {
+                pos.make_move(m)
+                    .is_some_and(|c| solve(&c, depth - 1).map(Proof::negate) == Some(value))
+            })
+            .collect()
+    }
+
+    fn moves(s: &str) -> Pos {
+        Pos::from_moves(&s.bytes().map(|b| (b - b'0') as Move).collect::<Vec<_>>())
+    }
+
+    /// Uniform-estimator search until the root is proven or `budget` iterations are spent.
+    fn search_until_proven(pos: &Pos, budget: usize) -> MctsGame {
+        let mut game = MctsGame::new_from_pos(pos.clone(), GameMetadata::default());
+        while game.needs_search(budget) {
+            game.on_received_policy(
+                MctsGame::UNIFORM_POLICY,
+                0.0,
+                0.0,
+                TEST_C_EXPLORATION,
+                TEST_C_PLY_PENALTY,
+            );
+        }
+        game
+    }
+
+    /// The root is proven within the budget, its Q is exact, and the policy splits all mass
+    /// evenly over oracle-best moves. An equally fast win still unproven gets none.
+    fn assert_proven_best(pos: &Pos, budget: usize, expected: Proof, depth: usize) {
+        assert_eq!(solve(pos, depth), Some(expected), "oracle precondition");
+        let game = search_until_proven(pos, budget);
+        assert!(
+            game.root_visit_count() < budget,
+            "not proven within {budget}"
+        );
+        assert!(!game.needs_search(usize::MAX));
+        assert_eq!(
+            game.root_q(TEST_C_PLY_PENALTY),
+            expected.q(TEST_C_PLY_PENALTY)
+        );
+        let best = best_moves(pos, depth);
+        let policy = game.root_policy();
+        let chosen: Vec<Move> = (0..Pos::N_COLS).filter(|&c| policy[c] > 0.0).collect();
+        assert!(
+            chosen.iter().all(|c| best.contains(c)),
+            "{policy:?}, best {best:?}"
+        );
+        for &col in &chosen {
+            assert_eq!(policy[col], 1.0 / chosen.len() as f32, "{policy:?}");
+        }
+    }
+
+    #[test]
+    fn forced_wins_in_1_3_and_5_plies_are_proven_from_uniform_priors() {
+        for (pos, plies, budget) in [
+            (moves("112233"), 1, 4),
+            (moves("554540"), 3, 64),
+            (moves("2453645131230"), 5, 512),
+        ] {
+            let end_ply = (pos.ply() + plies) as u8;
+            assert_proven_best(&pos, budget, Proof::Win { end_ply }, plies);
+        }
+    }
+
+    #[test]
+    fn proven_lost_root_picks_the_slowest_loss() {
+        // Every move loses. Column 1 holds out until ply 15; every other move loses at ply 13.
+        let pos = moves("16153315336");
+        assert_eq!(best_moves(&pos, 5), vec![1]);
+        assert_proven_best(&pos, 4096, Proof::Loss { end_ply: 15 }, 5);
+    }
+
+    #[test]
+    fn near_full_boards_prove_draws_and_avoid_losing_moves() {
+        // One drawing move; the other legal moves lose two plies later.
+        for (s, draw) in [
+            ("446104452116614236314103553005230036", 2),
+            ("02663140066012444066101551143435533225", 5),
+        ] {
+            let pos = moves(s);
+            assert_eq!(best_moves(&pos, 42 - pos.ply()), vec![draw]);
+            assert_proven_best(&pos, 4096, Proof::Draw, 42 - pos.ply());
+        }
+    }
+
+    #[test]
+    fn proven_values_match_terminal_values() {
+        for s in ["1122334", "0101010", "11223340"] {
+            let pos = moves(s);
+            let proof = Proof::of_terminal(&pos).expect("terminal");
+            assert_eq!(
+                Some(proof.q(TEST_C_PLY_PENALTY)),
+                pos.terminal_value_with_ply_penalty(TEST_C_PLY_PENALTY)
+            );
+        }
+        let draw = moves("012345012345012345543210543210543210666666");
+        assert_eq!(Proof::of_terminal(&draw), Some(Proof::Draw));
     }
 
     fn assert_policy_sum_1(policy: &Policy) {

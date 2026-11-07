@@ -21,6 +21,10 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
 - A single Python file runs with `timeout 300 uv run --locked pytest -q tests/c4a0_tests/<file>_test.py`, in
   about 1 to 13 s.
 - PUCT with true-mean Q is the only search; the exploration default is now 2.0.
+  It proves outcomes from the rules (MCTS-Solver). A proven root stops early, so
+  `root_visit_count` can stay below the budget. Its policy is all mass on the proven-best
+  moves and its Q is exact. `mcts.rs` checks forced wins in 1, 3 and 5 plies, the slowest
+  loss and near-full draws against a negamax oracle in the test module.
   Search tests assert preferred moves and visit spread, including the low-prior immediate
   win that the old formula starved. Do not restore old-formula visit-share thresholds.
 - For experiment controls, `mcts.rs` tests root-Q blending at W=0, W=0.25 and W=1,

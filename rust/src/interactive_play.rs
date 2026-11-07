@@ -144,8 +144,7 @@ struct State<E: EvalPosT> {
 impl<E: EvalPosT> State<E> {
     fn snapshot(&self) -> Snapshot {
         let mut pos = self.game.root_pos();
-        let mut q_penalty = self.game.root_q_with_penalty();
-        let mut q_no_penalty = self.game.root_q_no_penalty();
+        let (mut q_penalty, mut q_no_penalty) = self.game.root_q(self.c_ply_penalty);
         if pos.ply() % 2 == 1 {
             pos = pos.invert();
             q_penalty = -q_penalty;
@@ -171,7 +170,8 @@ impl<E: EvalPosT> State<E> {
         if pos.is_terminal_state().is_some() || !pos.legal_moves()[mov] {
             return false;
         }
-        self.game.make_move(mov, self.c_exploration);
+        self.game
+            .make_move(mov, self.c_exploration, self.c_ply_penalty);
         true
     }
 
@@ -180,14 +180,14 @@ impl<E: EvalPosT> State<E> {
         if self.game.root_pos().is_terminal_state().is_some() {
             return false;
         }
-        self.game.make_random_move(self.c_exploration, temperature);
+        self.game
+            .make_random_move(self.c_exploration, self.c_ply_penalty, temperature);
         true
     }
 
     /// Returns true if the background thread should stop.
     fn bg_thread_should_stop(&self) -> bool {
-        self.game.root_visit_count() >= self.max_mcts_iterations
-            || self.game.root_pos().is_terminal_state().is_some()
+        !self.game.needs_search(self.max_mcts_iterations)
     }
 
     /// A single tick of the background thread.

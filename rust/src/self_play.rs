@@ -397,7 +397,7 @@ impl MctsThread {
 
                 // If we haven't reached the requisite number of MCTS iterations, send back to NN
                 // to evaluate the next leaf.
-                if game.root_visit_count() < self.n_mcts_iterations {
+                if game.needs_search(self.n_mcts_iterations) {
                     self.nn_queue_tx.send(game).unwrap();
                     return Loop::Continue;
                 }
@@ -410,7 +410,7 @@ impl MctsThread {
                     // generating more diverse (but suboptimal) games.
                     let ply = root_pos.ply();
                     let temperature = self.options.temperature(ply);
-                    game.make_random_move(self.c_exploration, temperature);
+                    game.make_random_move(self.c_exploration, self.c_ply_penalty, temperature);
                     self.options.add_root_noise(&mut game, self.c_exploration);
                     self.nn_queue_tx.send(game).unwrap();
                 } else {
@@ -509,7 +509,9 @@ pub mod tests {
 
     #[test]
     fn zero_random_start_fraction_matches_pre_random_start_games() {
-        // Captured at 291c5ee with the empty-board constructor, before random starts.
+        // Captured at 291c5ee with the empty-board constructor, before random starts. Recaptured
+        // with proven-value backup: each game matched the old bytes in position and policy up to
+        // the first move whose search tree held a proof, and diverged exactly there.
         for max_ply in [1, 12, 20, usize::MAX] {
             let mut games = self_play(
                 UniformEvalPos {},
@@ -700,7 +702,7 @@ pub mod tests {
                 .iter()
                 .position(|legal| *legal)
                 .unwrap();
-            game.make_move(col as _, 1.0);
+            game.make_move(col as _, 1.0, 0.01);
         }
     }
 
