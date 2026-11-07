@@ -217,7 +217,16 @@ impl MctsGame {
     pub fn make_random_move(&mut self, c_exploration: f32, temperature: f32) {
         let seed = self.metadata.game_id * ((Pos::N_ROWS * Pos::N_COLS) + self.moves.len()) as u64;
         let mut rng = StdRng::seed_from_u64(seed);
-        let policy = self.root_policy();
+        let mut policy = self.root_policy();
+        if temperature == 0.0 {
+            // With no child visits, root_policy falls back to uniform. Greedy ties
+            // still range only over legal moves, including at a one-iteration budget.
+            for (col, legal) in self.root_pos().legal_moves().into_iter().enumerate() {
+                if !legal {
+                    policy[col] = 0.0;
+                }
+            }
+        }
         let policy = apply_temperature(&policy, temperature);
         let dist = WeightedIndex::new(policy).unwrap();
         let mov = dist.sample(&mut rng);
@@ -641,6 +650,25 @@ mod tests {
         for alpha in [1e-30, 1e30] {
             assert_policy_sum_1(&dirichlet_noise(legal, alpha, &mut rng));
         }
+    }
+
+    #[test]
+    fn greedy_zero_visit_ties_choose_only_legal_moves() {
+        let pos = (0..6).fold(Pos::default(), |pos, _| pos.make_move(0).unwrap());
+        let mut selected = [false; Pos::N_COLS];
+        for game_id in 0..128 {
+            let mut game = MctsGame::new_from_pos(
+                pos.clone(),
+                GameMetadata {
+                    game_id,
+                    ..GameMetadata::default()
+                },
+            );
+            game.on_received_policy([0.0; Pos::N_COLS], 0.0, 0.0, 2.0, 0.01);
+            game.make_random_move(2.0, 0.0);
+            selected[game.moves.last().unwrap().mov] = true;
+        }
+        assert_eq!(selected, [false, true, true, true, true, true, true]);
     }
 
     #[test]
