@@ -1,103 +1,145 @@
-# c4a0: Connect Four Alpha-Zero
+# c4a0: Connect Four AlphaZero
 
 ![CI](https://github.com/advait/c4a0/actions/workflows/ci.yaml/badge.svg?ts=2)
 
-An Alpha-Zero-style Connect Four engine trained entirely via self play.
+An AlphaZero-style Connect Four engine that learns entirely from self-play, measured move by move against a perfect solver.
 
-The game logic, Monte Carlo Tree Search, and multi-threaded self play engine is written in rust
-[here](https://github.com/advait/c4a0/tree/master/rust).
+Rust runs the game, Monte Carlo Tree Search (MCTS) and multi-threaded self-play. A PyTorch network, called from Rust through [PyO3](https://pyo3.rs), estimates move priors and position values for the search.
 
-The NN is written in Python/PyTorch [here](https://github.com/advait/c4a0/tree/master/src/c4a0?ts=2)
-and interfaces with rust via [PyO3](https://pyo3.rs/v0.22.2/)
+![Terminal UI](images/tui.png)
 
-![Terminal UI](https://raw.githubusercontent.com/advait/c4a0/refs/heads/master/images/tui.png)
+## Training progress
 
-## Usage
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/training-progress-dark.svg">
+  <img alt="Two line charts of dev-suite accuracy over self-play generations. Top: with the original search, MCTS-64 accuracy falls from 77% to 57% over 20 generations, while PUCT holds 81% and adding root noise, replay and more games reaches 88%. Bottom: the share of MCTS-256 moves that keep the game result climbs from 87% to 96.5% over 60 generations for the 1x32 network, and the 4x64 network reaches 96.9% by generation 19, against a 98% target." src="images/training-progress-light.svg">
+</picture>
 
-1. Install clang
+Every generation's saved model is scored on a fixed, solver-labeled suite of positions it never trains on. The headline metric asks whether the move MCTS chooses keeps the game result: a won position stays won and a drawn one stays drawn. The target is 98%.
+
+| Configuration | Generations | MCTS-256 move keeps the result | MCTS-64 picks the solver's best move |
+|---|---|---|---|
+| Original search, 1x32 network | 20 | not measured | 57% (and falling) |
+| PUCT search | 20 | not measured | 81% |
+| + root noise, replay 4, 2,048 games | 20 | not measured | 88% |
+| + replay 8, 60 generations | 60 | 96.5% | 89% |
+| + 4x64 network, search-value targets | 19-20 | 96.9% | 93% |
+
+Each row is the mean of two independent runs. The full record of what was tried, what helped, what hurt and what is still open is in [what we learned trying to make self-play converge](docs/experiments.md).
+
+## Install
+
+You need two things on the machine:
+
+- [mise](https://mise.jdx.dev/getting-started.html), which installs Rust, uv and Python 3.11 for the project.
+- A C toolchain (`cc`), which the Rust build links with. On Debian or Ubuntu, run `sudo apt install build-essential`.
+
+Then, from the repository root:
+
 ```sh
-# Instructions for Ubuntu/Debian (other OSs may vary)
-sudo apt install clang
+mise trust
+mise install
 ```
 
-2. Install [uv](https://docs.astral.sh/uv/getting-started/installation/) for python dep/env management
+Every task below builds the Rust extension and the Python environment the first time it runs, so there is no separate build step. On Linux the locked PyTorch build includes CUDA, and training uses an NVIDIA GPU when one is present.
+
+## Play
+
+To play in the terminal against plain MCTS, with no trained network:
+
 ```sh
-curl -LsSf https://astral.sh/uv/install.sh | sh
+mise run play -- --model uniform
 ```
 
-3. Install deps and create virtual env:
+To play against your latest trained generation:
+
 ```sh
-uv sync
+mise run play
 ```
 
-4. Compile rust code
+## Train
+
+To train with the best configuration found so far:
+
 ```sh
-uv run maturin develop --release
+mise run train
 ```
 
-4. Train a network
+Generations are written to `training/`, one directory per generation, each with `model.pkl`, `games.pkl` and `metadata.json`. Rerunning the command resumes from the latest generation. A GPU is strongly recommended: one generation takes several minutes on an RTX 3090 and much longer on a CPU.
+
+Any `train` option can be passed after `--`. For example, to stop after 10 generations:
+
 ```sh
-uv run src/c4a0/main.py train --max-gens=10
+mise run train -- --max-gens 10
 ```
 
-5. Play against the network
+To check that everything works end to end on a CPU, run the tiny smoke configuration. It takes a few seconds once the project is built:
+
 ```sh
-uv run src/c4a0/main.py play --model=best
+mise run train:smoke
 ```
 
-6. (Optional) Build Pascal Pons's [connect four solver](https://github.com/PascalPons/connect4?ts=2)
-   in `solver/`. Training does not need it: every generation is scored against the committed
-   solver-labeled suite (`src/c4a0/suite/v1/`). The solver is only needed to rebuild that suite
-   or to label positions for the supervised ceiling.
+Run `uv run python src/c4a0/main.py train --help` for every option and its default.
+
+## Measure progress
+
+To print the score curve of a training run:
+
+```sh
+mise run report -- training
 ```
+
+The report shows, per generation, the share of MCTS-256 moves that keep the game result, the strict best-move share, and the opening plies where most errors remain. Point it at a directory of several runs (for example `runs/`, with one base directory per run) to compare arms side by side.
+
+To rescore saved generations, for example after adding an MCTS budget:
+
+```sh
+mise run eval -- --base-dir training --mcts-iterations 1024
+```
+
+To redraw the progress graph above from `docs/data/training-progress.json`:
+
+```sh
+mise run plot
+```
+
+## How it works
+
+### Game and search
+
+`rust/src/c4r.rs` holds the bitboard position and every Connect Four rule. `rust/src/mcts.rs` runs PUCT search: each child is scored by its mean value plus `c * prior * sqrt(N_parent) / (1 + n)`, with root Dirichlet noise mixed in during self-play only. `rust/src/self_play.rs` plays thousands of games in parallel. It batches positions from every game into one network call, caches evaluations within a generation, and samples moves from the visit counts.
+
+### Network and training loop
+
+`src/c4a0/nn.py` defines a residual CNN with a policy head and two value heads. `src/c4a0/training.py` runs the generation loop:
+
+1. Play self-play games with the current network.
+2. Train a copy of the network on the last 8 generations' games. The policy target is the MCTS visit distribution and the value target is the search's own root value.
+3. Save the child and score it on the dev suite before publishing its metadata.
+
+Half of the self-play games start from a random opening of up to 20 moves, so the network sees more than the lines it already likes. Every setting is a field of `GenConfig` and a `train` option.
+
+### Evaluation
+
+`src/c4a0/suite/v1/` holds a committed dev and test suite of about 2,400 positions each. Positions are sampled by random walks across plies 2 to 41, and every move is labeled by [Pascal Pons's solver](https://github.com/PascalPons/connect4). A position and its mirror image always land in the same split. `src/c4a0/evaluation.py` scores the raw network and MCTS at fixed budgets, by ply bucket, and stores the result in each generation's metadata, so evaluation needs no solver at run time.
+
+## Rebuild the suite or label positions
+
+Training and evaluation do not need the solver. You only need it to rebuild the committed suite or to label positions for the supervised ceiling (`main.py label` and `main.py ceiling`). Build it in `solver/`:
+
+```sh
 git clone https://github.com/PascalPons/connect4.git solver
-cd solver
-make
-# Download opening book to speed up solutions
-wget https://github.com/PascalPons/connect4/releases/download/book/7x6.book
+make -C solver
+curl -L -o solver/7x6.book https://github.com/PascalPons/connect4/releases/download/book/7x6.book
+mise run suite:build
 ```
 
-## Results
-After 9 generations of training (approx ~15 min on an RTX 3090) we achieve the following results:
+A clean-room Rust solver on the `feat/rust-solver` branch agrees with Pons on every one of 228,041 compared positions. It is not wired in yet. See the open items in [docs/experiments.md](docs/experiments.md).
 
-![Training Results](https://raw.githubusercontent.com/advait/c4a0/refs/heads/master/images/learning.png)
+## Develop
 
-## Architecture
+```sh
+mise run check
+```
 
-### PyTorch NN [`src/c4a0/nn.py`](https://github.com/advait/c4a0/blob/master/src/c4a0/nn.py?ts=2)
-
-A resnet-style CNN that takes in as input a baord position and outputs a Policy (probability
-distribution over moves weighted by promise) and Q Value (predicted win/loss value [-1, 1]).
-
-Various NN hyperparameters can are sweepable via the `nn-sweep` command.
-
-### Connect Four Game Logic [`rust/src/c4r.rs`](https://github.com/advait/c4a0/blob/master/rust/src/c4r.rs?ts=2)
-
-Implements compact bitboard representation of board state (`Pos`) and all connect four rules
-and game logic.
-
-### Monte Carlo Tree Search (MCTS) [`rust/src/mcts.rs`](https://github.com/advait/c4a0/blob/master/rust/src/mcts.rs?ts=2)
-
-Implements Monte Carlo Tree Search - the core algorithm behind Alpha-Zero. Probabalistically
-explores potential game pathways and optimally hones in on the optimal move to play from any
-position.
-
-MCTS relies on outputs from the NN. The output of MCTS helps train the next generation's NN.
-
-### Self Play [`rust/src/self_play.rs`](https://github.com/advait/c4a0/blob/master/rust/src/self_play.rs?ts=2)
-
-Uses rust multi-threading to parallelize self play (training data generation).
-
-### Solver [`rust/src/solver.rs`](https://github.com/advait/c4a0/blob/master/rust/src/solver.rs?ts=2)
-
-Connect Four is a perfectly solved game. See Pascal Pons's [great
-writeup](http://blog.gamesolver.org/) on how to build a perfect solver. We can use these solutions
-to objectively measure our NN's performance. Self-play **never trains on these solutions**; only
-the opt-in supervised ceiling (`main.py ceiling`) does, to show what the architecture can learn.
-
-`solver.rs` runs the solver over stdin/out with strict response checks. `labels.rs` samples
-held-out positions and assigns each to train, dev or test by a hash of its mirror-canonical board.
-Each generation's saved model is scored on the committed dev suite and the result is stored in its
-`metadata.json` under `evals`: the share of non-trivial positions where the network's top move
-is solver-optimal (ties split evenly, slower wins count as misses), by ply bucket, plus value
-accuracy and optional MCTS budgets (`--eval-mcts-iterations`).
+`check` runs Ruff (lint and format), ty, the Rust tests and the Python tests. CI runs `mise run ci`, which adds the smoke training run. See [docs/development.md](docs/development.md) for the tooling details.

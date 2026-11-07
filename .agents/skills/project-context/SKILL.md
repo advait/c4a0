@@ -52,5 +52,7 @@ All validation tasks enforce `uv.lock` with `--locked`.
 `typecheck`, `test:rust`, `test:python`, `check`, `train:smoke`, `ci`, `train`, `play`, `eval`, `report`, and `suite:build`
 (needs the solver). See the **verify** skill for which to run when.
 
-**Follow-ups.** GitHub issues on `advait/c4a0`, or list them in the reply. The old
-`docs/improvements.md` backlog was deliberately removed. Do not recreate it.
+**Follow-ups.** GitHub issues on `advait/c4a0`, or list them in the reply. Convergence
+hypotheses, their measured results and the open next steps live in `docs/experiments.md`.
+Add a row there for every experiment you run, kept or not. The old `docs/improvements.md`
+backlog was deliberately removed. Do not recreate it.
