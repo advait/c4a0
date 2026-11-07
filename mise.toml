@@ -68,7 +68,7 @@ run = "cargo test"
 description = "Run Python tests"
 depends = ["build"]
 # Timeout: self-play can deadlock at shutdown (see verify skill); fail fast instead of hanging.
-run = "timeout 900 uv run --locked pytest -q"
+run = "timeout 300 uv run --locked pytest -q"
 
 [tasks.ci]
 description = "Run the full CI validation suite"
