@@ -140,6 +140,41 @@ training/<run-name>/<timestamp>/model.pkl
 
 PyTorch Lightning logs are written to `lightning_logs/`.
 
+## Self-play experiment controls
+
+Search uses PUCT with true-mean Q. The default `--c-exploration` is 2.0 in `train`,
+`play`, and `ceiling`. Generation evaluation reads that constant from metadata.
+Tournament callers supply it explicitly; `mcts-sweep` samples it with Optuna.
+
+The following `train` flags are recorded on each generation in `metadata.json`.
+Old metadata loads with the defaults below.
+
+| Flag | Default | Metadata field | Behavior when enabled |
+|---|---|---|---|
+| `--greedy-after-ply K` | unset | `greedy_after_ply` | At ply >= K, choose a most-visited legal move with uniform random ties. Ply counts moves already played; 0 is greedy throughout. |
+| `--root-noise-alpha A` | unset | `root_noise_alpha` | Positive finite Dirichlet concentration over legal root moves. Requires a positive noise fraction to take effect. |
+| `--root-noise-frac E` | 0 | `root_noise_frac` | Mix `(1-E)*P + E*eta` once per self-play root. E is in [0, 1]; positive E requires alpha. |
+| `--mask-terminal-policy` | off | `mask_terminal_policy` | Terminal rows contribute both value losses and zero policy loss. Policy loss averages over the full batch. |
+| `--replay-gens G` | 1 | `replay_gens` | Train on new games plus up to G-1 ancestors' games loaded from `games.pkl`, split by whole game. G must be at least 1. |
+
+Without a greedy cutoff, the move temperature remains 4.0 below ply 4, 2.0 below ply 8,
+and 1.0 afterwards. Root noise uses a separate RNG stream seeded by game ID and ply.
+It never affects evaluation or interactive play, and never changes cached NN estimates.
+Terminal masking changes training copies and leaves saved targets intact.
+Each generation saves only its new games, so replay does not duplicate past windows.
+If a resumed run changes self-play settings, its replay window can include games from
+the earlier settings until those generations leave the window.
+
+To check all controls together, run the tiny command above with `--max-gens 2` and add
+`--greedy-after-ply 8 --root-noise-alpha 0.3 --root-noise-frac 0.25
+--mask-terminal-policy --replay-gens 2`.
+
+To measure convergence, hold the MCTS budget fixed and include
+`--eval-mcts-iterations 64`. Judge move selection by MCTS top-1 against the solver.
+Raw-network top-1 describes the estimator. Historical MCTS scores used the previous
+search, and `eval` backfills now use PUCT with each generation's saved exploration
+constant. Label those results before comparing them.
+
 ## Inspect self-play stats
 
 Use this after a training run:

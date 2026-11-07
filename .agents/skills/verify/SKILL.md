@@ -20,6 +20,13 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   The first run after a source change rebuilds the extension (about 2 minutes).
 - A single Python file runs with `timeout 300 uv run --locked pytest -q tests/c4a0_tests/<file>_test.py`, in
   about 1 to 13 s.
+- PUCT with true-mean Q is the only search; the exploration default is now 2.0.
+  Search tests assert preferred moves and visit spread, including the low-prior immediate
+  win that the old formula starved. Do not restore old-formula visit-share thresholds.
+- For experiment controls, `pybridge_test.py` covers greedy moves, root noise and terminal
+  target masking; `nn_test.py` checks masked policy loss and gradients. `training_test.py`
+  checks replay from disk, saved metadata and the saved model's validation loss on the
+  replay union. `main_test.py` checks CLI defaults and flag forwarding.
 - Raw-network dev eval of a default model (2447 positions, suite load through `SuiteEval`)
   took a median 0.15 s (0.148 to 0.166 s, 3 runs, load average 5, 16 torch threads); the
   forward pass is about 0.08 s of it. MCTS-64 on the dev suite took 1.7 s (one run).
@@ -30,6 +37,10 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
 
 - `mise run train:smoke` runs one tiny generation (4 games, 4 MCTS iterations) through
   Rust self-play, the PyO3 callback, Lightning training and saving.
+- The smoke task uses default controls. To exercise enabled controls, use its tiny CLI
+  command with `--max-gens 2 --greedy-after-ply 8 --root-noise-alpha 0.3
+  --root-noise-frac 0.25 --mask-terminal-policy --replay-gens 2`. Generation two trains on
+  eight games but saves only its four new games. This proves plumbing, not convergence.
 - One realistic generation (256 games, 256 MCTS iterations, default 1-block 32-filter
   network, `--device cpu`) took 276 s. Self-play was 229 s and training 43 s. Use a
   `/tmp` base dir, as in `--base-dir /tmp/c4a0-<name>`.
@@ -50,7 +61,9 @@ Requirements before a convergence number counts:
    buckets: on a fresh random net MCTS-64 scores 0.33 at plies 0-5 but 0.99 at plies 36-41
    (search nearly solves late tactics), so the aggregate hides the opening. Legacy
    `solver_score` (parent self-play, half credit for slower wins) is never written now; do not
-   compare it with `evals`. Keep the test suite for a final number, not for selection.
+   compare it with `evals`. Judge convergence by MCTS move selection at a fixed budget;
+   raw-network top-1 diagnoses the estimator. Keep the test suite for a final number, not
+   for selection.
 2. **Ceiling.** `main.py label` then `main.py ceiling` (see `docs/development.md`) shows what
    the architecture reaches with solver labels directly. Needs Pascal Pons's solver built in
    `solver/` with `7x6.book`, per the README.
@@ -81,16 +94,35 @@ GPU. Keep at least 1024 games in flight. Cut MCTS iterations, not games, to shri
 Supervised ceiling on suite v1 dev (846,552 train labels, patience 10, lr 2e-3 flat): the
 default net reaches 91.8-91.9% raw top-1 over 3 seeds (92.1-92.4% with MCTS-64). The 4x64 net
 reaches 92.6% raw (93.5% MCTS-64), 1 seed. Plies 0-11 are the weak buckets (73-85%).
-Self-play cannot exceed what the architecture reaches here.
+The raw ceiling measures estimator fit. MCTS can improve on raw-network move selection;
+the architecture's raw top-1 is not a bound on MCTS play.
 
 ## Hazards
 
+- Historical MCTS scores used a different search, often with exploration 6.6. PUCT also
+  applies to `eval` backfills, which read exploration from each generation's metadata.
+  Label old and new search results and match budgets and exploration before comparing.
+- All new controls preserve the previous self-play and training behavior by default:
+  `greedy_after_ply=None` keeps temperatures 4 below ply 4, 2 below ply 8, then 1;
+  `root_noise_alpha=None` and `root_noise_frac=0` disable noise;
+  `mask_terminal_policy=False` keeps terminal policy supervision; `replay_gens=1` uses
+  only new games. These are also the defaults when loading old metadata.
+- Root noise affects self-play only, once per move over legal priors, including retained
+  subtrees. Evaluation and interactive play never mix noise. Alpha must be positive and
+  finite; fraction must be in [0, 1], with alpha supplied when fraction is positive.
+  Noise uses a separate RNG stream seeded by game ID and ply.
+- Terminal masking changes split copies, not `games.pkl`: zero policy targets mean zero
+  policy loss, with both value losses retained. Replay follows parent links and loads up
+  to G-1 ancestors. It splits the combined games once, and never saves replay duplicates.
+  Old games in the window retain the settings that generated them; allow the window to
+  fill after changing self-play settings before interpreting an experiment.
 - A Python exception in the NN callback during self-play panics the NN thread
   (`rust/src/pybridge.rs` `PyEvalPos::eval_pos`, `.expect`) and leaves workers waiting
   forever. Wrap ad hoc self-play and training runs in `timeout`. Evaluation search
   (`mcts_policies`) propagates the exception instead.
-- `train --device cpu` still trains on the GPU when one exists, because the Lightning trainer
-  uses `accelerator="auto"`. The untrained root generation is scored on CPU.
+- Run validation tasks sequentially: overlapping `check` and `train:smoke` builds can race
+  while maturin stages the extension. `train --device cpu` selects Lightning's CPU
+  accelerator through `lightning_accelerator`; the root generation is scored on CPU.
 - `nn-sweep` fails every trial (`trainer.gen_n` unset in `src/c4a0/sweep.py`). Don't use it
   as evidence until it's fixed.
 - `py-spy` cannot attach in this container or on alapin (ptrace restricted, no sudo).
