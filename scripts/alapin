@@ -38,6 +38,8 @@ mkdir "$HOME/agent-work/setup/sync.lock" || { echo 'another sync is active' >&2;
 trap 'rm -f "$bundle"; rmdir "$HOME/agent-work/setup/sync.lock"' EXIT HUP INT TERM
 for d in "$HOME"/agent-work/runs/*; do
     [ -f "$d/pid" ] || continue
+    # Only runs in the checkout being synced (~/agent-work/c4a0) block it.
+    [ "$(cat "$d/workdir" 2>/dev/null || echo c4a0)" = c4a0 ] || continue
     if [ ! -f "$d/exit_code" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null; then
         echo "refusing sync during active run: $d" >&2; exit 1
     fi
