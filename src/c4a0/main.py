@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import hashlib
+import math
 import os
 import pickle
 import sys
@@ -69,6 +70,7 @@ def train(
     greedy_after_ply: int | None = typer.Option(None, min=0),
     root_noise_alpha: float | None = None,
     root_noise_frac: float = typer.Option(0.0, min=0.0, max=1.0),
+    value_target_q_weight: float = typer.Option(0.0, min=0.0, max=1.0),
     mask_terminal_policy: bool = False,
     replay_gens: int = typer.Option(1, min=1),
     eval_mcts_iterations: list[int] = typer.Option(default_factory=list),
@@ -76,6 +78,10 @@ def train(
     """Trains a model via self-play. Each generation's saved model is scored on the v1 dev
     suite (raw network, plus MCTS at each --eval-mcts-iterations budget)."""
 
+    if not math.isfinite(value_target_q_weight):
+        raise typer.BadParameter(
+            "must be finite and between 0 and 1", param_hint="--value-target-q-weight"
+        )
     model_config = ModelConfig(
         n_residual_blocks=n_residual_blocks,
         conv_filter_size=conv_filter_size,
@@ -100,6 +106,7 @@ def train(
         greedy_after_ply=greedy_after_ply,
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
+        value_target_q_weight=value_target_q_weight,
         mask_terminal_policy=mask_terminal_policy,
         replay_gens=replay_gens,
     )

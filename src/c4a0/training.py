@@ -54,6 +54,7 @@ class TrainingGen(BaseModel):
     greedy_after_ply: int | None = None
     root_noise_alpha: float | None = None
     root_noise_frac: float = 0.0
+    value_target_q_weight: float = Field(default=0.0, ge=0.0, le=1.0)
     mask_terminal_policy: bool = False
     replay_gens: int = Field(default=1, ge=1)
     parent: datetime | None = None
@@ -166,6 +167,7 @@ class TrainingGen(BaseModel):
         greedy_after_ply: int | None = None,
         root_noise_alpha: float | None = None,
         root_noise_frac: float = 0.0,
+        value_target_q_weight: float = 0.0,
         mask_terminal_policy: bool = False,
         replay_gens: int = 1,
     ) -> "TrainingGen":
@@ -184,6 +186,7 @@ class TrainingGen(BaseModel):
                 greedy_after_ply=greedy_after_ply,
                 root_noise_alpha=root_noise_alpha,
                 root_noise_frac=root_noise_frac,
+                value_target_q_weight=value_target_q_weight,
                 mask_terminal_policy=mask_terminal_policy,
                 replay_gens=replay_gens,
             )
@@ -237,6 +240,7 @@ def train_single_gen(
     greedy_after_ply: int | None = None,
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
+    value_target_q_weight: float = 0.0,
     mask_terminal_policy: bool = False,
     replay_gens: int = 1,
 ) -> TrainingGen:
@@ -270,6 +274,7 @@ def train_single_gen(
         greedy_after_ply=greedy_after_ply,
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
+        value_target_q_weight=value_target_q_weight,
     )
 
     # Training
@@ -313,6 +318,7 @@ def train_single_gen(
         greedy_after_ply=greedy_after_ply,
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
+        value_target_q_weight=value_target_q_weight,
         mask_terminal_policy=mask_terminal_policy,
         replay_gens=replay_gens,
         parent=parent.created_at,
@@ -337,6 +343,7 @@ def training_loop(
     greedy_after_ply: int | None = None,
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
+    value_target_q_weight: float = 0.0,
     mask_terminal_policy: bool = False,
     replay_gens: int = 1,
 ) -> TrainingGen:
@@ -373,6 +380,7 @@ def training_loop(
         greedy_after_ply=greedy_after_ply,
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
+        value_target_q_weight=value_target_q_weight,
         mask_terminal_policy=mask_terminal_policy,
         replay_gens=replay_gens,
     )
@@ -392,6 +400,7 @@ def training_loop(
             greedy_after_ply=greedy_after_ply,
             root_noise_alpha=root_noise_alpha,
             root_noise_frac=root_noise_frac,
+            value_target_q_weight=value_target_q_weight,
             mask_terminal_policy=mask_terminal_policy,
             replay_gens=replay_gens,
         )

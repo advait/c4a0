@@ -151,6 +151,7 @@ def play_tournament(
         greedy_after_ply=None,
         root_noise_alpha=None,
         root_noise_frac=0.0,
+        value_target_q_weight=0.0,
     )
     logger.info(f"Finished tournament with {len(tournament.games.results)} games")
 

@@ -190,6 +190,8 @@ impl MctsGame {
         self.moves.push(RecordedMove {
             pos: self.root_pos(),
             policy: self.root_policy(),
+            q_penalty: self.root_q_with_penalty(),
+            q_no_penalty: self.root_q_no_penalty(),
             mov: m,
         });
 
@@ -309,7 +311,7 @@ impl MctsGame {
     }
 
     /// Converts a finished game into a Vec of [Sample] for future NN training.
-    pub fn to_result(self, c_ply_penalty: f32) -> GameResult {
+    pub fn to_result(self, c_ply_penalty: f32, value_target_q_weight: f32) -> GameResult {
         let (q_penalty, q_no_penalty) = self
             .root
             .borrow()
@@ -334,8 +336,19 @@ impl MctsGame {
             .map(|(mov, (q_penalty, q_no_penalty))| Sample {
                 pos: mov.pos.clone(),
                 policy: mov.policy,
-                q_penalty,
-                q_no_penalty,
+                // Preserve the legacy bits, including signed zero, when blending is disabled.
+                q_penalty: if value_target_q_weight == 0.0 {
+                    q_penalty
+                } else {
+                    (1.0 - value_target_q_weight) * q_penalty
+                        + value_target_q_weight * mov.q_penalty
+                },
+                q_no_penalty: if value_target_q_weight == 0.0 {
+                    q_no_penalty
+                } else {
+                    (1.0 - value_target_q_weight) * q_no_penalty
+                        + value_target_q_weight * mov.q_no_penalty
+                },
             })
             .collect();
 
@@ -359,6 +372,9 @@ impl MctsGame {
 struct RecordedMove {
     pos: Pos,
     policy: Policy,
+    /// Root search means before the move, from the player-to-move perspective.
+    q_penalty: QValue,
+    q_no_penalty: QValue,
     mov: Move,
 }
 
@@ -571,6 +587,88 @@ mod tests {
             game.root_q_with_penalty(),
             game.root_q_no_penalty(),
         )
+    }
+
+    #[test]
+    fn value_targets_blend_recorded_roots_and_preserve_legacy_bits() {
+        let mut game = MctsGame::default();
+        let mut roots = Vec::new();
+        while game.root_pos().is_terminal_state().is_none() {
+            for _ in 0..16 {
+                game.on_received_policy([0.0; Pos::N_COLS], 0.2, -0.3, 2.0, 0.01);
+            }
+            roots.push((game.root_q_with_penalty(), game.root_q_no_penalty()));
+            game.make_random_move(2.0, 1.0);
+        }
+        let terminal = game
+            .root_pos()
+            .terminal_value_with_ply_penalty(0.01)
+            .unwrap();
+        for weight in [0.0, 0.25, 1.0] {
+            let result = game.clone().to_result(0.01, weight);
+            for (i, sample) in result.samples.iter().enumerate() {
+                let z = if (roots.len() - i) % 2 == 0 {
+                    terminal
+                } else {
+                    (-terminal.0, -terminal.1)
+                };
+                let expected = if i == roots.len() || weight == 0.0 {
+                    z
+                } else if weight == 1.0 {
+                    roots[i]
+                } else {
+                    (
+                        (1.0 - weight) * z.0 + weight * roots[i].0,
+                        (1.0 - weight) * z.1 + weight * roots[i].1,
+                    )
+                };
+                assert_eq!(sample.q_penalty.to_bits(), expected.0.to_bits());
+                assert_eq!(sample.q_no_penalty.to_bits(), expected.1.to_bits());
+            }
+        }
+    }
+
+    #[test]
+    fn zero_weight_preserves_signed_zero_targets_in_draw() {
+        let moves = [
+            0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 0, 1, 2, 3, 4, 5, 5, 4, 3, 2, 1, 0, 5, 4, 3, 2, 1,
+            0, 5, 4, 3, 2, 1, 0, 6, 6, 6, 6, 6, 6,
+        ];
+        let mut game = MctsGame::default();
+        for col in moves {
+            game.on_received_policy([0.0; Pos::N_COLS], 0.2, -0.3, 2.0, 0.01);
+            game.make_move(col, 2.0);
+        }
+        let result = game.to_result(0.01, 0.0);
+        for (ply, sample) in result.samples.iter().enumerate() {
+            let legacy: f32 = if ply % 2 == 0 { 0.0 } else { -0.0 };
+            assert_eq!(sample.q_penalty.to_bits(), legacy.to_bits());
+            assert_eq!(sample.q_no_penalty.to_bits(), legacy.to_bits());
+        }
+    }
+
+    #[test]
+    fn winning_root_targets_use_player_to_move_perspective() {
+        // Either player can be the mover. Both positions have an immediate win in column 0.
+        for moves in [vec![1, 1, 2, 2, 3, 3], vec![6, 1, 6, 2, 5, 3, 5]] {
+            let mut game = MctsGame::new_from_pos(Pos::from_moves(&moves), GameMetadata::default());
+            for _ in 0..256 {
+                game.on_received_policy([0.0; Pos::N_COLS], 0.0, 0.0, 2.0, 0.01);
+            }
+            let root_q = (game.root_q_with_penalty(), game.root_q_no_penalty());
+            assert!(root_q.0 > 0.0 && root_q.1 > 0.0, "{root_q:?}");
+            game.make_move(0, 2.0);
+            for weight in [0.0, 0.25, 1.0] {
+                let result = game.clone().to_result(0.01, weight);
+                assert!(result.samples[0].q_penalty > 0.0);
+                assert!(result.samples[0].q_no_penalty > 0.0);
+                assert_eq!(result.samples[1].q_no_penalty, -1.0);
+                if weight == 1.0 {
+                    assert_eq!(result.samples[0].q_penalty, root_q.0);
+                    assert_eq!(result.samples[0].q_no_penalty, root_q.1);
+                }
+            }
+        }
     }
 
     #[test]

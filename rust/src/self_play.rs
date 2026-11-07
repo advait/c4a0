@@ -17,12 +17,13 @@ use crate::{
     types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, ModelID},
 };
 
-/// Options that affect self-play move selection only.
+/// Options that affect self-play move selection and training targets.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SelfPlayOptions {
     pub greedy_after_ply: Option<usize>,
     pub root_noise_alpha: Option<f32>,
     pub root_noise_frac: f32,
+    pub value_target_q_weight: f32,
 }
 
 impl SelfPlayOptions {
@@ -38,6 +39,11 @@ impl SelfPlayOptions {
         }
         if self.root_noise_frac > 0.0 && self.root_noise_alpha.is_none() {
             return Err("root_noise_alpha is required when root_noise_frac > 0");
+        }
+        if !self.value_target_q_weight.is_finite()
+            || !(0.0..=1.0).contains(&self.value_target_q_weight)
+        {
+            return Err("value_target_q_weight must be finite and between 0 and 1");
         }
         Ok(())
     }
@@ -357,7 +363,9 @@ impl MctsThread {
                     // Game is over. Send to done_queue.
                     let remaining_before = self.n_games_remaining.fetch_sub(1, Ordering::AcqRel);
                     self.done_queue_tx
-                        .send(game.to_result(self.c_ply_penalty))
+                        .send(
+                            game.to_result(self.c_ply_penalty, self.options.value_target_q_weight),
+                        )
                         .unwrap();
                     self.pb_game_done.inc(1);
 
@@ -510,7 +518,7 @@ pub mod tests {
                 }
             }
             if game.root_pos().is_terminal_state().is_some() {
-                return game.to_result(0.01);
+                return game.to_result(0.01, 0.0);
             }
             let col = game
                 .root_pos()

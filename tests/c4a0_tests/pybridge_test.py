@@ -41,6 +41,7 @@ def test_split_train_test_is_deterministic_and_non_mutating() -> None:
         greedy_after_ply=None,
         root_noise_alpha=None,
         root_noise_frac=0.0,
+        value_target_q_weight=0.0,
     )
     original_ids = _game_ids(games)
     terminals = {g.samples[-1].pos_str() for g in games.results}
@@ -166,6 +167,7 @@ def test_greedy_cutoff_plays_most_visited_move() -> None:
         greedy_after_ply=4,
         root_noise_alpha=None,
         root_noise_frac=0.0,
+        value_target_q_weight=0.0,
     )
     for game in games.results:
         for ply, (sample, following) in enumerate(
@@ -205,6 +207,7 @@ def test_root_noise_rejects_invalid_parameters(
             greedy_after_ply=None,
             root_noise_alpha=alpha,
             root_noise_frac=frac,
+            value_target_q_weight=0.0,
         )
 
 
@@ -220,9 +223,61 @@ def test_root_noise_off_preserves_games_and_on_changes_them() -> None:
             greedy_after_ply=None,
             root_noise_alpha=alpha,
             root_noise_frac=frac,
+            value_target_q_weight=0.0,
         )
         return {g.metadata.game_id: _sample_positions(g.samples) for g in games.results}
 
     baseline = play(None, 0.0)
     assert play(0.3, 0.0) == baseline
     assert play(0.3, 0.25) != baseline
+
+
+@pytest.mark.parametrize("weight", [-0.1, 1.1, float("nan"), float("inf")])
+def test_value_target_weight_rejects_invalid_parameters(weight: float) -> None:
+    with pytest.raises(ValueError, match="value_target_q_weight"):
+        c4a0_rust.play_games(
+            [], 8, 16, 2.0, 0.01, _uniform_eval, value_target_q_weight=weight
+        )
+
+
+def test_value_target_blending_preserves_moves_and_terminal_values() -> None:
+    def play(weight: float) -> dict[int, c4a0_rust.GameResult]:
+        result = c4a0_rust.play_games(
+            [c4a0_rust.GameMetadata(i, 0, 0) for i in range(4)],
+            8,
+            16,
+            2.0,
+            0.01,
+            _uniform_eval,
+            value_target_q_weight=weight,
+        )
+        return {game.metadata.game_id: game for game in result.results}
+
+    legacy, roots, blended = play(0.0), play(1.0), play(0.25)
+    changed = False
+    for game_id, game in legacy.items():
+        for z, q, target in zip(
+            game.samples, roots[game_id].samples, blended[game_id].samples, strict=True
+        ):
+            assert z.pos_str() == q.pos_str() == target.pos_str()
+            z_arrays, q_arrays, target_arrays = (
+                z.to_numpy(),
+                q.to_numpy(),
+                target.to_numpy(),
+            )
+            for i in [0, 1]:
+                np.testing.assert_array_equal(z_arrays[i], q_arrays[i])
+                np.testing.assert_array_equal(z_arrays[i], target_arrays[i])
+            for i in [2, 3]:
+                np.testing.assert_array_equal(
+                    target_arrays[i],
+                    np.float32(0.75) * z_arrays[i] + np.float32(0.25) * q_arrays[i],
+                )
+                changed |= bool(z_arrays[i] != q_arrays[i])
+        for actual in [roots[game_id], blended[game_id]]:
+            for i in [2, 3]:
+                assert (
+                    game.samples[-1].to_numpy()[i].tobytes()
+                    == actual.samples[-1].to_numpy()[i].tobytes()
+                )
+    assert changed

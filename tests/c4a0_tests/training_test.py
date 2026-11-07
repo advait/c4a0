@@ -50,6 +50,7 @@ def _tiny_loop(
     greedy_after_ply: int | None = None,
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
+    value_target_q_weight: float = 0.0,
     mask_terminal_policy: bool = False,
     replay_gens: int = 1,
 ) -> TrainingGen:
@@ -68,6 +69,7 @@ def _tiny_loop(
         greedy_after_ply=greedy_after_ply,
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
+        value_target_q_weight=value_target_q_weight,
         mask_terminal_policy=mask_terminal_policy,
         replay_gens=replay_gens,
     )
@@ -109,10 +111,13 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(
         greedy_after_ply=4,
         root_noise_alpha=0.3,
         root_noise_frac=0.25,
+        value_target_q_weight=0.6,
         mask_terminal_policy=True,
         max_gens=2,
         replay_gens=2,
     )
+    assert gen.value_target_q_weight == 0.6
+    assert TrainingGen.load(str(tmp_path), gen.created_at).value_target_q_weight == 0.6
     assert gen.replay_gens == 2
     assert TrainingGen.load(str(tmp_path), gen.created_at).replay_gens == 2
     assert gen.mask_terminal_policy is True
@@ -197,6 +202,7 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     gen_dir = tmp_path / created_at.isoformat()
     gen_dir.mkdir()
     shutil.copy(FIXTURES / "legacy_metadata.json", gen_dir / "metadata.json")
+    assert TrainingGen.load(str(tmp_path), created_at).value_target_q_weight == 0.0
 
     gen = TrainingGen.load_latest(str(tmp_path))
     assert gen.gen_n == 3
@@ -245,6 +251,7 @@ def test_replay_window_loads_only_recent_ancestors(tmp_path: Path) -> None:
                 greedy_after_ply=None,
                 root_noise_alpha=None,
                 root_noise_frac=0.0,
+                value_target_q_weight=0.0,
             )
         )
         with open(Path(gen.gen_folder(str(tmp_path))) / "games.pkl", "wb") as f:
