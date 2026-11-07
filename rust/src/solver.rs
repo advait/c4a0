@@ -143,7 +143,7 @@ fn parse_scores(request: &str, pos: &Pos, line: &str) -> Result<MoveScores, Stri
 
 #[cfg(test)]
 mod tests {
-    use std::{os::unix::fs::PermissionsExt, path::PathBuf};
+    use std::path::PathBuf;
 
     use super::*;
 
@@ -201,12 +201,21 @@ mod tests {
             std::env::temp_dir().join(format!("c4a0-fake-solver-{}-{}", name, std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let script = dir.join("solver.sh");
-        std::fs::write(
-            &script,
-            format!("#!/bin/sh\nwhile IFS= read -r l; do {}; done\n", body),
-        )
-        .unwrap();
-        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Write the script from a child process. If this process held the write fd, a fork by a
+        // concurrently running test could inherit it, and exec would fail with ETXTBSY.
+        let mut writer = std::process::Command::new("sh")
+            .args(["-c", "cat > \"$1\" && chmod 755 \"$1\"", "sh"])
+            .arg(&script)
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        writer
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(format!("#!/bin/sh\nwhile IFS= read -r l; do {}; done\n", body).as_bytes())
+            .unwrap();
+        assert!(writer.wait().unwrap().success());
         let book = dir.join("book");
         std::fs::write(&book, "").unwrap();
         (
