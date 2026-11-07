@@ -10,6 +10,7 @@ use std::{
 use crossbeam::thread;
 use crossbeam_channel::{bounded, Receiver, RecvError, Sender};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use rand::{rngs::StdRng, seq::IteratorRandom, RngExt, SeedableRng};
 
 use crate::{
     c4r::Pos,
@@ -25,6 +26,8 @@ pub struct SelfPlayOptions {
     pub root_noise_frac: f32,
     pub value_target_q_weight: f32,
     pub temperature_schedule: Vec<(usize, f32)>,
+    pub random_start_frac: f32,
+    pub random_start_max_ply: usize,
 }
 
 impl Default for SelfPlayOptions {
@@ -35,12 +38,20 @@ impl Default for SelfPlayOptions {
             root_noise_frac: 0.0,
             value_target_q_weight: 0.0,
             temperature_schedule: vec![(4, 4.0), (8, 2.0)],
+            random_start_frac: 0.0,
+            random_start_max_ply: 12,
         }
     }
 }
 
 impl SelfPlayOptions {
     pub fn validate(&self) -> Result<(), &'static str> {
+        if !self.random_start_frac.is_finite() || !(0.0..=1.0).contains(&self.random_start_frac) {
+            return Err("random_start_frac must be finite and between 0 and 1");
+        }
+        if self.random_start_max_ply == 0 {
+            return Err("random_start_max_ply must be at least 1");
+        }
         if self
             .root_noise_alpha
             .is_some_and(|a| !a.is_finite() || a <= 0.0)
@@ -69,6 +80,38 @@ impl SelfPlayOptions {
             previous = Some(until_ply);
         }
         Ok(())
+    }
+
+    fn start_pos(&self, game_id: u64) -> Pos {
+        if self.random_start_frac == 0.0 {
+            return Pos::default();
+        }
+        // A separate stream leaves move sampling and root noise untouched.
+        let mut rng = StdRng::seed_from_u64(game_id ^ 0xa0761d6478bd642f);
+        if !rng.random_bool(self.random_start_frac as f64) {
+            return Pos::default();
+        }
+        // A full board is terminal, so lengths above 41 cannot produce a start.
+        let max_ply = self.random_start_max_ply.min(Pos::N_ROWS * Pos::N_COLS - 1);
+        let length = rng.random_range(1..=max_ply);
+        // Keep L fixed on retries so rejecting terminal walks does not bias start plies.
+        'retry: loop {
+            let mut pos = Pos::default();
+            for _ in 0..length {
+                let col = pos
+                    .legal_moves()
+                    .into_iter()
+                    .enumerate()
+                    .filter_map(|(col, legal)| legal.then_some(col))
+                    .choose(&mut rng)
+                    .unwrap();
+                pos = pos.make_move(col).unwrap();
+                if pos.is_terminal_state().is_some() {
+                    continue 'retry;
+                }
+            }
+            return pos;
+        }
     }
 
     fn add_root_noise(&self, game: &mut MctsGame, c_exploration: f32) {
@@ -127,7 +170,7 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
 
     // Create initial games
     for req in reqs {
-        let game = MctsGame::new_from_pos(Pos::default(), req);
+        let game = MctsGame::new_from_pos(options.start_pos(req.game_id), req);
         nn_queue_tx.send(game).unwrap();
     }
 
@@ -477,6 +520,126 @@ pub mod tests {
     use super::*;
 
     const MAX_NN_BATCH_SIZE: usize = 10;
+
+    #[test]
+    fn zero_random_start_fraction_matches_pre_random_start_games() {
+        // Captured at 291c5ee with the empty-board constructor, before random starts.
+        for max_ply in [1, 12, 20, usize::MAX] {
+            let mut games = self_play(
+                UniformEvalPos {},
+                [0, 1, 7, 99]
+                    .into_iter()
+                    .map(|game_id| GameMetadata {
+                        game_id,
+                        ..GameMetadata::default()
+                    })
+                    .collect(),
+                MAX_NN_BATCH_SIZE,
+                8,
+                2.0,
+                0.01,
+                SelfPlayOptions {
+                    random_start_max_ply: max_ply,
+                    ..SelfPlayOptions::default()
+                },
+            );
+            games.sort_by_key(|game| game.metadata.game_id);
+            assert_eq!(
+                serde_cbor::to_vec(&games).unwrap(),
+                include_bytes!("self_play_empty_start.cbor"),
+            );
+        }
+    }
+
+    #[test]
+    fn random_starts_are_non_terminal_deterministic_and_varied() {
+        for max_ply in [1, 12, 20] {
+            let options = SelfPlayOptions {
+                random_start_frac: 1.0,
+                random_start_max_ply: max_ply,
+                ..SelfPlayOptions::default()
+            };
+            let mut positions = HashSet::new();
+            let mut plies = HashSet::new();
+            for game_id in 0..256 {
+                let pos = options.start_pos(game_id);
+                assert_eq!(pos, options.start_pos(game_id));
+                assert!((1..=max_ply).contains(&pos.ply()));
+                assert_eq!(pos.is_terminal_state(), None);
+                positions.insert(pos.clone());
+                plies.insert(pos.ply());
+            }
+            assert!(positions.len() > 1);
+            assert_eq!(plies.len(), max_ply);
+        }
+    }
+
+    #[test]
+    fn random_start_samples_begin_at_start_without_prefix() {
+        let options = SelfPlayOptions {
+            random_start_frac: 1.0,
+            ..SelfPlayOptions::default()
+        };
+        let games = self_play(
+            UniformEvalPos {},
+            (0..16)
+                .map(|game_id| GameMetadata {
+                    game_id,
+                    ..GameMetadata::default()
+                })
+                .collect(),
+            MAX_NN_BATCH_SIZE,
+            8,
+            2.0,
+            0.01,
+            options.clone(),
+        );
+        for game in games {
+            let start = options.start_pos(game.metadata.game_id);
+            assert_eq!(game.samples[0].pos, start);
+            for (offset, sample) in game.samples.iter().enumerate() {
+                assert_eq!(sample.pos.ply(), start.ply() + offset);
+            }
+            assert!(game
+                .samples
+                .last()
+                .unwrap()
+                .pos
+                .is_terminal_state()
+                .is_some());
+        }
+    }
+
+    #[test]
+    fn fractional_random_starts_mix_empty_and_random_positions() {
+        let options = SelfPlayOptions {
+            random_start_frac: 0.5,
+            ..SelfPlayOptions::default()
+        };
+        let empty = (0..256)
+            .filter(|&id| options.start_pos(id) == Pos::default())
+            .count();
+        assert!((80..176).contains(&empty));
+    }
+
+    #[test]
+    fn random_start_length_is_uniform_even_when_walks_are_rejected() {
+        for max_ply in [20, 41, usize::MAX] {
+            let options = SelfPlayOptions {
+                random_start_frac: 1.0,
+                random_start_max_ply: max_ply,
+                ..SelfPlayOptions::default()
+            };
+            for game_id in 0..64 {
+                let mut rng = StdRng::seed_from_u64(game_id ^ 0xa0761d6478bd642f);
+                assert!(rng.random_bool(1.0));
+                let length = rng.random_range(1..=max_ply.min(41));
+                let pos = options.start_pos(game_id);
+                assert_eq!(pos.ply(), length);
+                assert_eq!(pos.is_terminal_state(), None);
+            }
+        }
+    }
 
     pub struct UniformEvalPos {}
     impl EvalPosT for UniformEvalPos {

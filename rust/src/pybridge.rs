@@ -23,7 +23,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 /// Play games via MCTS. This is a python wrapper around [self_play].
 /// `reqs` is a list of [GameMetadata] that describes the games to play.
 /// The `py_eval_pos_cb` callback is expected to be a pytorch model that runs on the GPU.
-#[pyfunction(signature = (reqs, max_nn_batch_size, n_mcts_iterations, c_exploration, c_ply_penalty, py_eval_pos_cb, greedy_after_ply=None, root_noise_alpha=None, root_noise_frac=0.0, value_target_q_weight=0.0, temperature_schedule=None))]
+#[pyfunction(signature = (reqs, max_nn_batch_size, n_mcts_iterations, c_exploration, c_ply_penalty, py_eval_pos_cb, greedy_after_ply=None, root_noise_alpha=None, root_noise_frac=0.0, value_target_q_weight=0.0, temperature_schedule=None, random_start_frac=0.0, random_start_max_ply=12))]
 pub fn play_games<'py>(
     py: Python<'py>,
     reqs: &Bound<'py, PyList>,
@@ -37,6 +37,8 @@ pub fn play_games<'py>(
     root_noise_frac: f32,
     value_target_q_weight: f32,
     temperature_schedule: Option<Vec<(usize, f32)>>,
+    random_start_frac: f32,
+    random_start_max_ply: usize,
 ) -> PyResult<PlayGamesResult> {
     let options = SelfPlayOptions {
         greedy_after_ply,
@@ -45,6 +47,8 @@ pub fn play_games<'py>(
         value_target_q_weight,
         temperature_schedule: temperature_schedule
             .unwrap_or_else(|| SelfPlayOptions::default().temperature_schedule),
+        random_start_frac,
+        random_start_max_ply,
     };
     options.validate().map_err(PyValueError::new_err)?;
     let reqs: Vec<GameMetadata> = reqs.extract().expect("error extracting reqs");

@@ -30,6 +30,17 @@ def _sample_positions(samples: Sequence[c4a0_rust.Sample]) -> list[str]:
     return [sample.pos_str() for sample in samples]
 
 
+@pytest.mark.parametrize("frac", [-0.1, 1.1, float("nan"), float("inf")])
+def test_random_starts_reject_invalid_fraction(frac: float) -> None:
+    with pytest.raises(ValueError, match="random_start_frac"):
+        c4a0_rust.play_games([], 8, 4, 2.0, 0.01, _uniform_eval, random_start_frac=frac)
+
+
+def test_random_starts_reject_zero_max_ply() -> None:
+    with pytest.raises(ValueError, match="random_start_max_ply"):
+        c4a0_rust.play_games([], 8, 4, 2.0, 0.01, _uniform_eval, random_start_max_ply=0)
+
+
 def test_split_train_test_is_deterministic_and_non_mutating() -> None:
     games = c4a0_rust.play_games(
         [c4a0_rust.GameMetadata(i, 0, 0) for i in range(4)],

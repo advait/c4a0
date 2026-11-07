@@ -62,6 +62,8 @@ def play_games(
     root_noise_frac: float = 0.0,
     value_target_q_weight: float = 0.0,
     temperature_schedule: Sequence[tuple[int, float]] | None = None,
+    random_start_frac: float = 0.0,
+    random_start_max_ply: int = 12,
 ) -> PlayGamesResult: ...
 def encode_positions(moves: Sequence[str]) -> NDArray[np.float32]:
     """Network input (N,2,6,7) for 0-indexed move strings. Raises ValueError on invalid moves."""
