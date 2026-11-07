@@ -4,6 +4,7 @@ mod c4r;
 mod interactive_play;
 mod labels;
 mod mcts;
+mod native_solver;
 mod pybridge;
 mod self_play;
 mod solver;
