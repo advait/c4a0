@@ -41,7 +41,6 @@ from c4a0.training import (  # noqa: E402
     TrainingGen,
     default_eval_config,
     parse_lr_schedule,
-    parse_temperature_schedule,
     training_loop,
 )
 from c4a0.utils import get_torch_device  # noqa: E402
@@ -69,7 +68,6 @@ def train(
     ),
     l2_reg: float = 4e-4,
     max_gens: int | None = None,
-    greedy_after_ply: int | None = typer.Option(None, min=0),
     root_noise_alpha: float | None = None,
     root_noise_frac: float = typer.Option(0.0, min=0.0, max=1.0),
     random_start_frac: float = typer.Option(
@@ -79,8 +77,6 @@ def train(
         12, min=1, help="Maximum random opening length; capped at 41 plies."
     ),
     value_target_q_weight: float = typer.Option(0.0, min=0.0, max=1.0),
-    temperature_schedule: str = "4:4.0,8:2.0",
-    mask_terminal_policy: bool = False,
     replay_gens: int = typer.Option(1, min=1),
     train_max_epochs: int = typer.Option(100, min=1),
     train_patience: int = typer.Option(10, min=1),
@@ -97,10 +93,6 @@ def train(
         raise typer.BadParameter(
             "must be finite and between 0 and 1", param_hint="--random-start-frac"
         )
-    try:
-        parsed_temperature_schedule = parse_temperature_schedule(temperature_schedule)
-    except ValueError as exc:
-        raise typer.BadParameter(str(exc), param_hint="--temperature-schedule") from exc
     model_config = ModelConfig(
         n_residual_blocks=n_residual_blocks,
         conv_filter_size=conv_filter_size,
@@ -117,14 +109,11 @@ def train(
         c_ply_penalty=c_ply_penalty,
         self_play_batch_size=self_play_batch_size,
         training_batch_size=training_batch_size,
-        greedy_after_ply=greedy_after_ply,
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
         random_start_frac=random_start_frac,
         random_start_max_ply=random_start_max_ply,
         value_target_q_weight=value_target_q_weight,
-        temperature_schedule=tuple(parsed_temperature_schedule),
-        mask_terminal_policy=mask_terminal_policy,
         replay_gens=replay_gens,
         train_max_epochs=train_max_epochs,
         train_patience=train_patience,

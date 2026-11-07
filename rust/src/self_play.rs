@@ -21,11 +21,9 @@ use crate::{
 /// Options that affect self-play move selection and training targets.
 #[derive(Clone, Debug)]
 pub struct SelfPlayOptions {
-    pub greedy_after_ply: Option<usize>,
     pub root_noise_alpha: Option<f32>,
     pub root_noise_frac: f32,
     pub value_target_q_weight: f32,
-    pub temperature_schedule: Vec<(usize, f32)>,
     pub random_start_frac: f32,
     pub random_start_max_ply: usize,
 }
@@ -33,11 +31,9 @@ pub struct SelfPlayOptions {
 impl Default for SelfPlayOptions {
     fn default() -> Self {
         Self {
-            greedy_after_ply: None,
             root_noise_alpha: None,
             root_noise_frac: 0.0,
             value_target_q_weight: 0.0,
-            temperature_schedule: vec![(4, 4.0), (8, 2.0)],
             random_start_frac: 0.0,
             random_start_max_ply: 12,
         }
@@ -68,16 +64,6 @@ impl SelfPlayOptions {
             || !(0.0..=1.0).contains(&self.value_target_q_weight)
         {
             return Err("value_target_q_weight must be finite and between 0 and 1");
-        }
-        let mut previous = None;
-        for &(until_ply, temperature) in &self.temperature_schedule {
-            if previous.is_some_and(|ply| until_ply <= ply) {
-                return Err("temperature_schedule plies must be strictly increasing");
-            }
-            if !temperature.is_finite() || temperature <= 0.0 {
-                return Err("temperature_schedule temperatures must be finite and positive");
-            }
-            previous = Some(until_ply);
         }
         Ok(())
     }
@@ -123,13 +109,13 @@ impl SelfPlayOptions {
     }
 
     fn temperature(&self, ply: usize) -> f32 {
-        if self.greedy_after_ply.is_some_and(|cutoff| ply >= cutoff) {
-            return 0.0;
+        if ply < 4 {
+            4.0
+        } else if ply < 8 {
+            2.0
+        } else {
+            1.0
         }
-        self.temperature_schedule
-            .iter()
-            .find_map(|&(until_ply, temperature)| (ply < until_ply).then_some(temperature))
-            .unwrap_or(1.0)
     }
 }
 
@@ -844,65 +830,17 @@ pub mod tests {
     }
 
     #[test]
-    fn temperature_schedule_and_greedy_boundary() {
+    fn fixed_temperature_at_every_ply() {
         for ply in 0..42 {
-            let legacy = if ply < 4 {
+            let expected = if ply < 4 {
                 4.0
             } else if ply < 8 {
                 2.0
             } else {
                 1.0
             };
-            assert_eq!(SelfPlayOptions::default().temperature(ply), legacy);
-            for cutoff in [0, 4, 8, 20, 42] {
-                let options = SelfPlayOptions {
-                    greedy_after_ply: Some(cutoff),
-                    ..SelfPlayOptions::default()
-                };
-                assert_eq!(
-                    options.temperature(ply),
-                    if ply >= cutoff { 0.0 } else { legacy }
-                );
-            }
+            assert_eq!(SelfPlayOptions::default().temperature(ply), expected);
         }
-        assert_eq!(
-            crate::mcts::apply_temperature(&[0.1, 0.3, 0.3, 0.1, 0.1, 0.05, 0.05], 0.0),
-            [0.0, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0]
-        );
-    }
-
-    #[test]
-    fn custom_temperature_schedule_and_greedy_override() {
-        let mut options = SelfPlayOptions {
-            temperature_schedule: vec![(2, 1.5)],
-            ..SelfPlayOptions::default()
-        };
-        assert!(options.validate().is_ok());
-        for ply in 0..42 {
-            assert_eq!(options.temperature(ply), if ply < 2 { 1.5 } else { 1.0 });
-        }
-        options.greedy_after_ply = Some(1);
-        assert_eq!(options.temperature(0), 1.5);
-        for ply in 1..42 {
-            assert_eq!(options.temperature(ply), 0.0);
-        }
-        options.greedy_after_ply = None;
-        options.temperature_schedule = vec![(2, 1.5), (5, 0.5), (9, 3.0)];
-        for ply in 0..42 {
-            let expected = if ply < 2 {
-                1.5
-            } else if ply < 5 {
-                0.5
-            } else if ply < 9 {
-                3.0
-            } else {
-                1.0
-            };
-            assert_eq!(options.temperature(ply), expected);
-        }
-        options.temperature_schedule.clear();
-        assert!(options.validate().is_ok());
-        assert_eq!(options.temperature(0), 1.0);
     }
 
     #[test]

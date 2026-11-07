@@ -148,11 +148,9 @@ def play_tournament(
         exploration_constant,
         c_ply_penalty,
         lambda player_id, pos: gen_id_to_player[ModelID(player_id)].forward_numpy(pos),
-        greedy_after_ply=None,
         root_noise_alpha=None,
         root_noise_frac=0.0,
         value_target_q_weight=0.0,
-        temperature_schedule=None,
     )
     logger.info(f"Finished tournament with {len(tournament.games.results)} games")
 

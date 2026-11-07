@@ -3,7 +3,6 @@ import copy
 import pytest
 import torch
 
-import c4a0_rust
 from c4a0.nn import ConnectFourNet, ModelConfig
 from c4a0.training import parse_lr_schedule
 from c4a0_rust import BUF_N_CHANNELS, N_COLS, N_ROWS
@@ -111,46 +110,6 @@ def test_loss_logs_both_value_components(monkeypatch: pytest.MonkeyPatch) -> Non
     assert "train_q_penalty_mse" in logged_names
     assert "train_q_no_penalty_mse" in logged_names
     assert "train_value_mse" in logged_names
-
-
-@pytest.mark.filterwarnings("ignore:You are trying to `self.log()`*")
-@pytest.mark.parametrize("mask", [False, True])
-@pytest.mark.parametrize("only_terminal", [False, True])
-def test_terminal_policy_mask_keeps_value_loss(
-    monkeypatch: pytest.MonkeyPatch, mask: bool, only_terminal: bool
-) -> None:
-    model = make_model()
-    moves = ["0101010"] if only_terminal else ["0101010", ""]
-    pos = torch.from_numpy(c4a0_rust.encode_positions(moves))
-    policy_target = torch.full((len(moves), N_COLS), 1 / N_COLS)
-    if mask:
-        policy_target[0] = 0.0
-    logits = torch.zeros((len(moves), N_COLS), requires_grad=True)
-
-    def fake_forward(
-        _pos: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        return (
-            logits.log_softmax(dim=1),
-            torch.full((len(moves),), 0.5),
-            torch.full((len(moves),), -0.5),
-        )
-
-    monkeypatch.setattr(model, "forward", fake_forward)
-    batch = (pos, policy_target, torch.zeros(len(moves)), torch.zeros(len(moves)))
-    baseline = model.training_step(batch, 0)
-    assert baseline.item() == pytest.approx(0.5, abs=1e-6)
-    with torch.no_grad():
-        logits[0, 0] = 5.0
-    changed = model.training_step(batch, 0)
-    if mask:
-        assert changed.item() == pytest.approx(baseline.item(), abs=1e-7)
-    else:
-        assert changed.item() > baseline.item()
-    changed.backward()
-    assert logits.grad is not None
-    if mask:
-        assert torch.count_nonzero(logits.grad[0]).item() == 0
 
 
 def _tiny_net() -> ConnectFourNet:

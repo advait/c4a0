@@ -3,7 +3,6 @@ Generation-based network training, alternating between self-play and training.
 """
 
 import copy
-import math
 import os
 import pickle
 from collections.abc import Sequence
@@ -30,9 +29,6 @@ from c4a0.utils import (
     tensor_batches,
 )
 from c4a0_rust import BUF_N_CHANNELS, N_COLS, N_ROWS, PlayGamesResult, Sample
-
-TemperatureSchedule = list[tuple[int, float]]
-DEFAULT_TEMPERATURE_SCHEDULE: tuple[tuple[int, float], ...] = ((4, 4.0), (8, 2.0))
 
 
 @dataclass(frozen=True)
@@ -64,14 +60,11 @@ class GenConfig(BaseModel):
     c_ply_penalty: float
     self_play_batch_size: int
     training_batch_size: int
-    greedy_after_ply: int | None = None
     root_noise_alpha: float | None = None
     root_noise_frac: float = 0.0
     random_start_frac: float = Field(default=0.0, ge=0.0, le=1.0)
     random_start_max_ply: int = Field(default=12, ge=1)
     value_target_q_weight: float = Field(default=0.0, ge=0.0, le=1.0)
-    temperature_schedule: tuple[tuple[int, float], ...] = DEFAULT_TEMPERATURE_SCHEDULE
-    mask_terminal_policy: bool = False
     replay_gens: int = Field(default=1, ge=1)
     train_max_epochs: int = Field(default=100, ge=1)
     train_patience: int = Field(default=10, ge=1)
@@ -273,11 +266,9 @@ def train_single_gen(
         config.c_exploration,
         config.c_ply_penalty,
         lambda player_id, pos: model.forward_numpy(pos),
-        greedy_after_ply=config.greedy_after_ply,
         root_noise_alpha=config.root_noise_alpha,
         root_noise_frac=config.root_noise_frac,
         value_target_q_weight=config.value_target_q_weight,
-        temperature_schedule=config.temperature_schedule,
         random_start_frac=config.random_start_frac,
         random_start_max_ply=config.random_start_max_ply,
     )
@@ -291,9 +282,7 @@ def train_single_gen(
         len(training_games.results),
         config.replay_gens,
     )
-    train, test = training_games.split_train_test(
-        0.8, 1337, mask_terminal_policy=config.mask_terminal_policy
-    )
+    train, test = training_games.split_train_test(0.8, 1337)
     data_module = SampleDataModule(train, test, config.training_batch_size)
     best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
     trainer = GenerationTrainer(
@@ -428,29 +417,4 @@ def parse_lr_schedule(floats: list[float]) -> dict[int, float]:
         )
         lr = floats[i + 1]
         schedule[threshold] = lr
-    return schedule
-
-
-def parse_temperature_schedule(spec: str) -> TemperatureSchedule:
-    """Parse exclusive ply boundaries and their move temperatures."""
-    schedule: TemperatureSchedule = []
-    for pair in spec.split(","):
-        parts = pair.split(":")
-        if len(parts) != 2:
-            raise ValueError("expected a comma list of until_ply:temperature pairs")
-        try:
-            until_ply = int(parts[0])
-        except ValueError as exc:
-            raise ValueError("until_ply must be an integer") from exc
-        if until_ply < 0:
-            raise ValueError("until_ply must be non-negative")
-        if schedule and until_ply <= schedule[-1][0]:
-            raise ValueError("until_ply values must be strictly increasing")
-        try:
-            temperature = float(parts[1])
-        except ValueError as exc:
-            raise ValueError("temperature must be a number") from exc
-        if not math.isfinite(temperature) or temperature <= 0:
-            raise ValueError("temperature must be finite and positive")
-        schedule.append((until_ply, temperature))
     return schedule

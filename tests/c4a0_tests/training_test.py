@@ -1,11 +1,10 @@
-import hashlib
 import json
 import pickle
 import shutil
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Concatenate, Never, ParamSpec
+from typing import Never
 
 import numpy as np
 import pytest
@@ -27,7 +26,6 @@ from c4a0.training import (
     SampleTensor,
     TrainingGen,
     parse_lr_schedule,
-    parse_temperature_schedule,
     replay_training_games,
     training_loop,
 )
@@ -51,39 +49,12 @@ TINY_GEN_CONFIG = GenConfig(
 )
 EXPERIMENT_CONFIG = TINY_GEN_CONFIG.model_copy(
     update={
-        "greedy_after_ply": 4,
         "root_noise_alpha": 0.3,
         "root_noise_frac": 0.25,
         "value_target_q_weight": 0.6,
-        "temperature_schedule": ((2, 1.5),),
-        "mask_terminal_policy": True,
         "replay_gens": 2,
     }
 )
-P = ParamSpec("P")
-
-
-def _serial_games(
-    play_games: Callable[
-        Concatenate[Sequence[c4a0_rust.GameMetadata], P], c4a0_rust.PlayGamesResult
-    ],
-) -> Callable[
-    Concatenate[Sequence[c4a0_rust.GameMetadata], P], c4a0_rust.PlayGamesResult
-]:
-    """Fix completion order and inference batch size for the before/after golden run."""
-
-    def play(
-        reqs: Sequence[c4a0_rust.GameMetadata],
-        /,
-        *args: P.args,
-        **kwargs: P.kwargs,
-    ) -> c4a0_rust.PlayGamesResult:
-        result = c4a0_rust.PlayGamesResult()
-        for req in reqs:
-            result = result + play_games([req], *args, **kwargs)
-        return result
-
-    return play
 
 
 def _tiny_suite() -> Suite:
@@ -136,64 +107,6 @@ def _sum_abs_model_diff(left: ConnectFourNet, right: ConnectFourNet) -> float:
     )
 
 
-def test_two_generation_behavior_matches_before_config_refactor(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Golden run captured at 21d5ff8, before replacing the flat training arguments.
-
-    Serial self-play avoids worker completion order affecting the split.
-    One torch thread and a fixed seed reproduce initialization and training shuffles.
-    Rust seeds move sampling and root noise from game IDs. Compare sample bytes, all
-    saved weights, losses and evaluations; only wall-clock dates and pickle hashes vary.
-    """
-    monkeypatch.setattr(c4a0_rust, "play_games", _serial_games(c4a0_rust.play_games))
-    n_threads = torch.get_num_threads()
-    try:
-        torch.set_num_threads(1)
-        with torch.random.fork_rng():
-            torch.manual_seed(20261107)
-            _tiny_loop(
-                tmp_path,
-                EvalConfig(_tiny_suite()),
-                max_gens=2,
-                config=EXPERIMENT_CONFIG,
-            )
-    finally:
-        torch.set_num_threads(n_threads)
-
-    expected = json.loads((FIXTURES / "training_two_gen.json").read_text())
-    generations = list(reversed(TrainingGen.load_all(str(tmp_path))))
-    assert len(generations) == len(expected) == 3
-    with np.load(FIXTURES / "training_two_gen_weights.npz") as weights:
-        for gen, record in zip(generations, expected, strict=True):
-            assert gen.parent == (
-                generations[gen.gen_n - 1].created_at if gen.gen_n else None
-            )
-            metadata = gen.model_dump(mode="json", exclude={"created_at", "parent"})
-            for evaluation in metadata["evals"].values():
-                evaluation.pop("model_sha256")
-            # Additional knobs may add metadata keys; every pre-refactor key stays equal.
-            assert {key: metadata[key] for key in record["metadata"]} == record[
-                "metadata"
-            ]
-            digest = hashlib.sha256()
-            games = gen.get_games(str(tmp_path))
-            if games is not None:
-                for game in sorted(games.results, key=lambda g: g.metadata.game_id):
-                    digest.update(str(game.metadata.game_id).encode())
-                    for sample in game.samples:
-                        for array in sample.to_numpy():
-                            digest.update(array.tobytes())
-            assert digest.hexdigest() == record["games_sha256"]
-            for key, value in gen.get_model(str(tmp_path)).state_dict().items():
-                np.testing.assert_allclose(
-                    value.cpu().numpy(),
-                    weights[f"{gen.gen_n}/{key}"],
-                    rtol=1e-6,
-                    atol=1e-7,
-                )
-
-
 def test_training_loop_saves_trained_best_model_and_matching_metadata(
     tmp_path: Path,
 ) -> None:
@@ -213,23 +126,13 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(
         assert {
             name: metadata[name] for name in GenConfig.model_fields
         } == gen.config.model_dump(mode="json")
-        # Legacy readers expect lists of pairs at the top level.
-        assert metadata["temperature_schedule"] == [[2, 1.5]]
-    assert gen.temperature_schedule == ((2, 1.5),)
-    assert TrainingGen.load(str(tmp_path), gen.created_at).temperature_schedule == (
-        (2, 1.5),
-    )
     assert gen.value_target_q_weight == 0.6
     assert TrainingGen.load(str(tmp_path), gen.created_at).value_target_q_weight == 0.6
     assert gen.replay_gens == 2
     assert TrainingGen.load(str(tmp_path), gen.created_at).replay_gens == 2
-    assert gen.mask_terminal_policy is True
-    assert TrainingGen.load(str(tmp_path), gen.created_at).mask_terminal_policy is True
     assert gen.root_noise_alpha == 0.3
     assert gen.root_noise_frac == 0.25
     assert TrainingGen.load(str(tmp_path), gen.created_at).root_noise_frac == 0.25
-    assert gen.greedy_after_ply == 4
-    assert TrainingGen.load(str(tmp_path), gen.created_at).greedy_after_ply == 4
 
     assert gen.parent is not None
     parent = TrainingGen.load(str(tmp_path), gen.parent)
@@ -244,9 +147,7 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(
     )  # Save only new games, never duplicate replay in games.pkl.
     games = replay_training_games(str(tmp_path), parent, games, gen.replay_gens)
     assert len(games.results) == 8
-    train, validation = games.split_train_test(
-        0.8, 1337, mask_terminal_policy=gen.mask_terminal_policy
-    )
+    train, validation = games.split_train_test(0.8, 1337)
     data_module = SampleDataModule(list(train), list(validation), 10_000)
 
     assert gen.val_loss == pytest.approx(
@@ -311,13 +212,10 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     assert gen.gen_n == 3
     assert gen.solver_score == pytest.approx(0.6789)
     assert gen.evals == {}
-    assert gen.greedy_after_ply is None
     assert gen.root_noise_alpha is None
     assert gen.root_noise_frac == 0.0
     assert gen.random_start_frac == 0.0
     assert gen.random_start_max_ply == 12
-    assert gen.temperature_schedule == ((4, 4.0), (8, 2.0))
-    assert gen.mask_terminal_policy is False
     assert gen.replay_gens == 1
     assert gen.train_max_epochs == 100
     assert gen.train_patience == 10
@@ -336,8 +234,6 @@ def test_generation_config_is_frozen() -> None:
     )
     with pytest.raises(ValidationError, match="frozen"):
         config.__setattr__("n_mcts_iterations", 8)
-    # An immutable schedule prevents mutation through a frozen model's containers.
-    assert isinstance(config.temperature_schedule, tuple)
 
 
 def test_random_starts_run_one_generation_and_reach_metadata(tmp_path: Path) -> None:
@@ -470,11 +366,9 @@ def test_replay_window_loads_only_recent_ancestors(tmp_path: Path) -> None:
                 2.0,
                 0.01,
                 uniform_eval,
-                greedy_after_ply=None,
                 root_noise_alpha=None,
                 root_noise_frac=0.0,
                 value_target_q_weight=0.0,
-                temperature_schedule=None,
             )
         )
         with open(Path(gen.gen_folder(str(tmp_path))) / "games.pkl", "wb") as f:
@@ -514,15 +408,19 @@ def test_each_generation_gets_fresh_game_ids(tmp_path: Path) -> None:
     assert ids[0].isdisjoint(ids[1])
 
 
-@pytest.mark.parametrize(
-    "spec,expected",
-    [
-        ("4:4.0,8:2.0", [(4, 4.0), (8, 2.0)]),
-        ("2:1.5", [(2, 1.5)]),
-        ("0:2, 2:1.5,5:0.5", [(0, 2.0), (2, 1.5), (5, 0.5)]),
-    ],
-)
-def test_parse_temperature_schedule(
-    spec: str, expected: list[tuple[int, float]]
-) -> None:
-    assert parse_temperature_schedule(spec) == expected
+def test_legacy_metadata_ignores_retired_controls(tmp_path: Path) -> None:
+    metadata = json.loads((FIXTURES / "legacy_metadata.json").read_text())
+    metadata.update(
+        greedy_after_ply=8,
+        mask_terminal_policy=True,
+        temperature_schedule=[[2, 1.5]],
+    )
+    gen = TrainingGen.model_validate(metadata)
+    gen.save_metadata(str(tmp_path))
+    loaded = TrainingGen.load(str(tmp_path), gen.created_at)
+    assert loaded == gen
+    assert loaded.gen_n == metadata["gen_n"]
+    assert (
+        not {"greedy_after_ply", "mask_terminal_policy", "temperature_schedule"}
+        & loaded.model_dump().keys()
+    )

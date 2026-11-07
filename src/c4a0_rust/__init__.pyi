@@ -40,7 +40,7 @@ class PlayGamesResult:
     def __init__(self) -> None: ...
     def __add__(self, other: PlayGamesResult) -> PlayGamesResult: ...
     def split_train_test(
-        self, train_frac: float, seed: int, mask_terminal_policy: bool = False
+        self, train_frac: float, seed: int
     ) -> tuple[list[Sample], list[Sample]]: ...
     def unique_positions(self) -> int: ...
 
@@ -57,11 +57,9 @@ def play_games(
     c_exploration: float,
     c_ply_penalty: float,
     py_eval_pos_cb: EvalPosCb,
-    greedy_after_ply: int | None = None,
     root_noise_alpha: float | None = None,
     root_noise_frac: float = 0.0,
     value_target_q_weight: float = 0.0,
-    temperature_schedule: Sequence[tuple[int, float]] | None = None,
     random_start_frac: float = 0.0,
     random_start_max_ply: int = 12,
 ) -> PlayGamesResult: ...

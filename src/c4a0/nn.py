@@ -170,14 +170,12 @@ class ConnectFourNet(pl.LightningModule):
 
         # Losses. Computed functionally: torchmetrics modules cache their last result with its
         # autograd graph, which made BestModelCheckpoint's deepcopy of the model fail.
-        # KL(target || prediction) per row; rows with an all-zero target (masked terminal
-        # positions) contribute zero, and the mean is over the full batch so other rows keep
-        # their weight.
-        has_policy = policy_target.sum(dim=1) > 0
-        row_kl = (
-            policy_logprob_targets.exp() * (policy_logprob_targets - policy_logprob)
-        ).sum(dim=1)
-        policy_loss = row_kl.masked_fill(~has_policy, 0.0).mean()
+        policy_loss = nn.functional.kl_div(
+            policy_logprob,
+            policy_logprob_targets,
+            reduction="batchmean",
+            log_target=True,
+        )
         q_penalty_loss = nn.functional.mse_loss(q_penalty_pred, q_penalty_target)
         q_no_penalty_loss = nn.functional.mse_loss(
             q_no_penalty_pred, q_no_penalty_target

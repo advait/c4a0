@@ -11,14 +11,11 @@ from c4a0.training import GenConfig
         (
             [],
             {
-                "greedy_after_ply": None,
                 "root_noise_alpha": None,
                 "root_noise_frac": 0.0,
                 "random_start_frac": 0.0,
                 "random_start_max_ply": 12,
                 "value_target_q_weight": 0.0,
-                "temperature_schedule": ((4, 4.0), (8, 2.0)),
-                "mask_terminal_policy": False,
                 "replay_gens": 1,
                 "train_max_epochs": 100,
                 "train_patience": 10,
@@ -26,8 +23,6 @@ from c4a0.training import GenConfig
         ),
         (
             [
-                "--greedy-after-ply",
-                "8",
                 "--root-noise-alpha",
                 "0.3",
                 "--root-noise-frac",
@@ -38,9 +33,6 @@ from c4a0.training import GenConfig
                 "17",
                 "--value-target-q-weight",
                 "0.6",
-                "--temperature-schedule",
-                "2:1.5",
-                "--mask-terminal-policy",
                 "--replay-gens",
                 "3",
                 "--train-max-epochs",
@@ -49,14 +41,11 @@ from c4a0.training import GenConfig
                 "2",
             ],
             {
-                "greedy_after_ply": 8,
                 "root_noise_alpha": 0.3,
                 "root_noise_frac": 0.25,
                 "random_start_frac": 0.5,
                 "random_start_max_ply": 17,
                 "value_target_q_weight": 0.6,
-                "temperature_schedule": ((2, 1.5),),
-                "mask_terminal_policy": True,
                 "replay_gens": 3,
                 "train_max_epochs": 7,
                 "train_patience": 2,
@@ -82,10 +71,8 @@ def test_train_cli_forwards_experiment_flags(
         assert config.model_dump()[key] == value
 
 
-@pytest.mark.parametrize(
-    "flags", [["--greedy-after-ply", "-1"], ["--replay-gens", "0"]]
-)
-def test_train_cli_rejects_invalid_cutoff_or_window(flags: list[str]) -> None:
+@pytest.mark.parametrize("flags", [["--replay-gens", "0"]])
+def test_train_cli_rejects_invalid_window(flags: list[str]) -> None:
     result = CliRunner().invoke(main.app, ["train", *flags])
     assert result.exit_code == 2
 
@@ -117,31 +104,3 @@ def test_train_cli_rejects_invalid_value_target_weight(weight: str) -> None:
     result = CliRunner().invoke(main.app, ["train", "--value-target-q-weight", weight])
     assert result.exit_code == 2
     assert "value-target-q-weight" in result.output
-
-
-@pytest.mark.parametrize(
-    "spec,message",
-    [
-        ("", "until_ply:temperature"),
-        ("2", "until_ply:temperature"),
-        ("2:1:3", "until_ply:temperature"),
-        ("x:1", "integer"),
-        ("2.5:1", "integer"),
-        ("-1:1", "non-negative"),
-        ("4:4,4:2", "strictly increasing"),
-        ("8:4,4:2", "strictly increasing"),
-        ("2:0", "positive"),
-        ("2:-1", "positive"),
-        ("2:nan", "finite"),
-        ("2:inf", "finite"),
-        ("2:nope", "number"),
-        ("2:1,", "until_ply:temperature"),
-    ],
-)
-def test_train_cli_rejects_invalid_temperature_schedule(
-    spec: str, message: str
-) -> None:
-    result = CliRunner().invoke(main.app, ["train", "--temperature-schedule", spec])
-    assert result.exit_code == 2
-    assert "temperature-schedule" in result.output
-    assert message in " ".join(result.output.replace("│", " ").split())

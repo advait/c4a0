@@ -23,7 +23,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 /// Play games via MCTS. This is a python wrapper around [self_play].
 /// `reqs` is a list of [GameMetadata] that describes the games to play.
 /// The `py_eval_pos_cb` callback is expected to be a pytorch model that runs on the GPU.
-#[pyfunction(signature = (reqs, max_nn_batch_size, n_mcts_iterations, c_exploration, c_ply_penalty, py_eval_pos_cb, greedy_after_ply=None, root_noise_alpha=None, root_noise_frac=0.0, value_target_q_weight=0.0, temperature_schedule=None, random_start_frac=0.0, random_start_max_ply=12))]
+#[pyfunction(signature = (reqs, max_nn_batch_size, n_mcts_iterations, c_exploration, c_ply_penalty, py_eval_pos_cb, root_noise_alpha=None, root_noise_frac=0.0, value_target_q_weight=0.0, random_start_frac=0.0, random_start_max_ply=12))]
 pub fn play_games<'py>(
     py: Python<'py>,
     reqs: &Bound<'py, PyList>,
@@ -32,21 +32,16 @@ pub fn play_games<'py>(
     c_exploration: f32,
     c_ply_penalty: f32,
     py_eval_pos_cb: &Bound<'py, PyAny>,
-    greedy_after_ply: Option<usize>,
     root_noise_alpha: Option<f32>,
     root_noise_frac: f32,
     value_target_q_weight: f32,
-    temperature_schedule: Option<Vec<(usize, f32)>>,
     random_start_frac: f32,
     random_start_max_ply: usize,
 ) -> PyResult<PlayGamesResult> {
     let options = SelfPlayOptions {
-        greedy_after_ply,
         root_noise_alpha,
         root_noise_frac,
         value_target_q_weight,
-        temperature_schedule: temperature_schedule
-            .unwrap_or_else(|| SelfPlayOptions::default().temperature_schedule),
         random_start_frac,
         random_start_max_ply,
     };
@@ -132,25 +127,10 @@ impl PlayGamesResult {
     /// Splits the results into training and test datasets.
     /// Ensures that whole games end up in either the training set or test set.
     /// Expects `train_frac` to be in [0, 1].
-    #[pyo3(signature = (train_frac, seed, mask_terminal_policy=false))]
-    fn split_train_test(
-        &self,
-        train_frac: f32,
-        seed: u64,
-        mask_terminal_policy: bool,
-    ) -> PyResult<(Vec<Sample>, Vec<Sample>)> {
+    fn split_train_test(&self, train_frac: f32, seed: u64) -> PyResult<(Vec<Sample>, Vec<Sample>)> {
         let mut rng = StdRng::seed_from_u64(seed);
         let mut results = self.results.clone();
         results.shuffle(&mut rng);
-        if mask_terminal_policy {
-            // Zero targets mean no policy supervision. Change only the training copies,
-            // preserving games.pkl so replay can choose masking independently each generation.
-            for sample in results.iter_mut().flat_map(|game| &mut game.samples) {
-                if sample.pos.is_terminal_state().is_some() {
-                    sample.policy = [0.0; Pos::N_COLS];
-                }
-            }
-        }
         let n_train = (results.len() as f32 * train_frac).round() as usize;
         let (train, test) = results.split_at(n_train);
         Ok((
