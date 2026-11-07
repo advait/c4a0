@@ -21,12 +21,6 @@ pub fn score_move(pos: &Pos, col: usize) -> i8 {
     move_score(pos, col, &mut HashMap::new())
 }
 
-/// Exact score of the non-terminal `pos` for the side to move.
-pub fn solve(pos: &Pos) -> i8 {
-    assert!(pos.is_terminal_state().is_none(), "terminal position");
-    value(pos, &mut HashMap::new())
-}
-
 fn value(pos: &Pos, memo: &mut HashMap<Pos, i8>) -> i8 {
     if let Some(&v) = memo.get(pos) {
         return v;
