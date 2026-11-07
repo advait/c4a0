@@ -46,10 +46,10 @@ sandbox flag.
 
 **Python tools.** uv owns the interpreter and environment. `project.requires-python`
 is the single version pin. ty is the only type checker. Ruff checks annotations and style.
-All validation tasks enforce `uv.lock` with `--locked`. Notebook dependencies are opt-in.
+All validation tasks enforce `uv.lock` with `--locked`.
 
 **Task runner.** mise (`mise.toml`). Canonical tasks: `install`, `build`, `lint`,
-`typecheck`, `test:rust`, `test:python`, `check`, `train:smoke`, `ci`, and `suite:build`
+`typecheck`, `test:rust`, `test:python`, `check`, `train:smoke`, `ci`, `train`, `play`, `eval`, `report`, and `suite:build`
 (needs the solver). See the **verify** skill for which to run when.
 
 **Follow-ups.** GitHub issues on `advait/c4a0`, or list them in the reply. The old

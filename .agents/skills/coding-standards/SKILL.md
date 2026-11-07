@@ -34,7 +34,15 @@ Blanket and unused suppressions fail typecheck.
 - A PyO3 signature change updates `rust/src/pybridge.rs`, `src/c4a0_rust/__init__.pyi`
   and every Python caller in one commit.
 - Search constants (`c_exploration`, `c_ply_penalty`, MCTS iterations) have defaults in
-  `src/c4a0/main.py`, `src/c4a0/tournament.py` and the Rust tests. Change them together.
+  `src/c4a0/main.py` and the Rust tests. Keep their intended settings explicit.
+- Winning `train` defaults live in `src/c4a0/main.py`: auto device, 2048 games,
+  256 MCTS iterations, exploration 2.0, ply penalty 0.01, root noise 1.0/0.25,
+  replay 8, Q weight 1.0, random starts 0.5 through ply 20, 20 epochs with
+  patience 3, a 4-block 64-filter network, and eval budgets 64/256.
+  `GenConfig` keeps historical fallback values for old metadata that omitted controls.
+  Keep `train:smoke` explicitly small and on CPU.
+- Self-play temperature is fixed: 4.0 before ply 4, 2.0 before ply 8, then 1.0.
+  Terminal policies remain supervised. Keep losses functional so model deepcopy works.
 - Changing what a `TrainingGen` field means is a migration (see **project-context**).
 - A new training knob is a GenConfig field plus a CLI option; nothing else threads it.
   Consume it from `config` where it takes effect. `TrainingGen` inherits config fields

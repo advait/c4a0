@@ -89,6 +89,26 @@ run = "uv run --locked python src/c4a0/main.py build-suite"
 
 # Training / app lifecycle
 
+[tasks.train]
+description = "Train generations with the winning defaults in training/ (accepts train options)"
+depends = ["build"]
+run = "uv run --locked python src/c4a0/main.py train"
+
+[tasks.play]
+description = "Play the latest trained model in the TUI (or pass --model uniform|random)"
+depends = ["build"]
+run = "uv run --locked python src/c4a0/main.py play"
+
+[tasks.eval]
+description = "Backfill or rescore saved generations (accepts eval options)"
+depends = ["build"]
+run = "uv run --locked python src/c4a0/main.py eval"
+
+[tasks.report]
+description = "Summarize a directory of training runs (pass the directory and report options)"
+depends = ["build"]
+run = "uv run --locked python scripts/converge_report.py"
+
 [tasks."train:smoke"]
 description = "Run a fast CPU end-to-end smoke training job"
 depends = ["build"]
@@ -108,5 +128,8 @@ timeout 900 uv run --locked python src/c4a0/main.py train \
   --lr-schedule 0 \
   --lr-schedule 0.001 \
   --l2-reg 0 \
+  --train-max-epochs 2 \
+  --train-patience 1 \
+  --eval-mcts-iterations 4 \
   --max-gens 1
 '''

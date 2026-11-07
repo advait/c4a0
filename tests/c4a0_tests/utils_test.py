@@ -51,3 +51,17 @@ def test_lightning_accelerator_follows_the_requested_device() -> None:
     assert lightning_accelerator(torch.device("cpu")) == "cpu"
     assert lightning_accelerator(torch.device("cuda")) == "gpu"
     assert lightning_accelerator(torch.device("mps")) == "mps"
+
+
+@pytest.mark.parametrize(
+    "cuda,mps,expected",
+    [(True, True, "cuda"), (False, True, "mps"), (False, False, "cpu")],
+)
+def test_auto_device_prefers_cuda_then_mps_then_cpu(
+    monkeypatch: pytest.MonkeyPatch, cuda: bool, mps: bool, expected: str
+) -> None:
+    from c4a0.utils import get_torch_device
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+    monkeypatch.setattr(torch.backends.mps, "is_available", lambda: mps)
+    assert get_torch_device() == torch.device(expected)

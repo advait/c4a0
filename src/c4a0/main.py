@@ -49,15 +49,15 @@ app = typer.Typer()
 @app.command()
 def train(
     base_dir: str = "training",
-    device: str = str(get_torch_device()),
-    n_self_play_games: int = 1700,
-    n_mcts_iterations: int = 1400,
+    device: str = "auto",
+    n_self_play_games: int = 2048,
+    n_mcts_iterations: int = 256,
     c_exploration: float = 2.0,
     c_ply_penalty: float = 0.01,
     self_play_batch_size: int = 2000,
     training_batch_size: int = 2000,
-    n_residual_blocks: int = 1,
-    conv_filter_size: int = 32,
+    n_residual_blocks: int = 4,
+    conv_filter_size: int = 64,
     n_policy_layers: int = 4,
     n_value_layers: int = 2,
     lr_schedule: list[float] = typer.Option(
@@ -65,19 +65,19 @@ def train(
     ),
     l2_reg: float = 4e-4,
     max_gens: int | None = None,
-    root_noise_alpha: float | None = None,
-    root_noise_frac: float = typer.Option(0.0, min=0.0, max=1.0),
+    root_noise_alpha: float | None = 1.0,
+    root_noise_frac: float = typer.Option(0.25, min=0.0, max=1.0),
     random_start_frac: float = typer.Option(
-        0.0, min=0.0, max=1.0, help="Fraction of self-play games using random openings."
+        0.5, min=0.0, max=1.0, help="Fraction of self-play games using random openings."
     ),
     random_start_max_ply: int = typer.Option(
-        12, min=1, help="Maximum random opening length; capped at 41 plies."
+        20, min=1, help="Maximum random opening length; capped at 41 plies."
     ),
-    value_target_q_weight: float = typer.Option(0.0, min=0.0, max=1.0),
-    replay_gens: int = typer.Option(1, min=1),
-    train_max_epochs: int = typer.Option(100, min=1),
-    train_patience: int = typer.Option(10, min=1),
-    eval_mcts_iterations: list[int] = typer.Option(default_factory=list),
+    value_target_q_weight: float = typer.Option(1.0, min=0.0, max=1.0),
+    replay_gens: int = typer.Option(8, min=1),
+    train_max_epochs: int = typer.Option(20, min=1),
+    train_patience: int = typer.Option(3, min=1),
+    eval_mcts_iterations: list[int] = typer.Option(default_factory=lambda: [64, 256]),
 ) -> None:
     """Trains a model via self-play. Each generation's saved model is scored on the v1 dev
     suite (raw network, plus MCTS at each --eval-mcts-iterations budget)."""
@@ -117,7 +117,7 @@ def train(
     )
     training_loop(
         base_dir=base_dir,
-        device=torch.device(device),
+        device=get_torch_device() if device == "auto" else torch.device(device),
         config=config,
         model_config=model_config,
         max_gens=max_gens,
@@ -134,9 +134,15 @@ def play(
     model: str = "best",
 ) -> None:
     """Play interactive games"""
-    gen = TrainingGen.load_latest(base_dir)
     nn: ConnectFourNet | RandomPlayer | UniformPlayer
     if model == "best":
+        try:
+            gen = TrainingGen.load_latest(base_dir)
+        except FileNotFoundError:
+            typer.echo(
+                "No trained generations found. Run `mise run train` first.", err=True
+            )
+            raise typer.Exit(1) from None
         nn = gen.get_model(base_dir)
     elif model == "random":
         nn = RandomPlayer(ModelID(0))
