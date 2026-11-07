@@ -2,6 +2,10 @@
 
 This page records every hypothesis tested while driving c4a0's self-play toward solver-perfect play, what each run showed, and what is still open. Read it before starting new convergence work, so you don't repeat a dead end.
 
+## Result
+
+The target, MCTS-256 moves keeping the game result on at least 98% of dev positions, was reached by the final defaults before MCTS-Solver was added: run 2 scored 98.11% at generation 41 (98.0% averaged over its last 10 generations). That generation's model scored **98.68% on the 1,513 held-out test positions**, and generations 38 to 41 all scored between 98.41 and 98.68% on test. The test split played no part in any decision before this check. MCTS-Solver, added afterwards, was ahead of those defaults at every matched generation it ran.
+
 ## How the experiments were judged
 
 The target is MCTS move selection, not the raw network. The network is only the estimator that guides search.
@@ -29,7 +33,7 @@ Experiments ran on `alapin` (one RTX 3090) through `scripts/alapin`. A generatio
 | 8 | The network lacks capacity for the openings it does see. | A 4x64 network instead of 1x32. | About 1.2 points ahead at matched generations, in both runs. Also ahead per hour, despite running at half the speed. | Kept. |
 | 9 | Self-play never visits the middle-game positions the suite asks about. | Start half of self-play games from random openings of up to 12 or 20 moves. | Both lengths were 0.3 to 0.5 points ahead at generations 9 to 18. By generations 21 to 30, up to 12 moves stayed 0.2 points ahead (96.2 to 96.3% against 96.0%), while up to 20 moves fell 0.2 to 0.3 points behind. | Kept, up to 12 moves. |
 | 10 | Training to convergence every generation wastes time and overfits. | 20 epochs with patience 3, and 5 with patience 2, instead of 100 with patience 10. | 20/3 scored the same as 100/10 and finishes each generation faster. 5/2 was noisy and no better. | Kept 20/3 for speed. |
-| 11 | The search treats exact terminal values as noisy averages, so it wastes budget on decided lines and blurs their targets. | MCTS-Solver proven-outcome backup: proofs from the rules, no descent below a proven node, a proven root stops and puts all mass on its proven-best moves with an exact Q. | With a fixed uniform estimator, keeps the result rose from 82.6 to 88.5% at MCTS-64 and from 86.2 to 90.1% at MCTS-256. Strict rose from 76.9 to 84.1% and from 81.6 to 86.8%. Every ply bucket below 30 gained at both budgets. The 1x8 network from a 4-game smoke run rose from 88.5 to 90.9% at MCTS-256. The estimator and search are deterministic, so each number is one exact run. | Kept, pending a training run. |
+| 11 | The search treats exact terminal values as noisy averages, so it wastes budget on decided lines and blurs their targets. | MCTS-Solver proven-outcome backup: proofs from the rules, no descent below a proven node, a proven root stops and puts all mass on its proven-best moves with an exact Q. | With a fixed uniform estimator, keeps the result rose from 82.6 to 88.5% at MCTS-64 and from 86.2 to 90.1% at MCTS-256. Strict rose from 76.9 to 84.1% and from 81.6 to 86.8%. Every ply bucket below 30 gained at both budgets. The 1x8 network from a 4-game smoke run rose from 88.5 to 90.9% at MCTS-256. The estimator and search are deterministic, so each number is one exact run. | Kept. In self-play training on the final defaults it was ahead of the defaults-only control in both runs at generations 0 to 9 (92.9 and 93.2% against 91.5 and 92.8%) and 10 to 19 (96.2 and 96.1% against 95.6 and 95.9%). It was stopped at generation 20 when the target was reached, so later generations are untested. |
 
 ### Diagnostics that shaped the order
 
@@ -54,6 +58,7 @@ The final configuration is the default for `mise run train`. These are the most 
 
 1. **Draws.** Drawn positions miss about 13% of the time, against 2.6% for won positions. A value head trained mostly on decisive games may not separate "drawn" from "slightly winning".
 2. **Plies 6 to 17.** Most remaining misses are here. Random starts helped a little. A curriculum that weights starts toward these plies, or longer starts, is untested.
-3. **Larger networks over longer runs.** The 4x64 network was still climbing when measured. An 8x128 run started too late to report here.
-4. **Faster generations.** Self-play is limited by Python dispatch and CPU-side MCTS (GPU about 20% busy). `torch.compile` gave 8 to 38% on the forward pass in a micro-benchmark and is not wired in.
-5. **Drop Pons.** The Rust solver on `feat/rust-solver` is verified but runs at about 0.66x Pons's throughput and is not wired into labeling.
+3. **MCTS-Solver past generation 20.** It led the control through generation 20 and is now the default, but nobody has run it to 60 generations.
+4. **Larger networks over longer runs.** The 4x64 network was still climbing when measured. An 8x128 run started too late to report here.
+5. **Faster generations.** Self-play is limited by Python dispatch and CPU-side MCTS (GPU about 20% busy). `torch.compile` gave 8 to 38% on the forward pass in a micro-benchmark and is not wired in.
+6. **Drop Pons.** The Rust solver on `feat/rust-solver` is verified but runs at about 0.66x Pons's throughput and is not wired into labeling.

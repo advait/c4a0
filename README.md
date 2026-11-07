@@ -12,7 +12,7 @@ Rust runs the game, Monte Carlo Tree Search (MCTS) and multi-threaded self-play.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/training-progress-dark.svg">
-  <img alt="Two line charts of dev-suite accuracy over self-play generations. Top: with the original search, MCTS-64 accuracy falls from 77% to 57% over 20 generations, while PUCT holds 81% and adding root noise, replay and more games reaches 88%. Bottom: the share of MCTS-256 moves that keep the game result climbs from 87% to 96.5% over 60 generations for the 1x32 network, and the 4x64 network reaches 96.9% by generation 19, against a 98% target." src="images/training-progress-light.svg">
+  <img alt="Two line charts of dev-suite accuracy over self-play generations. Top: with the original search, MCTS-64 accuracy falls from 77% to 57% over 20 generations, while PUCT holds 81% and adding root noise, replay and more games reaches 88%. Bottom: the share of MCTS-256 moves that keep the game result climbs to 96.5% over 60 generations for the 1x32 network. The final defaults (4x64 network, random starts) reach the 98% target at generation 41, and adding MCTS-Solver is ahead of them at every generation through 20." src="images/training-progress-light.svg">
 </picture>
 
 Every generation's saved model is scored on a fixed, solver-labeled suite of positions it never trains on. The headline metric asks whether the move MCTS chooses keeps the game result: a won position stays won and a drawn one stays drawn. The target is 98%.
@@ -23,9 +23,10 @@ Every generation's saved model is scored on a fixed, solver-labeled suite of pos
 | PUCT search | 20 | not measured | 81% |
 | + root noise, replay 4, 2,048 games | 20 | not measured | 88% |
 | + replay 8, 60 generations | 60 | 96.5% | 89% |
-| + 4x64 network, search-value targets | 19-20 | 96.9% | 93% |
+| + 4x64 network, search-value targets, random starts | 41 | **98.0%** | 93% |
+| + MCTS-Solver (the current defaults) | 20 | 97.4% (96.5% without it at generation 20) | 94% |
 
-Each row is the mean of two independent runs. The full record of what was tried, what helped, what hurt and what is still open is in [what we learned trying to make self-play converge](docs/experiments.md).
+Each row is the mean of two independent runs. The best generation (run 2, generation 41) keeps the result on 98.1% of the 1,484 counted dev positions and on **98.7% of the 1,513 held-out test positions**, which no experiment decision ever looked at. The full record of what was tried, what helped, what hurt and what is still open is in [what we learned trying to make self-play converge](docs/experiments.md).
 
 ## Install
 
@@ -107,7 +108,7 @@ mise run plot
 
 ### Game and search
 
-`rust/src/c4r.rs` holds the bitboard position and every Connect Four rule. `rust/src/mcts.rs` runs PUCT search: each child is scored by its mean value plus `c * prior * sqrt(N_parent) / (1 + n)`, with root Dirichlet noise mixed in during self-play only. The search also proves outcomes from the rules, in the style of MCTS-Solver. A finished position is proven, a position with a move into a proven loss for the opponent is a proven win, and a position whose moves are all proven takes the best of them. Search never descends below a proven node. A proven root stops searching, puts all its policy mass on the proven-best moves, and reports its exact value. `rust/src/self_play.rs` plays thousands of games in parallel. It batches positions from every game into one network call, caches evaluations within a generation, and samples moves from the visit counts.
+`rust/src/c4r.rs` holds the bitboard position and every Connect Four rule. `rust/src/mcts.rs` runs PUCT search: each child is scored by its mean value plus `c * prior * sqrt(N_parent) / (1 + n)`, with root Dirichlet noise mixed in during self-play only. It also proves outcomes from the rules alone (MCTS-Solver): a node with a move that reaches a proven loss for the opponent is a proven win, a node whose moves are all proven takes their exact best value, and search never spends iterations below a proven node. No external solver is involved. The search also proves outcomes from the rules, in the style of MCTS-Solver. A finished position is proven, a position with a move into a proven loss for the opponent is a proven win, and a position whose moves are all proven takes the best of them. Search never descends below a proven node. A proven root stops searching, puts all its policy mass on the proven-best moves, and reports its exact value. `rust/src/self_play.rs` plays thousands of games in parallel. It batches positions from every game into one network call, caches evaluations within a generation, and samples moves from the visit counts.
 
 ### Network and training loop
 
