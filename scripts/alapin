@@ -50,7 +50,8 @@ else
     git bundle unbundle "$bundle" > /dev/null
     git cat-file -e "$2^{commit}"
 fi
-fingerprint=$(git ls-tree -r "$2" -- '*.rs' '*.py' '*.pyi' uv.lock rust/Cargo.lock rust/Cargo.toml pyproject.toml | sha256sum | cut -d ' ' -f 1)
+# ls-tree pathspecs are literal prefixes, not globs: list the source directories themselves.
+fingerprint=$(git ls-tree -r "$2" -- rust src uv.lock pyproject.toml | sha256sum | cut -d ' ' -f 1)
 state="$HOME/agent-work/setup/built-source-tree"
 built=$(cat "$state" 2>/dev/null || true)
 if [ -n "$3" ]; then git checkout -B "$3" "$2"; else git checkout --detach "$2"; fi
