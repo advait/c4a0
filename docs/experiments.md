@@ -40,7 +40,7 @@ Experiments ran on `alapin` (one RTX 3090) through `scripts/alapin`. A generatio
 - **Search depth does not fix the openings.** With a fixed, solver-trained network, 16,384 MCTS iterations still threw away the result in about 13% of positions at plies 0 to 5. The opening is decided too far ahead for any affordable search.
 - **The network sees the openings.** Every dev position at plies 0 to 5 occurs in self-play, so opening errors are a learning problem, not missing data. Only 35% of positions at plies 6 to 11, and none from ply 12 on, occur in self-play.
 - **The supervised ceiling is about 92% strict.** Trained directly on 846k solver-labeled positions, the network scores 91.8 to 92.6% strict on held-out positions whether it is 1x32, 4x64 or 8x128. That number measures generalization to unseen positions. It is not a cap on self-play, which visits its own positions repeatedly.
-- **The labels are trustworthy.** A clean-room Rust solver (branch `feat/rust-solver`) agrees with Pons on every one of 228,041 compared positions across all plies. Brute-force minimax confirms both on 119,181 late positions, and Pons is self-consistent on 1,058,402 child positions.
+- **The labels are trustworthy.** A clean-room Rust solver (`rust/src/native_solver/`) agrees with Pons on every one of 228,041 compared positions across all plies. Brute-force minimax confirms both on 119,181 late positions, and Pons is self-consistent on 1,058,402 child positions.
 
 ## Bugs found along the way
 
@@ -61,4 +61,4 @@ The final configuration is the default for `mise run train`. These are the most 
 3. **MCTS-Solver past generation 20.** It led the control through generation 20 and is now the default, but nobody has run it to 60 generations.
 4. **Larger networks over longer runs.** The 4x64 network was still climbing when measured. An 8x128 run started too late to report here.
 5. **Faster generations.** Self-play is limited by Python dispatch and CPU-side MCTS (GPU about 20% busy). `torch.compile` gave 8 to 38% on the forward pass in a micro-benchmark and is not wired in.
-6. **Drop Pons.** The Rust solver on `feat/rust-solver` is verified but runs at about 0.66x Pons's throughput and is not wired into labeling.
+6. **Drop Pons.** The Rust solver in `rust/src/native_solver/` is verified but runs at about 0.66x Pons's throughput and is not wired into labeling.

@@ -20,3 +20,4 @@ training-sweeps/
 *.pkl
 
 skills-lock.json
+/native-solver

@@ -135,7 +135,7 @@ curl -L -o solver/7x6.book https://github.com/PascalPons/connect4/releases/downl
 mise run suite:build
 ```
 
-A clean-room Rust solver on the `feat/rust-solver` branch agrees with Pons on every one of 228,041 compared positions. It is not wired in yet. See the open items in [docs/experiments.md](docs/experiments.md).
+A clean-room Rust solver lives in `rust/src/native_solver/`. It agrees with Pons on every one of 228,041 compared positions, checked by brute force on late positions, and is not wired into labeling yet. `mise run solver:diff` reruns the comparison against Pons, and [docs/native-solver.md](docs/native-solver.md) has the full report.
 
 ## Develop
 

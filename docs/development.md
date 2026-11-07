@@ -12,6 +12,7 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `rust/src/analysis.rs` | Single-threaded, batched MCTS over caller-supplied positions, used by evaluation. |
 | `rust/src/labels.rs` | Mirror-canonical position keys, the dev/test/train split, the position sampler. |
 | `rust/src/solver.rs` | Strict stdin/stdout protocol for Pascal Pons's solver. |
+| `rust/src/native_solver/`, `rust/src/bin/c4native.rs` | A clean-room Rust solver with its own opening book, a benchmark, and a diff harness against Pons. Not wired into labeling. See [native-solver.md](native-solver.md). |
 | `rust/src/pybridge.rs` | The PyO3 API. Its stubs are `src/c4a0_rust/__init__.pyi`. |
 | `rust/src/tui.rs`, `rust/src/interactive_play.rs` | The terminal UI behind `mise run play`. |
 | `src/c4a0/nn.py` | The residual CNN and its loss. |
@@ -35,6 +36,8 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `ci` | `check` plus `train:smoke`. CI runs this on every push. |
 | `train:smoke` | One tiny CPU generation through self-play, training, saving and evaluation. |
 | `suite:build` | Rebuilds the committed suites. Needs the solver in `solver/`. |
+| `solver:native:build`, `solver:native:book` | Build the native solver and its ply-10 opening book in `native-solver/` (gitignored). |
+| `solver:diff` | Compares the native solver against Pons and adjudicates every disagreement. Set `C4A0_SOLVER` and `C4A0_BOOK` to the Pons binary and book. |
 | `install`, `build` | `uv sync --locked`, then `maturin develop --release`. |
 
 ## Tooling
