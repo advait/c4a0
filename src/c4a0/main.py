@@ -53,7 +53,7 @@ def train(
     # These parameters were chosen based on the results of the nn_sweep and mcts_sweep
     n_self_play_games: int = 1700,
     n_mcts_iterations: int = 1400,
-    c_exploration: float = 6.6,
+    c_exploration: float = 2.0,
     c_ply_penalty: float = 0.01,
     self_play_batch_size: int = 2000,
     training_batch_size: int = 2000,
@@ -99,7 +99,7 @@ def train(
 def play(
     base_dir: str = "training",
     max_mcts_iters: int = 1400,
-    c_exploration: float = 6.6,
+    c_exploration: float = 2.0,
     c_ply_penalty: float = 0.01,
     model: str = "best",
 ) -> None:
@@ -252,7 +252,7 @@ def ceiling(
     max_epochs: int = 100,
     patience: int = 10,
     seed: int = 0,
-    c_exploration: float = 6.6,
+    c_exploration: float = 2.0,
     c_ply_penalty: float = 0.01,
     mcts_iterations: list[int] = typer.Option(default_factory=list),
     report_test: bool = False,

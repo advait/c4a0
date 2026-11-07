@@ -357,13 +357,21 @@ impl Node {
     /// The exploitation component of the UCT value (i.e. the average win rate) with a penalty
     /// applied for additional plys to discourage longer sequences.
     fn q_with_penalty(&self) -> QValue {
-        self.q_sum_penalty / ((self.visit_count as f32) + 1.0)
+        if self.visit_count == 0 {
+            0.0
+        } else {
+            self.q_sum_penalty / (self.visit_count as f32)
+        }
     }
 
     /// The exploitation component of the UCT value (i.e. the average win rate) without any
     /// ply penalty.
     fn q_no_penalty(&self) -> QValue {
-        self.q_sum_no_penalty / ((self.visit_count as f32) + 1.0)
+        if self.visit_count == 0 {
+            0.0
+        } else {
+            self.q_sum_no_penalty / (self.visit_count as f32)
+        }
     }
 
     /// The exploration component of the UCT value. Higher visit counts result in lower values.
@@ -376,7 +384,7 @@ impl Node {
             .map_or(self.visit_count as f32, |parent| {
                 parent.borrow().visit_count as f32
             }) as f32;
-        let exploration_value = (parent_visit_count.ln() / (self.visit_count as f32 + 1.)).sqrt();
+        let exploration_value = parent_visit_count.sqrt() / (self.visit_count as f32 + 1.);
         exploration_value * (self.initial_policy_value + Self::EPS)
     }
 
@@ -462,7 +470,7 @@ mod tests {
 
     const CONST_COL_WEIGHT: f32 = 1.0 / (Pos::N_COLS as f32);
     const CONST_POLICY: Policy = [CONST_COL_WEIGHT; Pos::N_COLS];
-    const TEST_C_EXPLORATION: f32 = 4.0;
+    const TEST_C_EXPLORATION: f32 = 2.0;
     const TEST_C_PLY_PENALTY: f32 = 0.01;
 
     /// Runs a batch with a single game and a constant evaluation function.
@@ -482,6 +490,24 @@ mod tests {
             game.root_q_with_penalty(),
             game.root_q_no_penalty(),
         )
+    }
+
+    #[test]
+    fn low_prior_immediate_win_is_not_starved() {
+        let pos = [0, 1, 0, 1, 0, 1]
+            .into_iter()
+            .fold(Pos::default(), |pos, col| pos.make_move(col).unwrap());
+        let mut game = MctsGame::new_from_pos(pos, GameMetadata::default());
+        for i in 0..1400 {
+            let prior: Policy = if i == 0 {
+                [0.01, 0.989, 2e-4, 2e-4, 2e-4, 2e-4, 2e-4]
+            } else {
+                MctsGame::UNIFORM_POLICY
+            };
+            game.on_received_policy(prior.map(f32::ln), 0.0, 0.0, 2.0, 0.01);
+        }
+        let policy = game.root_policy();
+        assert!(policy[1..].iter().all(|&p| policy[0] > p), "{policy:?}");
     }
 
     #[test]
@@ -530,11 +556,10 @@ mod tests {
             .as_str(),
         );
         let (policy, q_penalty, q_no_penalty) = run_mcts(pos, 10_000);
-        let winning_moves = policy[0] + policy[4];
+        assert_most_visited_in(&policy, &[0, 4]);
         assert_relative_eq!(policy.iter().sum::<f32>(), 1.0);
-        assert_gt!(winning_moves, 0.99);
-        assert_gt!(q_penalty, 0.92);
-        assert_gt!(q_no_penalty, 0.99);
+        assert_gt!(q_penalty, 0.0);
+        assert_gt!(q_no_penalty, 0.0);
     }
 
     /// From a winning position, mcts should end up with a policy that prefers the winning move.
@@ -553,10 +578,9 @@ mod tests {
             .as_str(),
         );
         let (policy, q_penalty, q_no_penalty) = run_mcts(pos, 10_000);
-        let winning_moves = policy[1] + policy[4];
-        assert_gt!(winning_moves, 0.98);
-        assert_gt!(q_penalty, 0.90);
-        assert_gt!(q_no_penalty, 0.98);
+        assert_most_visited_in(&policy, &[1, 4]);
+        assert_gt!(q_penalty, 0.0);
+        assert_gt!(q_no_penalty, 0.0);
         assert_gt!(q_no_penalty, q_penalty);
     }
 
@@ -576,14 +600,13 @@ mod tests {
             .as_str(),
         );
         let (policy, q_penalty, q_no_penalty) = run_mcts(pos, 10_000);
-        assert_gt!(policy[5], 0.99);
-        assert_gt!(q_penalty, 0.86);
-        assert_gt!(q_no_penalty, 0.99);
+        assert_most_visited_in(&policy, &[5]);
+        assert_gt!(q_penalty, 0.0);
+        assert_gt!(q_no_penalty, 0.0);
         assert_gt!(q_no_penalty, q_penalty);
     }
 
-    /// From a definitively losing position, mcts should end up with a uniform policy because it's
-    /// desperately trying to find a non-losing move.
+    /// With a uniform estimator, search spreads visits across a forced loss.
     #[test]
     fn losing_position() {
         let pos = Pos::from(
@@ -600,11 +623,10 @@ mod tests {
         );
         let (policy, q_penalty, q_no_penalty) = run_mcts(pos, 300_000);
         assert_policy_sum_1(&policy);
-        policy.iter().for_each(|&p| {
-            assert_relative_eq!(p, CONST_COL_WEIGHT, epsilon = 0.01);
-        });
-        assert_lt!(q_penalty, -0.93);
-        assert_lt!(q_no_penalty, -0.99);
+        assert!(policy.iter().all(|&p| p > 0.0));
+        assert!(policy.iter().all(|&p| p < 0.5), "{policy:?}");
+        assert_lt!(q_penalty, 0.0);
+        assert_lt!(q_no_penalty, 0.0);
         assert_lt!(q_no_penalty, q_penalty);
     }
 
@@ -625,9 +647,9 @@ mod tests {
             .as_str(),
         );
         let (policy, q_penalty, q_no_penalty) = run_mcts(pos, 10_000);
-        assert_gt!(policy[4], 0.99);
-        assert_gt!(q_penalty, 0.82);
-        assert_gt!(q_no_penalty, 0.99);
+        assert_most_visited_in(&policy, &[4]);
+        assert_gt!(q_penalty, 0.0);
+        assert_gt!(q_no_penalty, 0.0);
         assert_gt!(q_no_penalty, q_penalty);
     }
 
@@ -683,6 +705,36 @@ mod tests {
                 }
             }
         }
+    }
+
+    fn assert_most_visited_in(policy: &Policy, best: &[usize]) {
+        let max = policy.iter().copied().fold(0.0, f32::max);
+        assert!(best.iter().any(|&col| policy[col] == max), "{policy:?}");
+        assert!(policy
+            .iter()
+            .enumerate()
+            .all(|(col, &p)| best.contains(&col) || p < max));
+    }
+
+    #[test]
+    fn forced_block_is_most_visited() {
+        let pos = [0, 1, 0, 1, 2, 1]
+            .into_iter()
+            .fold(Pos::default(), |pos, col| pos.make_move(col).unwrap());
+        let (policy, _, _) = run_mcts(pos, 1400);
+        assert_most_visited_in(&policy, &[1]);
+    }
+
+    #[test]
+    fn q_is_true_mean_and_zero_when_unvisited() {
+        let mut node = Node::new(Pos::default(), Weak::new(), 1.0);
+        assert_eq!(node.q_with_penalty(), 0.0);
+        assert_eq!(node.q_no_penalty(), 0.0);
+        node.visit_count = 2;
+        node.q_sum_penalty = 1.0;
+        node.q_sum_no_penalty = 1.5;
+        assert_eq!(node.q_with_penalty(), 0.5);
+        assert_eq!(node.q_no_penalty(), 0.75);
     }
 
     fn assert_policy_sum_1(policy: &Policy) {

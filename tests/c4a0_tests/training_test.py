@@ -48,7 +48,7 @@ def _tiny_loop(
         device=torch.device("cpu"),
         n_self_play_games=4,
         n_mcts_iterations=4,
-        c_exploration=6.6,
+        c_exploration=2.0,
         c_ply_penalty=0.01,
         self_play_batch_size=16,
         training_batch_size=10_000,
@@ -121,7 +121,7 @@ def test_each_generation_records_evals_of_its_own_saved_model(tmp_path: Path) ->
         assert list(reloaded.evals) == ["v1/dev-50"]
         recorded = reloaded.evals["v1/dev-50"]
         model_path = Path(g.gen_folder(str(tmp_path))) / "model.pkl"
-        assert recorded == evaluate_model(model_path, suite, (4,), 6.6, 0.01)
+        assert recorded == evaluate_model(model_path, suite, (4,), 2.0, 0.01)
         assert sum(t.n for t in recorded.raw.by_bucket.values()) == 50
         assert sorted(recorded.mcts) == [4]
     assert gen.parent is not None

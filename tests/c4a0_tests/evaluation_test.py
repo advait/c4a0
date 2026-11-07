@@ -113,7 +113,7 @@ def test_evaluate_model_scores_the_pickled_bytes(tmp_path: Path) -> None:
     labels = make_labels({**PONS_ROWS, "0": [-2] * 7})
     suite = Suite(labels=labels, name="test/tiny", sha256="abc")
 
-    result = evaluate_model(path, suite, (2, 8), 6.6, 0.01)
+    result = evaluate_model(path, suite, (2, 8), 2.0, 0.01)
 
     assert result.model_sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
     assert (result.suite, result.suite_sha256) == ("test/tiny", "abc")
