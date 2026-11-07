@@ -1,13 +1,13 @@
 #![allow(dead_code)]
 mod analysis;
-mod c4r;
+pub mod c4r;
 mod interactive_play;
-mod labels;
+pub mod labels;
 mod mcts;
-mod native_solver;
+pub mod native_solver;
 mod pybridge;
 mod self_play;
-mod solver;
+pub mod solver;
 mod tui;
 mod types;
 mod utils;

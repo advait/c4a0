@@ -110,3 +110,22 @@ timeout 900 uv run --locked python src/c4a0/main.py train \
   --l2-reg 0 \
   --max-gens 1
 '''
+
+# Native solver (rust/src/native_solver). Pons stays the project's solver until the coordinator
+# switches; these tasks build, book and check the native one against it.
+
+[tasks."solver:native:build"]
+description = "Build the native solver CLI (rust/target/release/c4native)"
+dir = "{{config_root}}/rust"
+run = "cargo build --release --bin c4native"
+
+[tasks."solver:native:book"]
+description = "Generate the native solver's ply-8 opening book with the native solver (about 20 min on 32 cores; skipped if present)"
+depends = ["solver:native:build"]
+run = '''
+test -f native-solver/book-ply8.bin && { echo "native-solver/book-ply8.bin exists; delete it to rebuild"; exit 0; }
+mkdir -p native-solver
+timeout 7200 nice -n 10 rust/target/release/c4native book --ply 8 --tt-mb "${C4NATIVE_BOOK_TT_MB:-4096}" --out native-solver/book-ply8.tmp
+mv native-solver/book-ply8.tmp native-solver/book-ply8.bin
+sha256sum native-solver/book-ply8.bin
+'''

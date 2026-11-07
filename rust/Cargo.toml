@@ -5,7 +5,11 @@ edition = "2021"
 
 [lib]
 name = "c4a0_rust"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "c4native"
+path = "src/bin/c4native.rs"
 
 [dependencies]
 pyo3 = { version = "0.29.0", features = ["extension-module"] }
