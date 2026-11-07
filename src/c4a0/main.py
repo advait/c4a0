@@ -76,6 +76,8 @@ def train(
     temperature_schedule: str = "4:4.0,8:2.0",
     mask_terminal_policy: bool = False,
     replay_gens: int = typer.Option(1, min=1),
+    train_max_epochs: int = typer.Option(100, min=1),
+    train_patience: int = typer.Option(10, min=1),
     eval_mcts_iterations: list[int] = typer.Option(default_factory=list),
 ) -> None:
     """Trains a model via self-play. Each generation's saved model is scored on the v1 dev
@@ -112,6 +114,8 @@ def train(
         temperature_schedule=tuple(parsed_temperature_schedule),
         mask_terminal_policy=mask_terminal_policy,
         replay_gens=replay_gens,
+        train_max_epochs=train_max_epochs,
+        train_patience=train_patience,
     )
     training_loop(
         base_dir=base_dir,

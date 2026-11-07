@@ -71,6 +71,8 @@ class GenConfig(BaseModel):
     temperature_schedule: tuple[tuple[int, float], ...] = DEFAULT_TEMPERATURE_SCHEDULE
     mask_terminal_policy: bool = False
     replay_gens: int = Field(default=1, ge=1)
+    train_max_epochs: int = Field(default=100, ge=1)
+    train_patience: int = Field(default=10, ge=1)
 
 
 class TrainingGen(GenConfig):
@@ -291,12 +293,14 @@ def train_single_gen(
     data_module = SampleDataModule(train, test, config.training_batch_size)
     best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
     trainer = GenerationTrainer(
-        max_epochs=100,
+        max_epochs=config.train_max_epochs,
         accelerator=lightning_accelerator(device),
         devices=1,
         callbacks=[
             best_model_cb,
-            EarlyStopping(monitor="val_loss", patience=10, mode="min"),
+            EarlyStopping(
+                monitor="val_loss", patience=config.train_patience, mode="min"
+            ),
         ],
         num_sanity_val_steps=0,
     )

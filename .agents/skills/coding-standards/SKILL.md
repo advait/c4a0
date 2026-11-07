@@ -36,6 +36,9 @@ Blanket and unused suppressions fail typecheck.
 - Search constants (`c_exploration`, `c_ply_penalty`, MCTS iterations) have defaults in
   `src/c4a0/main.py`, `src/c4a0/tournament.py` and the Rust tests. Change them together.
 - Changing what a `TrainingGen` field means is a migration (see **project-context**).
+- A new training knob is a GenConfig field plus a CLI option; nothing else threads it.
+  Consume it from `config` where it takes effect. `TrainingGen` inherits config fields
+  to keep metadata flat and includes them automatically for root and child generations.
 
 **Tests.** Search and scoring tests assert on concrete positions with known answers (an
 immediate win, a forced loss, solver scores), not on internal counters. A threshold tuned to

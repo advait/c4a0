@@ -9,9 +9,11 @@ from typing import Concatenate, Never, ParamSpec
 
 import numpy as np
 import pytest
+import pytorch_lightning as pl
 import torch
 from numpy.typing import NDArray
 from pydantic import ValidationError
+from pytorch_lightning.callbacks import EarlyStopping
 
 import c4a0_rust
 from c4a0 import training
@@ -315,6 +317,8 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     assert gen.temperature_schedule == ((4, 4.0), (8, 2.0))
     assert gen.mask_terminal_policy is False
     assert gen.replay_gens == 1
+    assert gen.train_max_epochs == 100
+    assert gen.train_patience == 10
     assert gen.config.n_self_play_games == 1700
     # Saving a legacy generation backfills config defaults and keeps its old values.
     legacy = json.loads((FIXTURES / "legacy_metadata.json").read_text())
@@ -332,6 +336,56 @@ def test_generation_config_is_frozen() -> None:
         config.__setattr__("n_mcts_iterations", 8)
     # An immutable schedule prevents mutation through a frozen model's containers.
     assert isinstance(config.temperature_schedule, tuple)
+
+
+@pytest.mark.parametrize("field", ["train_max_epochs", "train_patience"])
+@pytest.mark.parametrize("value", [0, -1])
+def test_generation_config_rejects_invalid_training_length(
+    field: str, value: int
+) -> None:
+    with pytest.raises(ValidationError, match=field):
+        GenConfig.model_validate({**TINY_GEN_CONFIG.model_dump(), field: value})
+
+
+@pytest.mark.parametrize(
+    "max_epochs,patience,expected_epochs", [(1, 3, 1), (7, 1, 2), (7, 2, 3)]
+)
+def test_training_length_controls_real_fits_and_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    max_epochs: int,
+    patience: int,
+    expected_epochs: int,
+) -> None:
+    observed: list[tuple[int, int | None, int]] = []
+
+    class ObservedStopping(EarlyStopping):
+        def on_train_start(
+            self, trainer: pl.Trainer, pl_module: pl.LightningModule
+        ) -> None:
+            # Treat all finite losses as a plateau after the first epoch, so a real
+            # Lightning fit exercises patience independently of model improvements.
+            self.min_delta = -1e6  # EarlyStopping negates min_delta for mode="min".
+
+        def on_train_end(
+            self, trainer: pl.Trainer, pl_module: pl.LightningModule
+        ) -> None:
+            observed.append((trainer.current_epoch, trainer.max_epochs, self.patience))
+
+    monkeypatch.setattr(training, "EarlyStopping", ObservedStopping)
+    config = TINY_GEN_CONFIG.model_copy(
+        update={"train_max_epochs": max_epochs, "train_patience": patience}
+    )
+    gen = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()), max_gens=2, config=config)
+    assert observed == [(expected_epochs, max_epochs, patience)] * 2
+    for published in TrainingGen.load_all(str(tmp_path)):
+        assert published.config == config
+        metadata = json.loads(
+            (Path(published.gen_folder(str(tmp_path))) / "metadata.json").read_text()
+        )
+        assert metadata["train_max_epochs"] == max_epochs
+        assert metadata["train_patience"] == patience
+    assert gen.gen_n == 2
 
 
 def test_replay_window_loads_only_recent_ancestors(tmp_path: Path) -> None:

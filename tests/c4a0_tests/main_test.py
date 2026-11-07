@@ -18,6 +18,8 @@ from c4a0.training import GenConfig
                 "temperature_schedule": ((4, 4.0), (8, 2.0)),
                 "mask_terminal_policy": False,
                 "replay_gens": 1,
+                "train_max_epochs": 100,
+                "train_patience": 10,
             },
         ),
         (
@@ -35,6 +37,10 @@ from c4a0.training import GenConfig
                 "--mask-terminal-policy",
                 "--replay-gens",
                 "3",
+                "--train-max-epochs",
+                "7",
+                "--train-patience",
+                "2",
             ],
             {
                 "greedy_after_ply": 8,
@@ -44,6 +50,8 @@ from c4a0.training import GenConfig
                 "temperature_schedule": ((2, 1.5),),
                 "mask_terminal_policy": True,
                 "replay_gens": 3,
+                "train_max_epochs": 7,
+                "train_patience": 2,
             },
         ),
     ],
@@ -72,6 +80,14 @@ def test_train_cli_forwards_experiment_flags(
 def test_train_cli_rejects_invalid_cutoff_or_window(flags: list[str]) -> None:
     result = CliRunner().invoke(main.app, ["train", *flags])
     assert result.exit_code == 2
+
+
+@pytest.mark.parametrize("flag", ["--train-max-epochs", "--train-patience"])
+@pytest.mark.parametrize("value", ["0", "-1"])
+def test_train_cli_rejects_invalid_training_length(flag: str, value: str) -> None:
+    result = CliRunner().invoke(main.app, ["train", flag, value])
+    assert result.exit_code == 2
+    assert flag in result.output
 
 
 @pytest.mark.parametrize("weight", ["-0.1", "1.1", "nan", "inf", "-inf"])

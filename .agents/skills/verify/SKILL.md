@@ -30,7 +30,10 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   `pybridge_test.py` covers greedy moves, root noise, value blending, temperature schedules
   and terminal target masking; `nn_test.py` checks masked policy loss and gradients. `training_test.py`
   checks replay from disk, saved metadata and the saved model's validation loss on the
-  replay union. `main_test.py` checks CLI defaults and flag forwarding.
+  replay union. It also compares a fixed two-generation run with the pre-GenConfig
+  baseline and checks epoch caps and patience in real Lightning fits.
+  `main_test.py` checks CLI defaults, flag forwarding through `GenConfig`, and invalid
+  training-length values.
 - Raw-network dev eval of a default model (2447 positions, suite load through `SuiteEval`)
   took a median 0.15 s (0.148 to 0.166 s, 3 runs, load average 5, 16 torch threads); the
   forward pass is about 0.08 s of it. MCTS-64 on the dev suite took 1.7 s (one run).
@@ -44,7 +47,8 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
 - The smoke task uses default controls. To exercise enabled controls, use its tiny CLI
   command with `--max-gens 2 --greedy-after-ply 8 --root-noise-alpha 0.3
   --root-noise-frac 0.25 --mask-terminal-policy --replay-gens 2
-  --value-target-q-weight 0.6 --temperature-schedule 2:1.5`. Generation two trains on
+  --value-target-q-weight 0.6 --temperature-schedule 2:1.5
+  --train-max-epochs 2 --train-patience 1`. Generation two trains on
   eight games but saves only its four new games. This proves plumbing, not convergence.
 - One realistic generation (256 games, 256 MCTS iterations, default 1-block 32-filter
   network, `--device cpu`) took 276 s. Self-play was 229 s and training 43 s. Use a
@@ -113,7 +117,12 @@ the architecture's raw top-1 is not a bound on MCTS play.
   `value_target_q_weight=0.0` keeps the exact final-outcome value targets;
   `root_noise_alpha=None` and `root_noise_frac=0` disable noise;
   `mask_terminal_policy=False` keeps terminal policy supervision; `replay_gens=1` uses
-  only new games. These are also the defaults when loading old metadata.
+  only new games; `train_max_epochs=100` and `train_patience=10` preserve the previous
+  training limits. These are also the defaults when loading old metadata.
+- `--train-max-epochs N` caps each generation's Lightning fit at N epochs.
+  `--train-patience P` stops after P validation checks without improved `val_loss`.
+  Validation runs once per epoch. Both must be at least 1 and are recorded as flat
+  metadata fields through `GenConfig`.
 - `--value-target-q-weight W` blends each non-terminal head's final-outcome target z
   with that head's root MCTS mean, `(1-W)*z + W*q_root`. Root means are captured before
   advancing the root and use the player-to-move perspective. W must be finite and in
