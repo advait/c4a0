@@ -699,7 +699,7 @@ pub fn run(cfg: &Config) -> Result<usize, String> {
         a
     });
     let summary = format!(
-        "{{\"seed\":{},\"per_ply\":{},\"threads\":{},\"tt_bytes\":{},\"native_book_ply\":{},\"pons_secs\":{:.2},\"native_secs\":{:.2},\"total\":{},\"by_bucket\":{{{}}},\"by_stratum\":{{{}}}}}\n",
+        "{{\"seed\":{},\"per_ply\":{},\"threads\":{},\"tt_bytes\":{},\"native_book_ply\":{},\"pons_secs\":{:.2},\"native_secs\":{:.2},\"peak_rss_mib\":{},\"total\":{},\"by_bucket\":{{{}}},\"by_stratum\":{{{}}}}}\n",
         cfg.seed,
         cfg.per_ply,
         cfg.threads,
@@ -707,6 +707,7 @@ pub fn run(cfg: &Config) -> Result<usize, String> {
         cfg.book.as_ref().map_or("null".into(), |b| b.ply().to_string()),
         pons_secs,
         native_secs,
+        super::bench::peak_rss_kib().map_or("null".into(), |k| (k >> 10).to_string()),
         total.json(),
         buckets.join(","),
         strata.join(",")
@@ -776,7 +777,16 @@ mod tests {
         ] {
             assert!(a.iter().filter(|c| c.stratum == s).count() >= 6, "{:?}", s);
         }
-        // The book test pins the level sizes; here every exhaustive case is canonical-distinct.
+        // Exactly one case per canonical position at plies 0..=EXHAUSTIVE_PLIES; the book test
+        // pins those level sizes against an enumeration over Pos.
+        let levels: usize = (0..=EXHAUSTIVE_PLIES as u8)
+            .map(|p| crate::native_solver::book::positions_at(p).len())
+            .sum();
+        let exhaustive_cases = a
+            .iter()
+            .filter(|c| c.stratum == Stratum::Exhaustive)
+            .count();
+        assert_eq!(exhaustive_cases, levels);
         let keys: HashSet<u64> = a
             .iter()
             .filter(|c| c.stratum == Stratum::Exhaustive)
