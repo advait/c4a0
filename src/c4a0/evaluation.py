@@ -71,6 +71,12 @@ class SuiteEval(BaseModel):
     illegal_argmax: int
     """Rows whose unmasked raw policy maximum includes a full column."""
     mcts: dict[int, PolicyEval] = {}
+    raw_keeps: PolicyEval | None = None
+    """Raw policy, credit for any move that keeps the game result, over rows where some legal
+    move would throw it (`Labels.keeps_trivial` rows are excluded)."""
+    mcts_keeps: dict[int, PolicyEval] = {}
+    """MCTS iterations -> keeps-the-result eval of the root visit policy (the convergence
+    predicate)."""
     """MCTS iterations -> eval of the root visit policy."""
     value: ValueEval
     """Raw network q_no_penalty."""
@@ -100,8 +106,15 @@ OPENINGS = Labels(
 )
 
 
-def top1_credit(policies: NDArray[np.floating], labels: Labels) -> NDArray[np.float64]:
-    """Per-row credit |A & best| / |A|, A = legal moves tied for the policy maximum."""
+def top1_credit(
+    policies: NDArray[np.floating],
+    labels: Labels,
+    target: NDArray[np.bool_] | None = None,
+) -> NDArray[np.float64]:
+    """Per-row credit |A & target| / |A|, A = legal moves tied for the policy maximum.
+    `target` defaults to the solver-best moves (strict); pass `labels.keeps` for the
+    keeps-the-result metric."""
+    target = labels.best if target is None else target
     if np.isnan(policies).any():
         raise ValueError("policy contains NaN")
     masked = np.where(labels.legal, policies, -np.inf)
@@ -109,7 +122,7 @@ def top1_credit(policies: NDArray[np.floating], labels: Labels) -> NDArray[np.fl
     if np.isneginf(top).any():
         raise ValueError("policy is -inf on every legal move")
     argmax = labels.legal & (masked == top)
-    return (argmax & labels.best).sum(axis=1) / argmax.sum(axis=1)
+    return (argmax & target).sum(axis=1) / argmax.sum(axis=1)
 
 
 def illegal_argmax(policies: NDArray[np.floating], labels: Labels) -> int:
@@ -117,8 +130,13 @@ def illegal_argmax(policies: NDArray[np.floating], labels: Labels) -> int:
     return int(((policies == top) & ~labels.legal).any(axis=1).sum())
 
 
-def tally_policy(credit: NDArray[np.float64], labels: Labels) -> PolicyEval:
-    counted = ~labels.trivial
+def tally_policy(
+    credit: NDArray[np.float64],
+    labels: Labels,
+    counted: NDArray[np.bool_] | None = None,
+) -> PolicyEval:
+    """Per-bucket tallies over `counted` rows (default: rows where the strict metric can miss)."""
+    counted = ~labels.trivial if counted is None else counted
     return PolicyEval(
         by_bucket={
             name: Tally(
@@ -158,6 +176,7 @@ def evaluate_model(
 
     nontrivial = labels.take(~labels.trivial)
     mcts = {}
+    mcts_keeps: dict[int, PolicyEval] = {}
     for n in mcts_iterations:
         visits = c4a0_rust.mcts_policies(
             nontrivial.moves,
@@ -167,6 +186,11 @@ def evaluate_model(
             lambda _model_id, pos: model.forward_numpy(pos),
         )
         mcts[n] = tally_policy(top1_credit(visits, nontrivial), nontrivial)
+        mcts_keeps[n] = tally_policy(
+            top1_credit(visits, nontrivial, nontrivial.keeps),
+            nontrivial,
+            ~nontrivial.keeps_trivial,
+        )
 
     def tally_openings(policies: NDArray[np.floating]) -> Tally:
         return Tally(hits=float(top1_credit(policies, OPENINGS).sum()), n=len(OPENINGS))
@@ -195,6 +219,10 @@ def evaluate_model(
         c_exploration=c_exploration,
         c_ply_penalty=c_ply_penalty,
         raw=tally_policy(top1_credit(policy, labels), labels),
+        raw_keeps=tally_policy(
+            top1_credit(policy, labels, labels.keeps), labels, ~labels.keeps_trivial
+        ),
+        mcts_keeps=mcts_keeps,
         illegal_argmax=illegal_argmax(policy, labels),
         mcts=mcts,
         value=tally_value(q_no_penalty, labels),

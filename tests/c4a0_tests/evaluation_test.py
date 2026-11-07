@@ -171,3 +171,31 @@ def test_openings_scores_match_the_solver() -> None:
         [int(x) for x in line.split()[-7:]] for line in out.splitlines() if line.strip()
     ]
     assert rows == OPENINGS.scores.tolist()
+
+
+def test_keeps_credits_a_slower_win_but_not_a_loss() -> None:
+    labels = make_labels(
+        {"3344": PONS_ROWS["3344"]}
+    )  # wins: 2, 5 (fastest), 3, 4; losses: 0, 1, 6
+    slower_win = np.array([one_hot_ties(3)], dtype=np.float32)
+    losing = np.array([one_hot_ties(0)], dtype=np.float32)
+    assert top1_credit(slower_win, labels).tolist() == [0.0]
+    assert top1_credit(slower_win, labels, labels.keeps).tolist() == [1.0]
+    assert top1_credit(losing, labels, labels.keeps).tolist() == [0.0]
+
+
+def test_keeps_tally_skips_positions_where_every_move_keeps_the_result() -> None:
+    # "01010": only column 0 wins, so a losing move throws the win away: counted.
+    # A lost position (every move loses) cannot be thrown away: not counted.
+    labels = make_labels(
+        {"01010": PONS_ROWS["01010"], "6666": [-3, -2, -5, -4, -2, -6, -3]}
+    )
+    assert labels.keeps_trivial.tolist() == [False, True]
+    credit = top1_credit(
+        np.array([one_hot_ties(0), one_hot_ties(1)], dtype=np.float32),
+        labels,
+        labels.keeps,
+    )
+    tally = tally_policy(credit, labels, ~labels.keeps_trivial)
+    assert sum(t.n for t in tally.by_bucket.values()) == 1
+    assert tally.top1 == 1.0

@@ -95,6 +95,16 @@ class Labels:
         return (self.best == self.legal).all(axis=1)
 
     @cached_property
+    def keeps(self) -> NDArray[np.bool_]:
+        """Legal moves that keep the game result: win stays win, draw stays draw."""
+        return self.legal & (np.sign(self.scores) == self.value[:, None])
+
+    @cached_property
+    def keeps_trivial(self) -> NDArray[np.bool_]:
+        """Every legal move keeps the result (e.g. a lost position), so no move can throw it."""
+        return (self.keeps == self.legal).all(axis=1)
+
+    @cached_property
     def ply(self) -> NDArray[np.int64]:
         return np.array([len(m) for m in self.moves], dtype=np.int64)
 
