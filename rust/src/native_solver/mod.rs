@@ -9,6 +9,7 @@
 pub mod board;
 pub mod book;
 pub mod brute;
+pub mod diff;
 pub mod parallel;
 pub mod search;
 pub mod tt;

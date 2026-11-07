@@ -6,6 +6,7 @@ use std::time::Instant;
 
 use c4a0_rust::native_solver::board::Board;
 use c4a0_rust::native_solver::book::{positions_at, Book};
+use c4a0_rust::native_solver::diff::{run, Config};
 use c4a0_rust::native_solver::parallel::{analyze_batch, default_threads, solve_batch};
 use c4a0_rust::native_solver::tt::Tt;
 
@@ -16,6 +17,12 @@ c4native analyze [--book FILE] [--tt-mb N] [--threads N]
 c4native book --ply P --out FILE [--deeper FILE] [--tt-mb N] [--threads N] [--estimate K]
     Solves every non-terminal position at ply P into a book. --estimate K solves K evenly spaced
     positions instead and prints the projected build time.
+
+c4native diff --pons BIN --pons-book FILE --book FILE --out DIR [--per-ply N] [--seed S]
+        [--suite FILE]... [--tt-mb N] [--threads N]
+    Samples positions from the seed, adds the suite rows, scores everything with both solvers,
+    adjudicates each disagreement and writes diffs.jsonl, cases.tsv and summary.json to DIR.
+    Exits 1 if any disagreement is unexplained.
 
 --tt-mb is the shared transposition table size (default 256); --threads defaults to the
 available parallelism.";
@@ -28,6 +35,11 @@ struct Opts {
     tt_mb: usize,
     threads: usize,
     estimate: Option<usize>,
+    pons: Option<String>,
+    pons_book: Option<String>,
+    per_ply: usize,
+    seed: u64,
+    suites: Vec<PathBuf>,
 }
 
 fn parse(args: &[String]) -> Result<Opts, String> {
@@ -39,6 +51,11 @@ fn parse(args: &[String]) -> Result<Opts, String> {
         tt_mb: Tt::DEFAULT_BYTES >> 20,
         threads: default_threads(),
         estimate: None,
+        pons: None,
+        pons_book: None,
+        per_ply: 200,
+        seed: 1,
+        suites: vec![],
     };
     let mut it = args.iter();
     while let Some(flag) = it.next() {
@@ -52,6 +69,11 @@ fn parse(args: &[String]) -> Result<Opts, String> {
             "--tt-mb" => o.tt_mb = num(value()?)?,
             "--threads" => o.threads = num(value()?)?.max(1),
             "--estimate" => o.estimate = Some(num(value()?)?),
+            "--pons" => o.pons = Some(value()?.clone()),
+            "--pons-book" => o.pons_book = Some(value()?.clone()),
+            "--per-ply" => o.per_ply = num(value()?)?,
+            "--seed" => o.seed = num(value()?)? as u64,
+            "--suite" => o.suites.push(value()?.into()),
             _ => return Err(format!("unknown flag {}", flag)),
         }
     }
@@ -154,12 +176,40 @@ fn book(o: &Opts) -> Result<(), String> {
     Ok(())
 }
 
+fn diff(o: &Opts) -> Result<bool, String> {
+    let suites = o
+        .suites
+        .iter()
+        .map(|p| {
+            let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("suite");
+            // Suite names label report rows for the life of the process.
+            let name: &'static str = Box::leak(name.to_string().into_boxed_str());
+            std::fs::read_to_string(p)
+                .map(|t| (name, t))
+                .map_err(|e| format!("{:?}: {}", p, e))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let cfg = Config {
+        pons: o.pons.clone().ok_or("--pons is required")?,
+        pons_book: o.pons_book.clone().ok_or("--pons-book is required")?,
+        book: Some(load_book(&o.book)?.ok_or("--book is required")?),
+        per_ply: o.per_ply,
+        seed: o.seed,
+        threads: o.threads,
+        tt_bytes: o.tt_mb << 20,
+        suites,
+        out: o.out.clone().ok_or("--out is required")?,
+    };
+    Ok(run(&cfg)? == 0)
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
-        Some(cmd @ ("analyze" | "book")) => parse(&args[1..]).and_then(|o| match cmd {
+        Some(cmd @ ("analyze" | "book" | "diff")) => parse(&args[1..]).and_then(|o| match cmd {
             "analyze" => analyze(&o).map(|_| true),
-            _ => book(&o).map(|_| true),
+            "book" => book(&o).map(|_| true),
+            _ => diff(&o),
         }),
         _ => Err(USAGE.into()),
     };

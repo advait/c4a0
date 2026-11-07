@@ -129,3 +129,15 @@ timeout 7200 nice -n 10 rust/target/release/c4native book --ply 8 --tt-mb "${C4N
 mv native-solver/book-ply8.tmp native-solver/book-ply8.bin
 sha256sum native-solver/book-ply8.bin
 '''
+
+[tasks."solver:diff"]
+description = "Diff the native solver against Pons on seeded samples and the committed suites, adjudicate every disagreement, write native-solver/diff-seed<S>/ (needs Pons per the README)"
+depends = ["solver:native:book"]
+run = '''
+timeout 7200 rust/target/release/c4native diff \
+  --pons "${C4A0_SOLVER:-solver/c4solver}" --pons-book "${C4A0_BOOK:-solver/7x6.book}" \
+  --book native-solver/book-ply8.bin \
+  --per-ply "${DIFF_PER_PLY:-1000}" --seed "${DIFF_SEED:-1}" --tt-mb "${DIFF_TT_MB:-2048}" \
+  --suite src/c4a0/suite/v1/dev.tsv --suite src/c4a0/suite/v1/test.tsv \
+  --out "native-solver/diff-seed${DIFF_SEED:-1}"
+'''
