@@ -1,0 +1,154 @@
+#!/bin/sh
+# Desktop runner. All remote writes stay in ~/agent-work (mise owns its tool cache).
+set -eu
+host=${ALAPIN_HOST:-alapin}
+usage() {
+    echo 'usage: alapin sync <worktree> <ref> | run <name> -- <command...> | status [name] | stop <name> | fetch <name> [local-dir]' >&2
+    exit 2
+}
+quote() { printf "'"; printf '%s' "$1" | sed "s/'/'\\\\''/g"; printf "'"; }
+valid_name() { case $1 in ''|*[!a-zA-Z0-9_.-]*|.|..) echo 'invalid run name' >&2; exit 2;; esac; }
+remote() { ssh -o BatchMode=yes "$host" "$@"; }
+cmd=${1:-}; [ "$#" -gt 0 ] && shift
+case $cmd in
+sync)
+    [ "$#" -eq 2 ] || usage
+    worktree=$1; ref=$2
+    commit=$(git -C "$worktree" rev-parse --verify "$ref^{commit}")
+    branch=$(git -C "$worktree" rev-parse --symbolic-full-name "$ref")
+    case $branch in refs/heads/*) branch=${branch#refs/heads/};; *) branch='';; esac
+    temp=$(mktemp -d /tmp/alapin-sync.XXXXXX)
+    trap 'rm -rf "$temp"' EXIT HUP INT TERM
+    if [ -n "$branch" ]; then
+        git -C "$worktree" bundle create "$temp/source.bundle" "$ref"
+    else
+        # Include advertised heads so commit IDs and tags need no temporary local ref.
+        git -C "$worktree" bundle create "$temp/source.bundle" --all "$ref"
+    fi
+    token=$(basename "$temp")
+    remote "mkdir -p ~/agent-work/setup"
+    scp -q -o BatchMode=yes "$temp/source.bundle" "$host:agent-work/setup/$token.bundle"
+    remote "sh -s -- $(quote "$token") $(quote "$commit") $(quote "$branch")" <<'REMOTE'
+set -eu
+. "$HOME/agent-work/env.sh"
+bundle="$HOME/agent-work/setup/$1.bundle"
+trap 'rm -f "$bundle"' EXIT HUP INT TERM
+cd "$HOME/agent-work/c4a0"
+mkdir "$HOME/agent-work/setup/sync.lock" || { echo 'another sync is active' >&2; exit 1; }
+trap 'rm -f "$bundle"; rmdir "$HOME/agent-work/setup/sync.lock"' EXIT HUP INT TERM
+for d in "$HOME"/agent-work/runs/*; do
+    [ -f "$d/pid" ] || continue
+    if [ ! -f "$d/exit_code" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null; then
+        echo "refusing sync during active run: $d" >&2; exit 1
+    fi
+done
+[ -z "$(git status --porcelain --untracked-files=no)" ] || { echo 'remote tracked files are dirty' >&2; exit 1; }
+if [ -n "$3" ]; then
+    git fetch "$bundle" "$3"
+    [ "$(git rev-parse FETCH_HEAD)" = "$2" ] || { echo 'bundle commit mismatch' >&2; exit 1; }
+else
+    git bundle unbundle "$bundle" > /dev/null
+    git cat-file -e "$2^{commit}"
+fi
+fingerprint=$(git ls-tree -r "$2" -- '*.rs' '*.py' '*.pyi' uv.lock rust/Cargo.lock rust/Cargo.toml pyproject.toml | sha256sum | cut -d ' ' -f 1)
+state="$HOME/agent-work/setup/built-source-tree"
+built=$(cat "$state" 2>/dev/null || true)
+if [ -n "$3" ]; then git checkout -B "$3" "$2"; else git checkout --detach "$2"; fi
+if [ "$fingerprint" != "$built" ] || [ ! -x .venv/bin/python ]; then
+    mise trust
+    mise install
+    mise run build
+    printf '%s\n' "$fingerprint" > "$state"
+    echo 'build: completed'
+else
+    echo 'build: skipped (no Rust/Python source or dependency changes)'
+fi
+git rev-parse HEAD
+REMOTE
+    ;;
+run)
+    [ "$#" -ge 3 ] || usage
+    name=$1; valid_name "$name"; shift
+    [ "$1" = -- ] || usage; shift
+    limit=${ALAPIN_TIMEOUT:-6h}
+    case $limit in ''|*[!0-9smhd.]*|0|0s|0m|0h|0d) echo 'ALAPIN_TIMEOUT must be a positive timeout duration' >&2; exit 2;; esac
+    args=''
+    for arg do args="$args $(quote "$arg")"; done
+    remote "sh -s -- $(quote "$name") $(quote "$limit") $args" <<'REMOTE'
+set -eu
+. "$HOME/agent-work/env.sh"
+name=$1; limit=$2; shift 2
+timeout "$limit" true
+[ ! -d "$HOME/agent-work/setup/sync.lock" ] || { echo 'sync is active' >&2; exit 1; }
+run_dir="$HOME/agent-work/runs/$name"
+mkdir "$run_dir" || { echo 'run name already exists; choose a new name' >&2; exit 1; }
+quote() { printf "'"; printf '%s' "$1" | sed "s/'/'\\\\''/g"; printf "'"; }
+{
+    printf '#!/bin/sh\nset --'
+    for arg do printf ' '; quote "$arg"; done
+    printf '\n'
+    cat <<'RUNNER'
+. "$HOME/agent-work/env.sh"
+cd "$HOME/agent-work/c4a0" || exit 1
+export RUN_DIR C4A0_RUN_DIR
+RUN_DIR=$(dirname "$0")
+C4A0_RUN_DIR=$RUN_DIR
+limit=$(cat "$RUN_DIR/timeout")
+git rev-parse HEAD > "$RUN_DIR/commit"
+timeout -k 30s "$limit" mise exec -- "$@"
+rc=$?
+printf '%s\n' "$rc" > "$RUN_DIR/exit_code.tmp"
+mv "$RUN_DIR/exit_code.tmp" "$RUN_DIR/exit_code"
+exit "$rc"
+RUNNER
+} > "$run_dir/runner.sh"
+printf '%s\n' "$limit" > "$run_dir/timeout"
+setsid nohup sh "$run_dir/runner.sh" > "$run_dir/log" 2>&1 < /dev/null &
+printf '%s\n' "$!" > "$run_dir/pid"
+printf 'started %s pid=%s outputs=%s\n' "$name" "$!" "$run_dir"
+REMOTE
+    ;;
+status)
+    [ "$#" -le 1 ] || usage
+    name=${1:-}; [ -z "$name" ] || valid_name "$name"
+    remote "sh -s -- $(quote "$name")" <<'REMOTE'
+set -eu
+root="$HOME/agent-work/runs"
+if [ -n "$1" ]; then set -- "$root/$1"; else set -- "$root"/*; fi
+for d do
+    [ -d "$d" ] || continue
+    if [ -f "$d/exit_code" ]; then state="done exit=$(cat "$d/exit_code")"
+    elif [ -f "$d/pid" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null; then state="running pid=$(cat "$d/pid")"
+    else state='stopped (no exit_code)'; fi
+    printf '%s: %s\n' "$(basename "$d")" "$state"
+    [ ! -f "$d/log" ] || tail -n 5 "$d/log"
+done
+REMOTE
+    ;;
+stop)
+        [ "$#" -eq 1 ] || usage
+    valid_name "$1"
+    remote "sh -s -- $(quote "$1")" <<'REMOTE'
+set -eu
+d="$HOME/agent-work/runs/$1"
+# setsid may fork, so the recorded pid is not always the session leader. Find the session of the
+# process running this run's runner.sh and signal every process in it.
+runner=$(pgrep -f "sh $d/runner.sh" | head -1 || true)
+[ -n "$runner" ] || { echo "no live runner for $1"; exit 0; }
+sid=$(ps -o sid= -p "$runner" | tr -d ' ')
+pkill -TERM -s "$sid" || true
+sleep 5
+pkill -KILL -s "$sid" 2>/dev/null || true
+echo "stopped $1 (session $sid)"
+REMOTE
+    ;;
+fetch)
+    [ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage
+    name=$1; valid_name "$name"
+    dest=${2:-/tmp/alapin-runs/$name}
+    mkdir -p "$dest"
+    scp -q -r -o BatchMode=yes "$host:agent-work/runs/$name/." "$dest/"
+    printf '%s\n' "$dest"
+    ;;
+*) usage;;
+esac

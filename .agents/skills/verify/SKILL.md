@@ -18,7 +18,7 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   block, a terminal node) and watch it fail before the fix.
 - `mise run check` takes about 22 s warm. That is lint, typecheck, Rust and Python tests.
   The first run after a source change rebuilds the extension (about 2 minutes).
-- A single Python file runs with `timeout 900 uv run --locked pytest -q tests/c4a0_tests/<file>_test.py`, in
+- A single Python file runs with `timeout 300 uv run --locked pytest -q tests/c4a0_tests/<file>_test.py`, in
   about 1 to 13 s.
 - Raw-network dev eval of a default model (2447 positions, suite load through `SuiteEval`)
   took a median 0.15 s (0.148 to 0.166 s, 3 runs, load average 5, 16 torch threads); the
@@ -64,20 +64,34 @@ Requirements before a convergence number counts:
 Apply the **benchmark-checklist** skill and **principle-explain-the-number** before you report
 a convergence delta.
 
+## Lane 4: the GPU machine (alapin)
+
+`alapin` (RTX 3090, 32 cores) runs the heavy lanes, driven from this container with
+`scripts/alapin` (see the **workspace** skill). Measured on 2026-11-06, 5 runs, medians:
+
+| Work | alapin GPU | dev container CPU |
+|---|---|---|
+| Self-play, 1024 games x 128 MCTS iterations | 7.4 s | 29.8 s (with eval cache) |
+| Supervised epoch, default net, 1.69M samples | 10 s (batched loader, 2 epochs) | about 3-4 min |
+| Supervised epoch, 4 blocks x 64 filters | 41 s (old loader) | over 95 min |
+
+Self-play there is bound by Python dispatch and CPU-side MCTS (GPU about 20% busy), not the
+GPU. Keep at least 1024 games in flight. Cut MCTS iterations, not games, to shrink a proxy run.
+
+Supervised ceiling on suite v1 dev (846,552 train labels, patience 10, lr 2e-3 flat): the
+default net reaches 91.8-91.9% raw top-1 over 3 seeds (92.1-92.4% with MCTS-64). The 4x64 net
+reaches 92.6% raw (93.5% MCTS-64), 1 seed. Plies 0-11 are the weak buckets (73-85%).
+Self-play cannot exceed what the architecture reaches here.
+
 ## Hazards
 
-- **Self-play shutdown deadlock.** `rust/src/self_play.rs` decrements `n_games_remaining`
-  then reloads it, so two workers can both start shutdown and overfill the job queue.
-  `test:python` hung in 2 of 3 runs before `mise.toml` wrapped it in `timeout 900`. Exit code
-  124 from `test:python` means this hang, not a test failure. Wrap any ad hoc self-play or
-  training run in `timeout`.
-- If the unrestricted Python test retry also hangs, `taskset -c 0 timeout 900 mise run check`
-  exercises all tests with one self-play worker. Use an allowed CPU from
-  `os.sched_getaffinity(0)` if CPU 0 is unavailable. Report that concurrency was restricted.
-  This validates Python behavior but does not prove the concurrent shutdown is correct.
-- A Python exception in the NN callback panics the NN thread and leaves workers waiting
-  forever (`rust/src/pybridge.rs`). That's a second reason for `timeout`.
+- A Python exception in the NN callback during self-play panics the NN thread
+  (`rust/src/pybridge.rs` `PyEvalPos::eval_pos`, `.expect`) and leaves workers waiting
+  forever. Wrap ad hoc self-play and training runs in `timeout`. Evaluation search
+  (`mcts_policies`) propagates the exception instead.
+- `train --device cpu` still trains on the GPU when one exists, because the Lightning trainer
+  uses `accelerator="auto"`. The untrained root generation is scored on CPU.
 - `nn-sweep` fails every trial (`trainer.gen_n` unset in `src/c4a0/sweep.py`). Don't use it
   as evidence until it's fixed.
-- `py-spy` cannot attach in this container (ptrace denied). Diagnose hangs by bisecting test
-  files with `timeout`.
+- `py-spy` cannot attach in this container or on alapin (ptrace restricted, no sudo).
+  Long runs therefore must log progress themselves; `ceiling` logs one line per epoch.
