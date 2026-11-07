@@ -4,11 +4,11 @@ with Pascal Pons's solver. The (N, 7) Pons score matrix is the only stored solve
 best, trivial, value and ply bucket are derived from it.
 """
 
+import hashlib
+import os
 from dataclasses import dataclass
 from enum import StrEnum
 from functools import cached_property
-import hashlib
-import os
 from pathlib import Path
 from typing import NewType
 
@@ -40,7 +40,8 @@ class Recipe(BaseModel, frozen=True):
 
 PLY_BUCKETS = (0, 6, 12, 18, 24, 30, 36, 42)
 BUCKET_NAMES = tuple(
-    f"{lo:02d}-{hi - 1:02d}" for lo, hi in zip(PLY_BUCKETS, PLY_BUCKETS[1:])
+    f"{lo:02d}-{hi - 1:02d}"
+    for lo, hi in zip(PLY_BUCKETS, PLY_BUCKETS[1:], strict=False)
 )
 ILLEGAL = np.int8(-128)
 N_COLS = 7
@@ -58,7 +59,7 @@ class Labels:
     scores: NDArray[np.int8]
     """(N, 7) Pons scores for playing each column, from the mover's view. ILLEGAL = full column."""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         n = len(self.moves)
         if self.scores.dtype != np.int8 or self.scores.shape != (n, N_COLS):
             raise ValueError(
@@ -148,7 +149,7 @@ def load_suite(split: Split, version: int = 1) -> Suite:
 
 def format_labels(labels: Labels) -> str:
     lines = [_HEADER + labels.recipe.model_dump_json(), _COLUMNS]
-    for moves, row in zip(labels.moves, labels.scores):
+    for moves, row in zip(labels.moves, labels.scores, strict=True):
         scores = ",".join("x" if s == ILLEGAL else str(s) for s in row)
         lines.append(f"{moves}\t{scores}")
     return "\n".join(lines) + "\n"

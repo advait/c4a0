@@ -1,17 +1,18 @@
-from typing import Dict, Tuple, cast
+from collections.abc import Sequence
+from typing import cast
 
-from c4a0.utils import GenerationTrainer
-
-from loguru import logger
 import numpy as np
-from pydantic import BaseModel
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torchmetrics
-import pytorch_lightning as pl
-from torch.optim.adam import Adam
 from einops import rearrange
+from loguru import logger
+from numpy.typing import NDArray
+from pydantic import BaseModel
+from torch.optim.adam import Adam
 
+from c4a0.utils import GenerationTrainer
 from c4a0_rust import N_COLS, N_ROWS
 
 
@@ -30,7 +31,7 @@ class ModelConfig(BaseModel):
     n_value_layers: int
     """Number of fully connected layers in the value head."""
 
-    lr_schedule: Dict[int, float]
+    lr_schedule: dict[int, float]
     """
     Learning rate schedule. The first item in the tuple indicates which gen_n the learning rate
     begins to be effective for. The second item in the tuple is the learning rate.
@@ -58,7 +59,7 @@ class ConnectFourNet(pl.LightningModule):
 
     EPS = 1e-8  # Epsilon small constant to avoid log(0)
 
-    def __init__(self, config: ModelConfig):
+    def __init__(self, config: ModelConfig) -> None:
         super().__init__()
         self.lr_schedule = config.lr_schedule
         self.l2_reg = config.l2_reg
@@ -108,7 +109,9 @@ class ConnectFourNet(pl.LightningModule):
 
         self.save_hyperparameters(config.model_dump())
 
-    def forward(self, x) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(
+        self, x: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = self.conv(x)
         x = rearrange(x, "b c h w -> b (c h w)")
         policy_logprobs = self.fc_policy(x)
@@ -118,7 +121,9 @@ class ConnectFourNet(pl.LightningModule):
         q_no_penalty = q_no_penalty.squeeze(1)  # b
         return policy_logprobs, q_penalty, q_no_penalty
 
-    def forward_numpy(self, x: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def forward_numpy(
+        self, x: NDArray[np.float32]
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]:
         """
         Forward pass with input/output as numpy. Model is run in inference mode. Used for self play.
         """
@@ -126,12 +131,12 @@ class ConnectFourNet(pl.LightningModule):
         pos = torch.from_numpy(x).to(self.device)
         with torch.no_grad():
             policy, q_penalty, q_no_penalty = self.forward(pos)
-        policy = np.ascontiguousarray(policy.cpu().numpy())
-        q_penalty = np.ascontiguousarray(q_penalty.cpu().numpy())
-        q_no_penalty = np.ascontiguousarray(q_no_penalty.cpu().numpy())
-        return policy, q_penalty, q_no_penalty
+        policy_np = np.ascontiguousarray(policy.cpu().numpy())
+        q_penalty_np = np.ascontiguousarray(q_penalty.cpu().numpy())
+        q_no_penalty_np = np.ascontiguousarray(q_no_penalty.cpu().numpy())
+        return policy_np, q_penalty_np, q_no_penalty_np
 
-    def _calculate_conv_output_size(self):
+    def _calculate_conv_output_size(self) -> int:
         """Helper function to calculate the output size of the convolutional block."""
         # Apply the convolutional layers to a dummy input
         dummy_input = torch.zeros(1, 2, N_ROWS, N_COLS)
@@ -139,7 +144,7 @@ class ConnectFourNet(pl.LightningModule):
             dummy_output = self.conv(dummy_input)
         return int(torch.numel(dummy_output))
 
-    def configure_optimizers(self):
+    def configure_optimizers(self) -> Adam:
         gen_n: int = cast(GenerationTrainer, self.trainer).gen_n
         assert gen_n is not None, "please pass gen_n to trainer"
         schedule = sorted(list(self.lr_schedule.items()))
@@ -153,13 +158,17 @@ class ConnectFourNet(pl.LightningModule):
         optimizer = Adam(self.parameters(), lr=lr, weight_decay=self.l2_reg)
         return optimizer
 
-    def training_step(self, batch, batch_idx):
+    def training_step(
+        self, batch: Sequence[torch.Tensor], batch_idx: int
+    ) -> torch.Tensor:
         return self.step(batch, log_prefix="train")
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(
+        self, batch: Sequence[torch.Tensor], batch_idx: int
+    ) -> torch.Tensor:
         return self.step(batch, log_prefix="val")
 
-    def step(self, batch, log_prefix):
+    def step(self, batch: Sequence[torch.Tensor], log_prefix: str) -> torch.Tensor:
         # Forward pass
         pos, policy_target, q_penalty_target, q_no_penalty_target = batch
         policy_logprob, q_penalty_pred, q_no_penalty_pred = self.forward(pos)
@@ -184,7 +193,7 @@ class ConnectFourNet(pl.LightningModule):
 
 
 class ResidualBlock(pl.LightningModule):
-    def __init__(self, n_channels: int, kernel_size=3, padding=1) -> None:
+    def __init__(self, n_channels: int, kernel_size: int = 3, padding: int = 1) -> None:
         super().__init__()
         self.block = nn.Sequential(
             nn.Conv2d(n_channels, n_channels, kernel_size=kernel_size, padding=padding),
@@ -193,5 +202,5 @@ class ResidualBlock(pl.LightningModule):
             nn.ReLU(),
         )
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + self.block(x)

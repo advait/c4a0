@@ -1,9 +1,9 @@
 import copy
 from sys import platform
-from typing import Generic, Optional, TypeVar, cast
+from typing import Generic, TypeVar, cast
 
-import torch
 import pytorch_lightning as pl
+import torch
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.trainer.trainer import Trainer
 
@@ -60,10 +60,12 @@ class BestModelCheckpoint(Callback, Generic[M]):
         super().__init__()
         self.monitor = monitor
         self.mode = mode
-        self.best_model: Optional[M] = None
+        self.best_model: M | None = None
         self.best_score = float("inf") if mode == "min" else float("-inf")
 
-    def on_validation_end(self, trainer: Trainer, pl_module: pl.LightningModule) -> None:
+    def on_validation_end(
+        self, trainer: Trainer, pl_module: pl.LightningModule
+    ) -> None:
         """
         Check if the current model is the best so far.
 
@@ -84,14 +86,16 @@ class BestModelCheckpoint(Callback, Generic[M]):
         if isinstance(current_score, torch.Tensor):
             current_score = current_score.item()
 
+        # fit supplies M; the Lightning callback API accepts the base module type.
+        tracked_model = cast(M, pl_module)
         if self.mode == "min":
             if current_score < self.best_score:
                 self.best_score = current_score
-                self.best_model = cast(M, copy.deepcopy(pl_module))
+                self.best_model = copy.deepcopy(tracked_model)
         elif self.mode == "max":
             if current_score > self.best_score:
                 self.best_score = current_score
-                self.best_model = cast(M, copy.deepcopy(pl_module))
+                self.best_model = copy.deepcopy(tracked_model)
 
     def get_best_model(self) -> M:
         """

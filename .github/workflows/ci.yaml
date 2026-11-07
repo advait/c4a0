@@ -20,5 +20,5 @@ jobs:
 
       - name: Run CI tasks
         run: |
-          mise exec -- uv lock --check
+          mise exec -- uv sync --locked
           mise run ci

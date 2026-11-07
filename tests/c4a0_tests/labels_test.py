@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -33,7 +35,7 @@ def make_labels(rows: dict[str, list[int]], recipe: Recipe = RECIPE) -> Labels:
     )
 
 
-def test_derived_facts_from_pons_rows():
+def test_derived_facts_from_pons_rows() -> None:
     labels = make_labels(PONS_ROWS)
     assert labels.best.tolist() == [
         [False, False, False, True, False, False, False],
@@ -47,7 +49,7 @@ def test_derived_facts_from_pons_rows():
     assert labels.trivial.tolist() == [False] * 4
 
 
-def test_trivial_rows_and_values():
+def test_trivial_rows_and_values() -> None:
     labels = make_labels(
         {
             "0": [-2] * 7,  # every move loses equally
@@ -59,14 +61,14 @@ def test_trivial_rows_and_values():
     assert labels.value.tolist() == [-1, 0, -1]
 
 
-def test_buckets_are_six_plies_wide():
+def test_buckets_are_six_plies_wide() -> None:
     labels = make_labels(
         {"0" * 5: [0] * 7, "012345": [0] * 7, "0" * 3 + "1" * 6 + "2" * 3: [0] * 7}
     )
     assert labels.bucket.tolist() == [0, 1, 2]
 
 
-def test_round_trip_is_byte_identical(tmp_path):
+def test_round_trip_is_byte_identical(tmp_path: Path) -> None:
     labels = make_labels(PONS_ROWS)
     path = tmp_path / "dev.tsv"
     write_labels(path, labels)
@@ -93,7 +95,7 @@ def test_round_trip_is_byte_identical(tmp_path):
         "3\t1,2,3,4,5,6,99\n",
     ],
 )
-def test_parse_rejects_malformed_rows(body):
+def test_parse_rejects_malformed_rows(body: str) -> None:
     header = format_labels(make_labels({}))
     with pytest.raises(ValueError):
         parse_labels(header + body)

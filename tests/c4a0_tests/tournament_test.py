@@ -2,11 +2,11 @@ import torch
 
 from c4a0.nn import ConnectFourNet, ModelConfig
 from c4a0.tournament import (
-    play_tournament,
+    ModelID,
     ModelPlayer,
     RandomPlayer,
     UniformPlayer,
-    ModelID,
+    play_tournament,
 )
 from c4a0.training import parse_lr_schedule
 
@@ -24,7 +24,7 @@ def make_model() -> ConnectFourNet:
     )
 
 
-def test_tournament():
+def test_tournament() -> None:
     model = make_model()
     model.eval()  # Disable batch normalization
     model_player = ModelPlayer(

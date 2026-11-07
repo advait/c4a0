@@ -1,7 +1,9 @@
-from datetime import datetime
-from pathlib import Path
 import pickle
 import shutil
+from collections.abc import Sequence
+from datetime import datetime
+from pathlib import Path
+from typing import Never
 
 import numpy as np
 import pytest
@@ -10,10 +12,11 @@ import torch
 from c4a0 import training
 from c4a0.evaluation import evaluate_model
 from c4a0.labels import Split, Suite, load_suite
-from c4a0.nn import ModelConfig
+from c4a0.nn import ConnectFourNet, ModelConfig
 from c4a0.training import (
     EvalConfig,
     SampleDataModule,
+    SampleTensor,
     TrainingGen,
     parse_lr_schedule,
     training_loop,
@@ -37,7 +40,9 @@ def _tiny_suite() -> Suite:
     return Suite(labels=dev.labels.take(rows), name="v1/dev-50", sha256=dev.sha256)
 
 
-def _tiny_loop(base_dir, eval_config, max_gens=1):
+def _tiny_loop(
+    base_dir: Path, eval_config: EvalConfig, max_gens: int = 1
+) -> TrainingGen:
     return training_loop(
         base_dir=str(base_dir),
         device=torch.device("cpu"),
@@ -53,7 +58,7 @@ def _tiny_loop(base_dir, eval_config, max_gens=1):
     )
 
 
-def _manual_loss(model, samples):
+def _manual_loss(model: ConnectFourNet, samples: Sequence[SampleTensor]) -> float:
     pos = torch.stack([sample[0] for sample in samples])
     policy_target = torch.stack([sample[1] for sample in samples])
     q_penalty_target = torch.stack([sample[2] for sample in samples])
@@ -71,7 +76,7 @@ def _manual_loss(model, samples):
     return (policy_loss + q_penalty_loss + q_no_penalty_loss).item()
 
 
-def _sum_abs_model_diff(left, right):
+def _sum_abs_model_diff(left: ConnectFourNet, right: ConnectFourNet) -> float:
     return sum(
         float(
             (value.detach().cpu() - right.state_dict()[key].detach().cpu()).abs().sum()
@@ -80,7 +85,9 @@ def _sum_abs_model_diff(left, right):
     )
 
 
-def test_training_loop_saves_trained_best_model_and_matching_metadata(tmp_path):
+def test_training_loop_saves_trained_best_model_and_matching_metadata(
+    tmp_path: Path,
+) -> None:
     gen = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()))
 
     assert gen.parent is not None
@@ -104,7 +111,7 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(tmp_path):
     assert _sum_abs_model_diff(saved_model, pickled_model) == pytest.approx(0.0)
 
 
-def test_each_generation_records_evals_of_its_own_saved_model(tmp_path):
+def test_each_generation_records_evals_of_its_own_saved_model(tmp_path: Path) -> None:
     suite = _tiny_suite()
     gen = _tiny_loop(tmp_path, EvalConfig(suite, mcts_iterations=(4,)))
 
@@ -124,11 +131,13 @@ def test_each_generation_records_evals_of_its_own_saved_model(tmp_path):
     assert child_sha != parent.evals["v1/dev-50"].model_sha256
 
 
-def test_failed_evaluation_publishes_no_metadata(tmp_path, monkeypatch):
+def test_failed_evaluation_publishes_no_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     suite = _tiny_suite()
     published = _tiny_loop(tmp_path, EvalConfig(suite))
 
-    def failing_eval(*_args, **_kwargs):
+    def failing_eval(*_args: object, **_kwargs: object) -> Never:
         raise RuntimeError("eval failed")
 
     monkeypatch.setattr(training, "evaluate_model", failing_eval)
@@ -143,7 +152,7 @@ def test_failed_evaluation_publishes_no_metadata(tmp_path, monkeypatch):
     assert [g.gen_n for g in TrainingGen.load_all(str(tmp_path))] == [1, 0]
 
 
-def test_legacy_metadata_loads_with_empty_evals(tmp_path):
+def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     created_at = datetime.fromisoformat("2024-06-01T12:34:56.789012")
     gen_dir = tmp_path / created_at.isoformat()
     gen_dir.mkdir()

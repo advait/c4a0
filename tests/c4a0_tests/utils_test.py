@@ -1,7 +1,6 @@
-from pytorch_lightning import Trainer
-
 import pytest
 import torch
+from pytorch_lightning import Trainer
 
 from c4a0.nn import ConnectFourNet, ModelConfig
 from c4a0.training import parse_lr_schedule
@@ -21,7 +20,7 @@ def make_model() -> ConnectFourNet:
     )
 
 
-def test_best_model_checkpoint_ignores_sanity_validation():
+def test_best_model_checkpoint_ignores_sanity_validation() -> None:
     callback: BestModelCheckpoint[ConnectFourNet] = BestModelCheckpoint(
         monitor="val_loss",
         mode="min",

@@ -1,4 +1,4 @@
-# Development Guide
+# Development guide
 
 This project has two main parts:
 
@@ -280,18 +280,63 @@ Maturin remains the build backend and a development tool for `mise run build`.
 Notebook packages are optional and unused by CI. Start Jupyter with
 `mise exec -- uv run --locked --group notebook jupyter lab`.
 
+## Typing and lint policy
+
+ty 0.0.99 is the only type checker. It checks `src/` and `tests/` and reads the
+Python target from `project.requires-python`. Default diagnostics remain enabled.
+Import, reference, attribute, argument, assignment, return, call and override errors
+fail the task, as do missing generic arguments and warnings.
+
+Ruff 0.17.4 enables ANN, UP, I, B, F, E and W. ANN401 bans explicit `Any` in
+function signatures. Use concrete types, protocols or `object` with narrowing.
+Tests follow the same annotation policy. `ruff format --check` runs in `lint`;
+E501 is disabled because the formatter owns wrapping. RUF100 and PGH003/PGH004
+reject unused or blanket suppressions. Typer option factories are allowed calls
+in CLI defaults. Exploratory notebooks are outside the lint and typecheck tasks.
+
+Fix the type or native stub before suppressing an error. A necessary suppression
+names one rule and explains why on the same line, for example
+`# ty: ignore[invalid-argument-type]  # Upstream stub omits this supported overload.`
+Unused, unknown and blanket ty suppressions fail. Legacy type-ignore comments do
+not suppress ty diagnostics. Ruff suppressions also name a rule and include a reason.
+There are no type suppressions in the package or tests after this migration.
+
+The public native API lives in `src/c4a0_rust/__init__.pyi`. `_native.pyi` re-exports
+that API for the compiled extension. `GenerationTrainer` declares Lightning's
+extra generation field, and `SampleDataset` supplies the nominal Dataset interface.
+
+The former checker's unused-expression diagnostic has no ty equivalent in the
+migration probes; Ruff B018 covers useless expressions. Both checkers rejected
+missing imports and references, incorrect native arguments, invalid returns,
+invariant generic assignments and variadic tuple mismatches. The former basic
+configuration reported no errors on the original project. This comparison does
+not establish parity for every Python typing feature. Third-party `Any` can still
+propagate through untyped library APIs.
+
+Upstream references: [uv project sync](https://docs.astral.sh/uv/concepts/projects/sync/),
+[ty configuration](https://docs.astral.sh/ty/reference/configuration/),
+[Ruff configuration](https://docs.astral.sh/ruff/configuration/), and
+[ANN401](https://docs.astral.sh/ruff/rules/any-type/).
+`managed = true` was removed because it is uv's default, not because it is deprecated.
+
 ## Verified checks
 
 Verified in this environment:
 
 - `mise run build`: builds and installs the mixed Python/Rust package
-- `mise run lint`: Ruff passed
+- `mise run lint`: Ruff lint and formatting passed
 - `mise run typecheck`: ty passed with 0 errors
-- `mise run test:rust`: 46 passed
-- `mise run test:python`: 60 passed (pybridge self-play test can hang on the known shutdown race; exit 124)
+- `mise run test:rust`: 48 passed
+- `mise run test:python`: 60 passed, 4 skipped (pybridge self-play test can hang on the known shutdown race; exit 124)
 - `mise run train:smoke`: runs end-to-end self-play + model training
+
+The tooling migration passed `mise run check` and `mise run ci` under
+`taskset -c 0 timeout 900` to avoid the known concurrent self-play shutdown race.
+Two unrestricted check attempts stalled at self-play and were stopped with SIGTERM.
+Single-CPU validation exercises every test but does not validate concurrent shutdown.
 
 Current benign warnings observed:
 
-- pytest-asyncio warns that `asyncio_default_fixture_loop_scope` is unset.
+- Lightning uses a deprecated PyTorch `LeafSpec` check.
+- Tiny training runs have fewer batches than Lightning's logging interval.
 - `Cannot read termcap database; using dumb terminal settings` can appear in non-interactive terminals.

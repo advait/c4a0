@@ -24,7 +24,7 @@ readme = "README.md"
 requires-python = "==3.11.15"
 
 [build-system]
-requires = ["maturin>=1.14.1,<2"]
+requires = ["maturin==1.14.1"]
 build-backend = "maturin"
 
 [tool.maturin]
@@ -38,7 +38,7 @@ dev = [
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
   "ty==0.0.99",
-  "ruff>=0.15.20",
+  "ruff==0.17.4",
 ]
 
 notebook = ["jupyterlab>=4.6.1", "pandas>=3.0.3", "rankit>=0.3.3"]
@@ -70,6 +70,19 @@ unresolved-attribute = "error"
 unused-ignore-comment = "error"
 ignore-comment-unknown-rule = "error"
 blanket-ignore-comment = "error"
+
+[tool.ruff]
+# Check all importable Python and stubs; notebooks are exploratory, outside CI.
+include = ["*.py", "*.pyi", "**/pyproject.toml"]
+
+[tool.ruff.lint]
+select = ["ANN", "UP", "I", "B", "F", "E", "W", "RUF100", "PGH003", "PGH004"]
+# Ruff format controls line wrapping; long messages and URLs may remain intact.
+ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Typer Option declares CLI metadata, including fresh defaults through default_factory.
+extend-immutable-calls = ["typer.Option"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

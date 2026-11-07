@@ -71,6 +71,10 @@ a convergence delta.
   `test:python` hung in 2 of 3 runs before `mise.toml` wrapped it in `timeout 900`. Exit code
   124 from `test:python` means this hang, not a test failure. Wrap any ad hoc self-play or
   training run in `timeout`.
+- If the unrestricted Python test retry also hangs, `taskset -c 0 timeout 900 mise run check`
+  exercises all tests with one self-play worker. Use an allowed CPU from
+  `os.sched_getaffinity(0)` if CPU 0 is unavailable. Report that concurrency was restricted.
+  This validates Python behavior but does not prove the concurrent shutdown is correct.
 - A Python exception in the NN callback panics the NN thread and leaves workers waiting
   forever (`rust/src/pybridge.rs`). That's a second reason for `timeout`.
 - `nn-sweep` fails every trial (`trainer.gen_n` unset in `src/c4a0/sweep.py`). Don't use it

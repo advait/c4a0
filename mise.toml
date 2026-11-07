@@ -46,14 +46,14 @@ run = [
 ]
 
 [tasks.lint]
-description = "Run Ruff lint checks"
+description = "Run Ruff lint and formatting checks"
 depends = ["install"]
-run = "uv run --locked ruff check"
+run = ["uv run --locked ruff check", "uv run --locked ruff format --check"]
 
 [tasks.typecheck]
 description = "Run ty type checks"
 depends = ["install"]
-run = "uv run --locked ty check"
+run = "uv run --locked ty check --error-on-warning"
 
 [tasks.test]
 description = "Run all Rust and Python tests"

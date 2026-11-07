@@ -2,33 +2,34 @@
 
 import hashlib
 import os
-from pathlib import Path
 import pickle
 import sys
-
-from typing import List, Optional
 import warnings
+from pathlib import Path
 
-from loguru import logger
 import optuna
 import torch
 import typer
+from loguru import logger
 
 # Ensure that the parent directory of this file exists on Python path
 parent_dir = Path(__file__).resolve().parent.parent
 if str(parent_dir) not in sys.path:
     sys.path.insert(0, str(parent_dir))
 
-from c4a0.evaluation import evaluate_model  # noqa: E402
+import c4a0_rust  # noqa: E402
+from c4a0.evaluation import SuiteEval, evaluate_model  # noqa: E402
 from c4a0.labels import (  # noqa: E402
     SUITE_V1,
     Recipe,
     Split,
-    label as label_positions,
     load_suite,
     read_labels,
     suite_path,
     write_labels,
+)
+from c4a0.labels import (  # noqa: E402
+    label as label_positions,
 )
 from c4a0.nn import ConnectFourNet, ModelConfig  # noqa: E402
 from c4a0.supervised import TARGET_VERSION, CeilingReport, fit_supervised  # noqa: E402
@@ -41,8 +42,6 @@ from c4a0.training import (  # noqa: E402
     training_loop,
 )
 from c4a0.utils import get_torch_device  # noqa: E402
-
-import c4a0_rust  # noqa: E402
 
 app = typer.Typer()
 
@@ -62,11 +61,13 @@ def train(
     conv_filter_size: int = 32,
     n_policy_layers: int = 4,
     n_value_layers: int = 2,
-    lr_schedule: List[float] = [0, 2e-3, 10, 8e-4],
+    lr_schedule: list[float] = typer.Option(
+        default_factory=lambda: [0, 2e-3, 10, 8e-4]
+    ),
     l2_reg: float = 4e-4,
-    max_gens: Optional[int] = None,
-    eval_mcts_iterations: List[int] = [],
-):
+    max_gens: int | None = None,
+    eval_mcts_iterations: list[int] = typer.Option(default_factory=list),
+) -> None:
     """Trains a model via self-play. Each generation's saved model is scored on the v1 dev
     suite (raw network, plus MCTS at each --eval-mcts-iterations budget)."""
 
@@ -101,9 +102,10 @@ def play(
     c_exploration: float = 6.6,
     c_ply_penalty: float = 0.01,
     model: str = "best",
-):
+) -> None:
     """Play interactive games"""
     gen = TrainingGen.load_latest(base_dir)
+    nn: ConnectFourNet | RandomPlayer | UniformPlayer
     if model == "best":
         nn = gen.get_model(base_dir)
     elif model == "random":
@@ -122,7 +124,7 @@ def play(
 
 
 @app.command()
-def nn_sweep(base_dir: str = "training"):
+def nn_sweep(base_dir: str = "training") -> None:
     """
     Performs a hyperparameter sweep to determine best nn model params based on existing training
     data.
@@ -141,14 +143,14 @@ def mcts_sweep(
     conv_filter_size: int = 32,
     n_policy_layers: int = 4,
     n_value_layers: int = 2,
-    lr_schedule: List[float] = [0, 2e-3],
+    lr_schedule: list[float] = typer.Option(default_factory=lambda: [0, 2e-3]),
     l2_reg: float = 4e-4,
     # End NN parameters
     base_training_dir: str = "training-sweeps",
     optuna_db_path: str = "optuna.db",
     n_trials: int = 100,
     max_gens_per_trial: int = 10,
-):
+) -> None:
     """
     Performs sweep of MCTS hyperparameters (e.g. n_self_play_games, n_mcts_iterations,
     c_exploration) to determine optimal values by performing `n_trials` independent training
@@ -168,7 +170,7 @@ def mcts_sweep(
         l2_reg=l2_reg,
     )
 
-    def objective(trial: optuna.Trial):
+    def objective(trial: optuna.Trial) -> float:
         trial_path = base_path / f"trial_{trial.number}"
         trial_path.mkdir(exist_ok=False)
         gen = training_loop(
@@ -206,7 +208,7 @@ def build_suite(
     solver_path: str = "solver/c4solver",
     book_path: str = "solver/7x6.book",
     n_procs: int = 32,
-):
+) -> None:
     """Rebuilds the committed v1 dev and test suites (deterministic: same bytes every run)."""
     for split, recipe in SUITE_V1.items():
         labels = label_positions(recipe, solver_path, book_path, n_procs)
@@ -226,7 +228,7 @@ def label(
     solver_path: str = "solver/c4solver",
     book_path: str = "solver/7x6.book",
     n_procs: int = 32,
-):
+) -> None:
     """Samples and solver-labels positions in a split (train by default, for the ceiling)."""
     recipe = Recipe(
         version=1, split=split, seed=seed, per_ply=per_ply, plies=(first_ply, last_ply)
@@ -252,9 +254,9 @@ def ceiling(
     seed: int = 0,
     c_exploration: float = 6.6,
     c_ply_penalty: float = 0.01,
-    mcts_iterations: List[int] = [],
+    mcts_iterations: list[int] = typer.Option(default_factory=list),
     report_test: bool = False,
-):
+) -> None:
     """
     Supervised ceiling: trains the self-play architecture on solver labels (train split only),
     early-stopping on dev loss, and scores the saved model on dev (and test with --report-test,
@@ -287,7 +289,7 @@ def ceiling(
     with open(model_path, "wb") as f:
         pickle.dump(model, f)
 
-    def score(split: Split):
+    def score(split: Split) -> SuiteEval:
         return evaluate_model(
             model_path, load_suite(split), mcts_iterations, c_exploration, c_ply_penalty
         )
@@ -320,8 +322,8 @@ def ceiling(
 def eval_gens(
     base_dir: str = "training",
     split: Split = Split.DEV,
-    mcts_iterations: List[int] = [],
-):
+    mcts_iterations: list[int] = typer.Option(default_factory=list),
+) -> None:
     """Scores every published generation's model.pkl on a suite and stores it in the
     generation's evals (replacing any earlier score on that suite)."""
     suite = load_suite(split)

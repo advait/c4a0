@@ -22,7 +22,7 @@ SPLITS = [Split.DEV, Split.TEST]
 
 
 @pytest.mark.parametrize("split", SPLITS)
-def test_every_ply_from_two_is_present(split):
+def test_every_ply_from_two_is_present(split: Split) -> None:
     # Plies 0 and 1 have one and four mirror classes, and all of them hash to train.
     counts = np.bincount(load_suite(split).labels.ply, minlength=42)
     assert (counts[2:] > 0).all()
@@ -31,7 +31,7 @@ def test_every_ply_from_two_is_present(split):
 
 
 @pytest.mark.parametrize("split", SPLITS)
-def test_both_players_move_in_every_bucket(split):
+def test_both_players_move_in_every_bucket(split: Split) -> None:
     labels = load_suite(split).labels
     for b, name in enumerate(BUCKET_NAMES):
         parities = set((labels.ply[labels.bucket == b] % 2).tolist())
@@ -39,7 +39,7 @@ def test_both_players_move_in_every_bucket(split):
 
 
 @pytest.mark.parametrize("split", SPLITS)
-def test_every_column_is_the_unique_best_move_often(split):
+def test_every_column_is_the_unique_best_move_often(split: Split) -> None:
     labels = load_suite(split).labels
     nontrivial = ~labels.trivial
     unique = nontrivial & (labels.best.sum(axis=1) == 1)
@@ -48,7 +48,7 @@ def test_every_column_is_the_unique_best_move_often(split):
 
 
 @pytest.mark.parametrize("split", SPLITS)
-def test_oracle_scores_one_and_uniform_scores_the_best_share(split):
+def test_oracle_scores_one_and_uniform_scores_the_best_share(split: Split) -> None:
     labels = load_suite(split).labels
     oracle = tally_policy(top1_credit(labels.best.astype(np.float32), labels), labels)
     assert oracle.top1 == 1.0
@@ -59,13 +59,13 @@ def test_oracle_scores_one_and_uniform_scores_the_best_share(split):
     assert uniform.top1 is not None and 0.2 < uniform.top1 < 0.35
 
 
-def test_dev_and_test_share_no_move_strings():
+def test_dev_and_test_share_no_move_strings() -> None:
     dev, test = (set(load_suite(s).labels.moves) for s in SPLITS)
     assert not dev & test
 
 
 @pytest.mark.skipif(not SOLVER.is_file(), reason="solver not built in solver/")
 @pytest.mark.parametrize("split", SPLITS)
-def test_suite_rebuilds_byte_for_byte(split):
+def test_suite_rebuilds_byte_for_byte(split: Split) -> None:
     labels = label(SUITE_V1[split], str(SOLVER), str(BOOK), n_procs=16)
     assert format_labels(labels) == suite_path(split).read_text()

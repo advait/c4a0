@@ -44,6 +44,10 @@ container is the isolation boundary.
 container, and the run will read nothing. Read-only work is a brief instruction, not a
 sandbox flag.
 
+**Python tools.** uv owns the interpreter and environment. `project.requires-python`
+is the single version pin. ty is the only type checker. Ruff checks annotations and style.
+All validation tasks enforce `uv.lock` with `--locked`. Notebook dependencies are opt-in.
+
 **Task runner.** mise (`mise.toml`). Canonical tasks: `install`, `build`, `lint`,
 `typecheck`, `test:rust`, `test:python`, `check`, `train:smoke`, `ci`, and `suite:build`
 (needs the solver). See the **verify** skill for which to run when.

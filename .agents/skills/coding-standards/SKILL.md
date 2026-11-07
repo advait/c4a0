@@ -14,8 +14,15 @@ is no TypeScript here.
 22 seconds warm). A change to self-play, training or the CLI also passes `mise run
 train:smoke`. Run `cargo fmt` in `rust/` on Rust you touch. CI does not run it yet.
 
-**Python.** 3.11.15 (`project.requires-python` in `pyproject.toml`, managed by uv). Ruff with default rules. ty is the only type checker
-(`pyproject.toml`). Add native types to `src/c4a0_rust/__init__.pyi`; `_native.pyi`
+**Python.** 3.11.15 (`project.requires-python` in `pyproject.toml`, managed by uv).
+Ruff enforces ANN (including ANN401), UP, I, B, F, E and W, except E501.
+`ruff format --check` owns wrapping. RUF100 and PGH003/PGH004 reject unused or
+blanket suppressions. All source and test signatures carry annotations. Explicit `Any`
+is banned in signatures; use concrete types, protocols or `object`. ty is the only type checker
+(`pyproject.toml`). Default ty diagnostics remain enabled. Import, reference, attribute,
+argument, assignment, return and override errors fail the check. Missing generic arguments
+and invalid or unused suppressions fail too. Warnings fail the task.
+Add native types to `src/c4a0_rust/__init__.pyi`; `_native.pyi`
 re-exports them for the compiled module. Fix types before suppressing diagnostics.
 A necessary suppression uses `# ty: ignore[rule-name]` with a reason on that line.
 Blanket and unused suppressions fail typecheck.

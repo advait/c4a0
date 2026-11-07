@@ -3,27 +3,27 @@ Generation-based network training, alternating between self-play and training.
 """
 
 import copy
+import os
+import pickle
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-import os
 from pathlib import Path
-import pickle
-from typing import Dict, List, NewType, Optional, Sequence, Tuple
+from typing import NewType
 
+import pytorch_lightning as pl
+import torch
 from loguru import logger
 from pydantic import BaseModel
-import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping
-import torch
 from torch.utils.data import DataLoader, Dataset
 
+import c4a0_rust
 from c4a0.evaluation import SuiteEval, evaluate_model
 from c4a0.labels import Split, Suite, load_suite
 from c4a0.nn import ConnectFourNet, ModelConfig
 from c4a0.utils import BestModelCheckpoint, GenerationTrainer
-
-import c4a0_rust
-from c4a0_rust import PlayGamesResult, BUF_N_CHANNELS, N_COLS, N_ROWS, Sample
+from c4a0_rust import BUF_N_CHANNELS, N_COLS, N_ROWS, PlayGamesResult, Sample
 
 
 @dataclass(frozen=True)
@@ -31,7 +31,7 @@ class EvalConfig:
     """What each generation's saved model is scored on before its metadata is written."""
 
     suite: Suite
-    mcts_iterations: Tuple[int, ...] = ()
+    mcts_iterations: tuple[int, ...] = ()
     """MCTS budgets to score in addition to the raw network. Empty means raw only."""
 
 
@@ -51,12 +51,12 @@ class TrainingGen(BaseModel):
     c_ply_penalty: float
     self_play_batch_size: int
     training_batch_size: int
-    parent: Optional[datetime] = None
-    val_loss: Optional[float] = None
-    solver_score: Optional[float] = None
+    parent: datetime | None = None
+    val_loss: float | None = None
+    solver_score: float | None = None
     """Legacy: the PARENT's self-play policy score (half credit for slower wins, ties broken by
     column order). Never written again; use `evals`."""
-    evals: Dict[str, SuiteEval] = {}
+    evals: dict[str, SuiteEval] = {}
     """Suite name -> score of THIS generation's saved model.pkl."""
 
     @staticmethod
@@ -69,10 +69,10 @@ class TrainingGen(BaseModel):
     def publish(
         self,
         base_dir: str,
-        games: Optional[PlayGamesResult],
+        games: PlayGamesResult | None,
         model: ConnectFourNet,
         eval_config: EvalConfig,
-    ):
+    ) -> None:
         """Saves games and model, scores the model as reloaded from model.pkl, then writes
         metadata.json last. If scoring fails, no metadata is written and loaders skip the
         generation."""
@@ -105,7 +105,7 @@ class TrainingGen(BaseModel):
         )
         self.save_metadata(base_dir)
 
-    def save_metadata(self, base_dir: str):
+    def save_metadata(self, base_dir: str) -> None:
         """Writes metadata.json atomically (temp file, then rename)."""
         gen_dir = self.gen_folder(base_dir)
         os.makedirs(gen_dir, exist_ok=True)
@@ -119,11 +119,11 @@ class TrainingGen(BaseModel):
     @staticmethod
     def load(base_dir: str, created_at: datetime) -> "TrainingGen":
         gen_folder = TrainingGen._gen_folder(created_at, base_dir)
-        with open(os.path.join(gen_folder, "metadata.json"), "r") as f:
+        with open(os.path.join(gen_folder, "metadata.json")) as f:
             return TrainingGen.model_validate_json(f.read())
 
     @staticmethod
-    def _published_timestamps(base_dir: str) -> List[datetime]:
+    def _published_timestamps(base_dir: str) -> list[datetime]:
         """Newest first. Directories without metadata.json are unpublished and skipped."""
         return sorted(
             [
@@ -135,7 +135,7 @@ class TrainingGen(BaseModel):
         )
 
     @staticmethod
-    def load_all(base_dir: str) -> List["TrainingGen"]:
+    def load_all(base_dir: str) -> list["TrainingGen"]:
         return [
             TrainingGen.load(base_dir, t)
             for t in TrainingGen._published_timestamps(base_dir)
@@ -158,7 +158,7 @@ class TrainingGen(BaseModel):
         training_batch_size: int,
         model_config: ModelConfig,
         eval_config: EvalConfig,
-    ):
+    ) -> "TrainingGen":
         try:
             return TrainingGen.load_latest(base_dir)
         except FileNotFoundError:
@@ -176,7 +176,7 @@ class TrainingGen(BaseModel):
             gen.publish(base_dir, None, model, eval_config)
             return gen
 
-    def get_games(self, base_dir: str) -> Optional[PlayGamesResult]:
+    def get_games(self, base_dir: str) -> PlayGamesResult | None:
         gen_folder = self.gen_folder(base_dir)
         with open(os.path.join(gen_folder, "games.pkl"), "rb") as f:
             return pickle.load(f)
@@ -272,8 +272,8 @@ def training_loop(
     self_play_batch_size: int,
     training_batch_size: int,
     model_config: ModelConfig,
-    max_gens: Optional[int] = None,
-    eval_config: Optional[EvalConfig] = None,
+    max_gens: int | None = None,
+    eval_config: EvalConfig | None = None,
 ) -> TrainingGen:
     """Main training loop. Sequentially trains generation after generation. Each generation's
     saved model is scored on `eval_config` (default: raw network on the v1 dev suite)."""
@@ -324,7 +324,7 @@ def training_loop(
 
 SampleTensor = NewType(
     "SampleTensor",
-    Tuple[
+    tuple[
         torch.Tensor,  # Pos
         torch.Tensor,  # Policy
         torch.Tensor,  # Q Value with penalty
@@ -349,10 +349,10 @@ class SampleDataset(Dataset[SampleTensor]):
 class SampleDataModule(pl.LightningDataModule):
     def __init__(
         self,
-        training_data: List[Sample],
-        validation_data: List[Sample],
+        training_data: list[Sample],
+        validation_data: list[Sample],
         batch_size: int,
-    ):
+    ) -> None:
         super().__init__()
         self.batch_size = batch_size
         training_data += [s.flip_h() for s in training_data]
@@ -373,21 +373,21 @@ class SampleDataModule(pl.LightningDataModule):
         assert q_no_penalty.shape == ()
         return SampleTensor((pos_t, policy_t, q_penalty_t, q_no_penalty_t))
 
-    def train_dataloader(self):
+    def train_dataloader(self) -> DataLoader[SampleTensor]:
         return DataLoader(
             SampleDataset(self.training_data),
             batch_size=self.batch_size,
             shuffle=True,
         )
 
-    def val_dataloader(self):
+    def val_dataloader(self) -> DataLoader[SampleTensor]:
         return DataLoader(
             SampleDataset(self.validation_data),
             batch_size=self.batch_size,
         )
 
 
-def parse_lr_schedule(floats: List[float]) -> Dict[int, float]:
+def parse_lr_schedule(floats: list[float]) -> dict[int, float]:
     """Parses an lr_schedule sequence like "0 2e-3 10 8e-4" into a dict of {0: 2e-3, 10: 8e-4}."""
     assert len(floats) % 2 == 0, "lr_schedule must have an even number of elements"
     schedule = {}

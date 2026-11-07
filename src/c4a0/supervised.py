@@ -6,15 +6,15 @@ perfect-play terminal ply.
 """
 
 import time
-from typing import Literal, Optional
+from typing import Literal
 
-from loguru import logger
 import numpy as np
+import pytorch_lightning as pl
+import torch
+from loguru import logger
 from numpy.typing import NDArray
 from pydantic import BaseModel
-import pytorch_lightning as pl
 from pytorch_lightning.callbacks import EarlyStopping
-import torch
 from torch.utils.data import (
     BatchSampler,
     DataLoader,
@@ -23,12 +23,11 @@ from torch.utils.data import (
     TensorDataset,
 )
 
+import c4a0_rust
 from c4a0.evaluation import SuiteEval
 from c4a0.labels import Labels
 from c4a0.nn import ConnectFourNet, ModelConfig
 from c4a0.utils import BestModelCheckpoint, GenerationTrainer
-
-import c4a0_rust
 
 TargetVersion = Literal["pons_terminal_ply_v1"]
 TARGET_VERSION: TargetVersion = "pons_terminal_ply_v1"
@@ -97,10 +96,14 @@ def _batches(
 class _EpochLog(pl.Callback):
     """One log line per epoch, so a detached run's progress is visible in its log."""
 
-    def on_train_start(self, trainer, pl_module):
+    def on_train_start(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+    ) -> None:
         self.t0 = time.perf_counter()
 
-    def on_train_epoch_end(self, trainer, pl_module):
+    def on_train_epoch_end(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+    ) -> None:
         m = trainer.callback_metrics
         logger.info(
             "epoch {} train_loss {:.4f} val_loss {:.4f} elapsed {:.0f}s",
@@ -159,5 +162,5 @@ class CeilingReport(BaseModel):
     c_ply_penalty: float
     target_version: TargetVersion
     dev: SuiteEval
-    test: Optional[SuiteEval] = None
+    test: SuiteEval | None = None
     """Scored only on request, after the configuration was chosen on dev."""

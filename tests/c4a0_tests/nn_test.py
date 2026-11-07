@@ -23,7 +23,7 @@ def starting_pos() -> torch.Tensor:
     return torch.zeros((1, BUF_N_CHANNELS, N_ROWS, N_COLS), dtype=torch.float32)
 
 
-def test_random_nn_works():
+def test_random_nn_works() -> None:
     model = make_model()
     pos = starting_pos()
     model.eval()
@@ -41,7 +41,7 @@ def test_random_nn_works():
 
 
 @pytest.mark.filterwarnings("ignore:You are trying to `self.log()`*")
-def test_loss_of_zero():
+def test_loss_of_zero() -> None:
     """Using the model output as training labels should result in a loss of zero."""
     model = make_model()
     pos = starting_pos()
@@ -67,7 +67,7 @@ def test_loss_of_zero():
 
 
 @pytest.mark.filterwarnings("ignore:You are trying to `self.log()`*")
-def test_loss_of_nonzero():
+def test_loss_of_nonzero() -> None:
     """Using random label data should result in a > 0 loss."""
     model = make_model()
     pos = starting_pos()
@@ -89,12 +89,12 @@ def test_loss_of_nonzero():
 
 
 @pytest.mark.filterwarnings("ignore:You are trying to `self.log()`*")
-def test_loss_logs_both_value_components(monkeypatch):
+def test_loss_logs_both_value_components(monkeypatch: pytest.MonkeyPatch) -> None:
     """Value diagnostics should expose both value heads, not just q_penalty."""
     model = make_model()
     logged_names: list[str] = []
 
-    def capture_log(name, *args, **kwargs):
+    def capture_log(name: str, *args: object, **kwargs: object) -> None:
         logged_names.append(name)
 
     monkeypatch.setattr(model, "log", capture_log)

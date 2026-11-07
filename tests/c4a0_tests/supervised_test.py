@@ -28,12 +28,14 @@ from c4a0_tests.labels_test import make_labels
         ("1020406", -17, 7, 9),
     ],
 )
-def test_terminal_ply_matches_golden_pons_rows(moves, score, ply, want):
+def test_terminal_ply_matches_golden_pons_rows(
+    moves: str, score: int, ply: int, want: int
+) -> None:
     assert len(moves) == ply
     assert terminal_ply(np.array([score]), np.array([ply])).tolist() == [want]
 
 
-def test_solver_targets():
+def test_solver_targets() -> None:
     labels = make_labels(
         {
             "3344": [-4, -3, 18, 2, 2, 18, -3],  # double threat, win at ply 7
@@ -51,7 +53,7 @@ def test_solver_targets():
     assert q_penalty.tolist() == pytest.approx([0.93, 0.0, 0.58, -0.91])
 
 
-def test_tiny_net_overfits_solver_labels():
+def test_tiny_net_overfits_solver_labels() -> None:
     torch.manual_seed(0)
     dev = load_suite(Split.DEV).labels
     rows = dev.take(np.flatnonzero(~dev.trivial)[:256])

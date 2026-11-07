@@ -1,5 +1,6 @@
 import hashlib
 import pickle
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -21,7 +22,7 @@ def one_hot_ties(*cols: int) -> list[float]:
     return [1.0 if c in cols else 0.0 for c in range(7)]
 
 
-def test_ties_split_credit_evenly():
+def test_ties_split_credit_evenly() -> None:
     labels = make_labels({"3344": PONS_ROWS["3344"]})  # best {2, 5}
     policies = np.array(
         [
@@ -38,7 +39,7 @@ def test_ties_split_credit_evenly():
         assert credit.tolist() == [want]
 
 
-def test_illegal_argmax_is_masked_and_counted():
+def test_illegal_argmax_is_masked_and_counted() -> None:
     labels = make_labels({"000000": PONS_ROWS["000000"], "": PONS_ROWS[""]})  # best {3}
     policies = np.array(
         [[9.0, 0, 0, 5, 0, 0, 0], [0, 0, 0, 5, 0, 0, 0]], dtype=np.float32
@@ -47,13 +48,13 @@ def test_illegal_argmax_is_masked_and_counted():
     assert illegal_argmax(policies, labels) == 1
 
 
-def test_log_probs_with_masked_minus_inf_columns():
+def test_log_probs_with_masked_minus_inf_columns() -> None:
     labels = make_labels({"000000": PONS_ROWS["000000"]})
     policies = np.array([[-np.inf, -2.3, -2.3, -0.5, -2.3, -2.3, -np.inf]], np.float32)
     assert top1_credit(policies, labels).tolist() == [1.0]
 
 
-def test_nan_and_all_minus_inf_rows_are_rejected():
+def test_nan_and_all_minus_inf_rows_are_rejected() -> None:
     labels = make_labels({"": PONS_ROWS[""]})
     with pytest.raises(ValueError):
         top1_credit(np.full((1, 7), np.nan, dtype=np.float32), labels)
@@ -61,7 +62,7 @@ def test_nan_and_all_minus_inf_rows_are_rejected():
         top1_credit(np.full((1, 7), -np.inf, dtype=np.float32), labels)
 
 
-def test_trivial_rows_leave_policy_denominators():
+def test_trivial_rows_leave_policy_denominators() -> None:
     labels = make_labels({"0": [-2] * 7, "3344": PONS_ROWS["3344"], "": PONS_ROWS[""]})
     credit = top1_credit(np.zeros((3, 7), dtype=np.float32), labels)
     tally = tally_policy(credit, labels)
@@ -70,7 +71,7 @@ def test_trivial_rows_leave_policy_denominators():
     assert tally.by_bucket["06-11"].n == 0
 
 
-def test_oracle_scores_one_and_uniform_scores_best_share():
+def test_oracle_scores_one_and_uniform_scores_best_share() -> None:
     labels = make_labels(PONS_ROWS)
     oracle = labels.best.astype(np.float32)
     assert tally_policy(top1_credit(oracle, labels), labels).top1 == 1.0
@@ -80,7 +81,7 @@ def test_oracle_scores_one_and_uniform_scores_best_share():
     assert uniform.top1 == pytest.approx((1 / 7 + 2 / 7 + 1 / 6 + 1 / 7) / 4)
 
 
-def test_value_confusion_uses_fixed_cutoffs():
+def test_value_confusion_uses_fixed_cutoffs() -> None:
     labels = make_labels(
         {
             "": PONS_ROWS[""],  # win
@@ -96,7 +97,7 @@ def test_value_confusion_uses_fixed_cutoffs():
     assert value.accuracy == pytest.approx(4 / 5)
 
 
-def test_evaluate_model_scores_the_pickled_bytes(tmp_path):
+def test_evaluate_model_scores_the_pickled_bytes(tmp_path: Path) -> None:
     model = ConnectFourNet(
         ModelConfig(
             n_residual_blocks=1,
@@ -125,13 +126,13 @@ def test_evaluate_model_scores_the_pickled_bytes(tmp_path):
     assert SuiteEval.model_validate_json(result.model_dump_json()) == result
 
 
-def test_non_finite_value_is_rejected_not_scored_as_draw():
+def test_non_finite_value_is_rejected_not_scored_as_draw() -> None:
     labels = make_labels({"3344": PONS_ROWS["3344"]})
     with pytest.raises(ValueError, match="non-finite"):
         tally_value(np.array([np.nan], dtype=np.float32), labels)
 
 
-def test_openings_oracle_scores_full_and_column_zero_first_move_scores_zero():
+def test_openings_oracle_scores_full_and_column_zero_first_move_scores_zero() -> None:
     from c4a0.evaluation import OPENINGS
 
     oracle = OPENINGS.best.astype(np.float32)
@@ -150,7 +151,7 @@ SOLVER_BIN = (
 
 
 @pytest.mark.skipif(not SOLVER_BIN.is_file(), reason="solver not built in solver/")
-def test_openings_scores_match_the_solver():
+def test_openings_scores_match_the_solver() -> None:
     import subprocess
 
     from c4a0.evaluation import OPENINGS

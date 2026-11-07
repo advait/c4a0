@@ -1,17 +1,16 @@
 import functools
-from typing import List
 
-from loguru import logger
 import optuna
 import pytorch_lightning as pl
+from loguru import logger
 from pytorch_lightning.callbacks import EarlyStopping
 
-from c4a0.training import SampleDataModule, TrainingGen
 from c4a0.nn import ConnectFourNet, ModelConfig
+from c4a0.training import SampleDataModule, TrainingGen
 from c4a0_rust import Sample
 
 
-def load_samples(base_dir: str, n_gens: int = 5) -> List[Sample]:
+def load_samples(base_dir: str, n_gens: int = 5) -> list[Sample]:
     gens = TrainingGen.load_all(base_dir)[:n_gens]
     game_results = [gen.get_games(base_dir) for gen in gens]
     samples = [
@@ -24,7 +23,7 @@ def load_samples(base_dir: str, n_gens: int = 5) -> List[Sample]:
     return samples
 
 
-def objective(trial: optuna.Trial, samples: List[Sample]):
+def objective(trial: optuna.Trial, samples: list[Sample]) -> float:
     model_config = ModelConfig(
         n_residual_blocks=trial.suggest_int("n_residual_blocks", 0, 1),
         conv_filter_size=trial.suggest_int("conv_filter_size", 16, 64),
@@ -58,7 +57,7 @@ def objective(trial: optuna.Trial, samples: List[Sample]):
     return val_loss
 
 
-def perform_hparam_sweep(base_dir: str, study_name: str = "sweep_hparam"):
+def perform_hparam_sweep(base_dir: str, study_name: str = "sweep_hparam") -> None:
     samples = load_samples(base_dir)
 
     storage_name = f"sqlite:///{study_name}.db"

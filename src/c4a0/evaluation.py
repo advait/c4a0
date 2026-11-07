@@ -8,18 +8,18 @@ intervals derived.
 """
 
 import hashlib
-from pathlib import Path
 import pickle
-from typing import Literal, Optional, Sequence
+from collections.abc import Sequence
+from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
 from pydantic import BaseModel, computed_field
 
+import c4a0_rust
 from c4a0.labels import BUCKET_NAMES, Labels, Moves, Recipe, Split, Suite
 from c4a0.nn import ConnectFourNet
-
-import c4a0_rust
 
 
 class Tally(BaseModel):
@@ -34,7 +34,7 @@ class PolicyEval(BaseModel):
 
     @computed_field
     @property
-    def top1(self) -> Optional[float]:
+    def top1(self) -> float | None:
         n = sum(t.n for t in self.by_bucket.values())
         return sum(t.hits for t in self.by_bucket.values()) / n if n else None
 
@@ -50,7 +50,7 @@ class ValueEval(BaseModel):
 
     @computed_field
     @property
-    def accuracy(self) -> Optional[float]:
+    def accuracy(self) -> float | None:
         n = sum(map(sum, self.confusion))
         return sum(self.confusion[i][i] for i in range(3)) / n if n else None
 
@@ -74,7 +74,7 @@ class SuiteEval(BaseModel):
     """MCTS iterations -> eval of the root visit policy."""
     value: ValueEval
     """Raw network q_no_penalty."""
-    openings_raw: Optional[Tally] = None
+    openings_raw: Tally | None = None
     """Raw policy on OPENINGS (plies 0-1, which hash to train and so are absent from dev/test)."""
     openings_mcts: dict[int, Tally] = {}
 
