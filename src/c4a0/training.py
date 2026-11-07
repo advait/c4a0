@@ -22,7 +22,7 @@ import c4a0_rust
 from c4a0.evaluation import SuiteEval, evaluate_model
 from c4a0.labels import Split, Suite, load_suite
 from c4a0.nn import ConnectFourNet, ModelConfig
-from c4a0.utils import BestModelCheckpoint, GenerationTrainer
+from c4a0.utils import BestModelCheckpoint, GenerationTrainer, lightning_accelerator
 from c4a0_rust import BUF_N_CHANNELS, N_COLS, N_ROWS, PlayGamesResult, Sample
 
 
@@ -233,8 +233,8 @@ def train_single_gen(
     best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
     trainer = GenerationTrainer(
         max_epochs=100,
-        accelerator="auto",
-        devices="auto",
+        accelerator=lightning_accelerator(device),
+        devices=1,
         callbacks=[
             best_model_cb,
             EarlyStopping(monitor="val_loss", patience=10, mode="min"),

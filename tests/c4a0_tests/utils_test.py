@@ -41,3 +41,13 @@ def test_best_model_checkpoint_ignores_sanity_validation() -> None:
 
     assert callback.best_model is not None
     assert callback.best_score == pytest.approx(1.25)
+
+
+def test_lightning_accelerator_follows_the_requested_device() -> None:
+    import torch
+
+    from c4a0.utils import lightning_accelerator
+
+    assert lightning_accelerator(torch.device("cpu")) == "cpu"
+    assert lightning_accelerator(torch.device("cuda")) == "gpu"
+    assert lightning_accelerator(torch.device("mps")) == "mps"

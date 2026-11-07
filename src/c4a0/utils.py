@@ -8,6 +8,12 @@ from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.trainer.trainer import Trainer
 
 
+def lightning_accelerator(device: torch.device) -> str:
+    """The Lightning accelerator that trains on `device`. `"auto"` would pick a GPU even when the
+    caller asked for CPU, leaving the trained model on a different device than its inputs."""
+    return {"cuda": "gpu", "mps": "mps"}.get(device.type, "cpu")
+
+
 def get_torch_device() -> torch.device:
     """Tries to use cuda or mps, if available, otherwise falls back to cpu."""
     if torch.cuda.is_available():
