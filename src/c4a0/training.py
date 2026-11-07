@@ -17,13 +17,18 @@ import torch
 from loguru import logger
 from pydantic import BaseModel, Field
 from pytorch_lightning.callbacks import EarlyStopping
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 
 import c4a0_rust
 from c4a0.evaluation import SuiteEval, evaluate_model
 from c4a0.labels import Split, Suite, load_suite
 from c4a0.nn import ConnectFourNet, ModelConfig
-from c4a0.utils import BestModelCheckpoint, GenerationTrainer, lightning_accelerator
+from c4a0.utils import (
+    BestModelCheckpoint,
+    GenerationTrainer,
+    lightning_accelerator,
+    tensor_batches,
+)
 from c4a0_rust import BUF_N_CHANNELS, N_COLS, N_ROWS, PlayGamesResult, Sample
 
 TemperatureSchedule = list[tuple[int, float]]
@@ -440,17 +445,8 @@ SampleTensor = NewType(
 )
 
 
-class SampleDataset(Dataset[SampleTensor]):
-    """Map-style adapter for the precomputed samples consumed by DataLoader."""
-
-    def __init__(self, samples: list[SampleTensor]) -> None:
-        self.samples = samples
-
-    def __len__(self) -> int:
-        return len(self.samples)
-
-    def __getitem__(self, index: int) -> SampleTensor:
-        return self.samples[index]
+def _stack(samples: Sequence["SampleTensor"]) -> tuple[torch.Tensor, ...]:
+    return tuple(torch.stack(column) for column in zip(*samples, strict=True))
 
 
 class SampleDataModule(pl.LightningDataModule):
@@ -480,17 +476,12 @@ class SampleDataModule(pl.LightningDataModule):
         assert q_no_penalty.shape == ()
         return SampleTensor((pos_t, policy_t, q_penalty_t, q_no_penalty_t))
 
-    def train_dataloader(self) -> DataLoader[SampleTensor]:
-        return DataLoader(
-            SampleDataset(self.training_data),
-            batch_size=self.batch_size,
-            shuffle=True,
-        )
+    def train_dataloader(self) -> DataLoader[tuple[torch.Tensor, ...]]:
+        return tensor_batches(_stack(self.training_data), self.batch_size, True, "cpu")
 
-    def val_dataloader(self) -> DataLoader[SampleTensor]:
-        return DataLoader(
-            SampleDataset(self.validation_data),
-            batch_size=self.batch_size,
+    def val_dataloader(self) -> DataLoader[tuple[torch.Tensor, ...]]:
+        return tensor_batches(
+            _stack(self.validation_data), self.batch_size, False, "cpu"
         )
 
 

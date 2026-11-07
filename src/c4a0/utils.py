@@ -6,6 +6,13 @@ import pytorch_lightning as pl
 import torch
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.trainer.trainer import Trainer
+from torch.utils.data import (
+    BatchSampler,
+    DataLoader,
+    RandomSampler,
+    SequentialSampler,
+    TensorDataset,
+)
 
 
 def lightning_accelerator(device: torch.device) -> str:
@@ -109,3 +116,16 @@ class BestModelCheckpoint(Callback, Generic[M]):
         """
         assert self.best_model is not None, "no model checkpoint called"
         return self.best_model
+
+
+def tensor_batches(
+    tensors: tuple[torch.Tensor, ...], batch_size: int, shuffle: bool, device: str
+) -> DataLoader[tuple[torch.Tensor, ...]]:
+    """Whole-batch indexing into tensors kept on `device`. The default per-sample collate pins one
+    CPU core and starves the GPU (about 33% utilization for the default net, and about 5 of
+    8 minutes per self-play generation with a replay window)."""
+    ds = TensorDataset(*(t.to(device) for t in tensors))
+    sampler = RandomSampler(ds) if shuffle else SequentialSampler(ds)
+    return DataLoader(
+        ds, batch_size=None, sampler=BatchSampler(sampler, batch_size, False)
+    )

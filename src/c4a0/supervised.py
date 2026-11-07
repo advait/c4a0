@@ -15,19 +15,12 @@ from loguru import logger
 from numpy.typing import NDArray
 from pydantic import BaseModel
 from pytorch_lightning.callbacks import EarlyStopping
-from torch.utils.data import (
-    BatchSampler,
-    DataLoader,
-    RandomSampler,
-    SequentialSampler,
-    TensorDataset,
-)
 
 import c4a0_rust
 from c4a0.evaluation import SuiteEval
 from c4a0.labels import Labels
 from c4a0.nn import ConnectFourNet, ModelConfig
-from c4a0.utils import BestModelCheckpoint, GenerationTrainer
+from c4a0.utils import BestModelCheckpoint, GenerationTrainer, tensor_batches
 
 TargetVersion = Literal["pons_terminal_ply_v1"]
 TARGET_VERSION: TargetVersion = "pons_terminal_ply_v1"
@@ -81,18 +74,6 @@ def _mirrored(
     )
 
 
-def _batches(
-    tensors: tuple[torch.Tensor, ...], batch_size: int, shuffle: bool, device: str
-) -> DataLoader[tuple[torch.Tensor, ...]]:
-    """Whole-batch indexing into tensors kept on `device`. The default per-sample collate pins one
-    CPU core and starves the GPU (about 33% utilization for the default net)."""
-    ds = TensorDataset(*(t.to(device) for t in tensors))
-    sampler = RandomSampler(ds) if shuffle else SequentialSampler(ds)
-    return DataLoader(
-        ds, batch_size=None, sampler=BatchSampler(sampler, batch_size, False)
-    )
-
-
 class _EpochLog(pl.Callback):
     """One log line per epoch, so a detached run's progress is visible in its log."""
 
@@ -126,10 +107,12 @@ def fit_supervised(
     """Trains on `train` (plus mirror images) with the self-play loss, early stopping on `val`
     loss. Returns the best model and the number of epochs run."""
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    train_dl = _batches(
+    train_dl = tensor_batches(
         _mirrored(solver_targets(train, c_ply_penalty)), batch_size, True, device
     )
-    val_dl = _batches(solver_targets(val, c_ply_penalty), batch_size, False, device)
+    val_dl = tensor_batches(
+        solver_targets(val, c_ply_penalty), batch_size, False, device
+    )
     best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
     trainer = GenerationTrainer(
         max_epochs=max_epochs,
