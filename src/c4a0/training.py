@@ -254,7 +254,12 @@ def train_single_gen(
     # Self play
     model = parent.get_model(base_dir)
     model.to(device)
-    reqs = [c4a0_rust.GameMetadata(id, 0, 0) for id in range(n_self_play_games)]
+    # game_id seeds move sampling and root noise in Rust. Ids unique across generations give
+    # each generation fresh random streams instead of replaying the previous one's.
+    first_id = gen_n * n_self_play_games
+    reqs = [
+        c4a0_rust.GameMetadata(first_id + i, 0, 0) for i in range(n_self_play_games)
+    ]
     games = c4a0_rust.play_games(
         reqs,
         self_play_batch_size,

@@ -269,3 +269,16 @@ def test_replay_window_loads_only_recent_ancestors(tmp_path: Path) -> None:
     assert replay_training_games(str(tmp_path), parent, current, 1) is current
     with pytest.raises(ValueError, match="at least 1"):
         replay_training_games(str(tmp_path), parent, current, 0)
+
+
+def test_each_generation_gets_fresh_game_ids(tmp_path: Path) -> None:
+    gen = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()), max_gens=2)
+    assert gen.parent is not None
+    parent = TrainingGen.load(str(tmp_path), gen.parent)
+    ids: list[set[int]] = []
+    for g in (parent, gen):
+        games = g.get_games(str(tmp_path))
+        assert games is not None
+        ids.append({r.metadata.game_id for r in games.results})
+    assert len(ids[0]) == len(ids[1]) == 4
+    assert ids[0].isdisjoint(ids[1])
