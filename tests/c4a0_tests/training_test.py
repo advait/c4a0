@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 import torch
 from numpy.typing import NDArray
+from pydantic import ValidationError
 
 import c4a0_rust
 from c4a0 import training
@@ -19,6 +20,7 @@ from c4a0.labels import Split, Suite, load_suite
 from c4a0.nn import ConnectFourNet, ModelConfig
 from c4a0.training import (
     EvalConfig,
+    GenConfig,
     SampleDataModule,
     SampleTensor,
     TrainingGen,
@@ -36,6 +38,25 @@ TINY_CONFIG = ModelConfig(
     n_value_layers=1,
     lr_schedule=parse_lr_schedule([0, 1e-3]),
     l2_reg=0.0,
+)
+TINY_GEN_CONFIG = GenConfig(
+    n_self_play_games=4,
+    n_mcts_iterations=4,
+    c_exploration=2.0,
+    c_ply_penalty=0.01,
+    self_play_batch_size=16,
+    training_batch_size=10_000,
+)
+EXPERIMENT_CONFIG = TINY_GEN_CONFIG.model_copy(
+    update={
+        "greedy_after_ply": 4,
+        "root_noise_alpha": 0.3,
+        "root_noise_frac": 0.25,
+        "value_target_q_weight": 0.6,
+        "temperature_schedule": ((2, 1.5),),
+        "mask_terminal_policy": True,
+        "replay_gens": 2,
+    }
 )
 P = ParamSpec("P")
 
@@ -74,33 +95,15 @@ def _tiny_loop(
     base_dir: Path,
     eval_config: EvalConfig,
     max_gens: int = 1,
-    greedy_after_ply: int | None = None,
-    root_noise_alpha: float | None = None,
-    root_noise_frac: float = 0.0,
-    value_target_q_weight: float = 0.0,
-    temperature_schedule: list[tuple[int, float]] | None = None,
-    mask_terminal_policy: bool = False,
-    replay_gens: int = 1,
+    config: GenConfig = TINY_GEN_CONFIG,
 ) -> TrainingGen:
     return training_loop(
         base_dir=str(base_dir),
         device=torch.device("cpu"),
-        n_self_play_games=4,
-        n_mcts_iterations=4,
-        c_exploration=2.0,
-        c_ply_penalty=0.01,
-        self_play_batch_size=16,
-        training_batch_size=10_000,
+        config=config,
         model_config=TINY_CONFIG,
         max_gens=max_gens,
         eval_config=eval_config,
-        greedy_after_ply=greedy_after_ply,
-        root_noise_alpha=root_noise_alpha,
-        root_noise_frac=root_noise_frac,
-        value_target_q_weight=value_target_q_weight,
-        temperature_schedule=temperature_schedule,
-        mask_terminal_policy=mask_terminal_policy,
-        replay_gens=replay_gens,
     )
 
 
@@ -151,13 +154,7 @@ def test_two_generation_behavior_matches_before_config_refactor(
                 tmp_path,
                 EvalConfig(_tiny_suite()),
                 max_gens=2,
-                greedy_after_ply=4,
-                root_noise_alpha=0.3,
-                root_noise_frac=0.25,
-                value_target_q_weight=0.6,
-                temperature_schedule=[(2, 1.5)],
-                mask_terminal_policy=True,
-                replay_gens=2,
+                config=EXPERIMENT_CONFIG,
             )
     finally:
         torch.set_num_threads(n_threads)
@@ -201,19 +198,25 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(
     gen = _tiny_loop(
         tmp_path,
         EvalConfig(_tiny_suite()),
-        greedy_after_ply=4,
-        root_noise_alpha=0.3,
-        root_noise_frac=0.25,
-        value_target_q_weight=0.6,
-        temperature_schedule=[(2, 1.5)],
-        mask_terminal_policy=True,
         max_gens=2,
-        replay_gens=2,
+        config=EXPERIMENT_CONFIG,
     )
-    assert gen.temperature_schedule == [(2, 1.5)]
-    assert TrainingGen.load(str(tmp_path), gen.created_at).temperature_schedule == [
-        (2, 1.5)
-    ]
+    for published in TrainingGen.load_all(str(tmp_path)):
+        reloaded = TrainingGen.load(str(tmp_path), published.created_at)
+        assert reloaded.config == gen.config
+        metadata = json.loads(
+            (Path(published.gen_folder(str(tmp_path))) / "metadata.json").read_text()
+        )
+        assert "config" not in metadata
+        assert {
+            name: metadata[name] for name in GenConfig.model_fields
+        } == gen.config.model_dump(mode="json")
+        # Legacy readers expect lists of pairs at the top level.
+        assert metadata["temperature_schedule"] == [[2, 1.5]]
+    assert gen.temperature_schedule == ((2, 1.5),)
+    assert TrainingGen.load(str(tmp_path), gen.created_at).temperature_schedule == (
+        (2, 1.5),
+    )
     assert gen.value_target_q_weight == 0.6
     assert TrainingGen.load(str(tmp_path), gen.created_at).value_target_q_weight == 0.6
     assert gen.replay_gens == 2
@@ -309,9 +312,26 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     assert gen.greedy_after_ply is None
     assert gen.root_noise_alpha is None
     assert gen.root_noise_frac == 0.0
-    assert gen.temperature_schedule == [(4, 4.0), (8, 2.0)]
+    assert gen.temperature_schedule == ((4, 4.0), (8, 2.0))
     assert gen.mask_terminal_policy is False
     assert gen.replay_gens == 1
+    assert gen.config.n_self_play_games == 1700
+    # Saving a legacy generation backfills config defaults and keeps its old values.
+    legacy = json.loads((FIXTURES / "legacy_metadata.json").read_text())
+    gen.save_metadata(str(tmp_path))
+    saved = json.loads((gen_dir / "metadata.json").read_text())
+    assert {name: saved[name] for name in legacy} == legacy
+    assert TrainingGen.load(str(tmp_path), created_at).config == gen.config
+
+
+def test_generation_config_is_frozen() -> None:
+    config = GenConfig.model_validate_json(
+        (FIXTURES / "legacy_metadata.json").read_text()
+    )
+    with pytest.raises(ValidationError, match="frozen"):
+        config.__setattr__("n_mcts_iterations", 8)
+    # An immutable schedule prevents mutation through a frozen model's containers.
+    assert isinstance(config.temperature_schedule, tuple)
 
 
 def test_replay_window_loads_only_recent_ancestors(tmp_path: Path) -> None:

@@ -2,6 +2,7 @@ import pytest
 from typer.testing import CliRunner
 
 from c4a0 import main
+from c4a0.training import GenConfig
 
 
 @pytest.mark.parametrize(
@@ -14,7 +15,7 @@ from c4a0 import main
                 "root_noise_alpha": None,
                 "root_noise_frac": 0.0,
                 "value_target_q_weight": 0.0,
-                "temperature_schedule": [(4, 4.0), (8, 2.0)],
+                "temperature_schedule": ((4, 4.0), (8, 2.0)),
                 "mask_terminal_policy": False,
                 "replay_gens": 1,
             },
@@ -40,7 +41,7 @@ from c4a0 import main
                 "root_noise_alpha": 0.3,
                 "root_noise_frac": 0.25,
                 "value_target_q_weight": 0.6,
-                "temperature_schedule": [(2, 1.5)],
+                "temperature_schedule": ((2, 1.5),),
                 "mask_terminal_policy": True,
                 "replay_gens": 3,
             },
@@ -58,9 +59,11 @@ def test_train_cli_forwards_experiment_flags(
     monkeypatch.setattr(main, "training_loop", capture_training)
     result = CliRunner().invoke(main.app, ["train", *flags])
     assert result.exit_code == 0, result.output
-    assert captured["c_exploration"] == 2.0
+    config = captured["config"]
+    assert isinstance(config, GenConfig)
+    assert config.c_exploration == 2.0
     for key, value in expected.items():
-        assert captured[key] == value
+        assert config.model_dump()[key] == value
 
 
 @pytest.mark.parametrize(

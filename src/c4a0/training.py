@@ -15,7 +15,7 @@ from typing import NewType
 import pytorch_lightning as pl
 import torch
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pytorch_lightning.callbacks import EarlyStopping
 from torch.utils.data import DataLoader
 
@@ -48,13 +48,17 @@ def default_eval_config(mcts_iterations: Sequence[int] = ()) -> EvalConfig:
     return EvalConfig(load_suite(Split.DEV), tuple(mcts_iterations))
 
 
-class TrainingGen(BaseModel):
-    """
-    Represents a single generation of training.
+class GenConfig(BaseModel):
+    """Per-generation controls, shared by the CLI, loop and published metadata.
+
+    TrainingGen inherits these fields to preserve the flat metadata.json schema.
+    Defaults also apply when loading older metadata that omits newer controls.
     """
 
-    created_at: datetime
-    gen_n: int
+    model_config = ConfigDict(frozen=True)
+
+    # Older metadata did not record this count; use the historical CLI default.
+    n_self_play_games: int = 1700
     n_mcts_iterations: int
     c_exploration: float
     c_ply_penalty: float
@@ -64,11 +68,16 @@ class TrainingGen(BaseModel):
     root_noise_alpha: float | None = None
     root_noise_frac: float = 0.0
     value_target_q_weight: float = Field(default=0.0, ge=0.0, le=1.0)
-    temperature_schedule: TemperatureSchedule = Field(
-        default_factory=lambda: list(DEFAULT_TEMPERATURE_SCHEDULE)
-    )
+    temperature_schedule: tuple[tuple[int, float], ...] = DEFAULT_TEMPERATURE_SCHEDULE
     mask_terminal_policy: bool = False
     replay_gens: int = Field(default=1, ge=1)
+
+
+class TrainingGen(GenConfig):
+    """A published generation with its config fields kept flat for legacy readers."""
+
+    created_at: datetime
+    gen_n: int
     parent: datetime | None = None
     val_loss: float | None = None
     solver_score: float | None = None
@@ -76,6 +85,13 @@ class TrainingGen(BaseModel):
     column order). Never written again; use `evals`."""
     evals: dict[str, SuiteEval] = {}
     """Suite name -> score of THIS generation's saved model.pkl."""
+
+    @property
+    def config(self) -> GenConfig:
+        """Derive only config fields, including future controls, from flat metadata."""
+        return GenConfig.model_validate(
+            self.model_dump(include=set(GenConfig.model_fields))
+        )
 
     @staticmethod
     def _gen_folder(created_at: datetime, base_dir: str) -> str:
@@ -169,23 +185,10 @@ class TrainingGen(BaseModel):
     @staticmethod
     def load_latest_with_default(
         base_dir: str,
-        n_mcts_iterations: int,
-        c_exploration: float,
-        c_ply_penalty: float,
-        self_play_batch_size: int,
-        training_batch_size: int,
+        config: GenConfig,
         model_config: ModelConfig,
         eval_config: EvalConfig,
-        greedy_after_ply: int | None = None,
-        root_noise_alpha: float | None = None,
-        root_noise_frac: float = 0.0,
-        value_target_q_weight: float = 0.0,
-        temperature_schedule: TemperatureSchedule | None = None,
-        mask_terminal_policy: bool = False,
-        replay_gens: int = 1,
     ) -> "TrainingGen":
-        if temperature_schedule is None:
-            temperature_schedule = list(DEFAULT_TEMPERATURE_SCHEDULE)
         try:
             return TrainingGen.load_latest(base_dir)
         except FileNotFoundError:
@@ -193,18 +196,7 @@ class TrainingGen(BaseModel):
             gen = TrainingGen(
                 created_at=datetime.now(),
                 gen_n=0,
-                n_mcts_iterations=n_mcts_iterations,
-                c_exploration=c_exploration,
-                c_ply_penalty=c_ply_penalty,
-                self_play_batch_size=self_play_batch_size,
-                training_batch_size=training_batch_size,
-                greedy_after_ply=greedy_after_ply,
-                root_noise_alpha=root_noise_alpha,
-                root_noise_frac=root_noise_frac,
-                value_target_q_weight=value_target_q_weight,
-                temperature_schedule=temperature_schedule,
-                mask_terminal_policy=mask_terminal_policy,
-                replay_gens=replay_gens,
+                **config.model_dump(),
             )
             model = ConnectFourNet(model_config)
             gen.publish(base_dir, None, model, eval_config)
@@ -246,20 +238,8 @@ def train_single_gen(
     base_dir: str,
     device: torch.device,
     parent: TrainingGen,
-    n_self_play_games: int,
-    n_mcts_iterations: int,
-    c_exploration: float,
-    c_ply_penalty: float,
-    self_play_batch_size: int,
-    training_batch_size: int,
+    config: GenConfig,
     eval_config: EvalConfig,
-    greedy_after_ply: int | None = None,
-    root_noise_alpha: float | None = None,
-    root_noise_frac: float = 0.0,
-    value_target_q_weight: float = 0.0,
-    temperature_schedule: TemperatureSchedule | None = None,
-    mask_terminal_policy: bool = False,
-    replay_gens: int = 1,
 ) -> TrainingGen:
     """
     Trains a new generation from the given parent.
@@ -267,8 +247,6 @@ def train_single_gen(
     Then train a new model based on the parent model using the generated samples.
     Finally, publish the games and model, scoring the saved model with `eval_config`.
     """
-    if temperature_schedule is None:
-        temperature_schedule = list(DEFAULT_TEMPERATURE_SCHEDULE)
     gen_n = parent.gen_n + 1
     logger.info(f"Beginning new generation {gen_n} from {parent.gen_n}")
 
@@ -279,37 +257,38 @@ def train_single_gen(
     model.to(device)
     # game_id seeds move sampling and root noise in Rust. Ids unique across generations give
     # each generation fresh random streams instead of replaying the previous one's.
-    first_id = gen_n * n_self_play_games
+    first_id = gen_n * config.n_self_play_games
     reqs = [
-        c4a0_rust.GameMetadata(first_id + i, 0, 0) for i in range(n_self_play_games)
+        c4a0_rust.GameMetadata(first_id + i, 0, 0)
+        for i in range(config.n_self_play_games)
     ]
     games = c4a0_rust.play_games(
         reqs,
-        self_play_batch_size,
-        n_mcts_iterations,
-        c_exploration,
-        c_ply_penalty,
+        config.self_play_batch_size,
+        config.n_mcts_iterations,
+        config.c_exploration,
+        config.c_ply_penalty,
         lambda player_id, pos: model.forward_numpy(pos),
-        greedy_after_ply=greedy_after_ply,
-        root_noise_alpha=root_noise_alpha,
-        root_noise_frac=root_noise_frac,
-        value_target_q_weight=value_target_q_weight,
-        temperature_schedule=temperature_schedule,
+        greedy_after_ply=config.greedy_after_ply,
+        root_noise_alpha=config.root_noise_alpha,
+        root_noise_frac=config.root_noise_frac,
+        value_target_q_weight=config.value_target_q_weight,
+        temperature_schedule=config.temperature_schedule,
     )
 
     # Training
     logger.info("Beginning training")
     model = copy.deepcopy(model)
-    training_games = replay_training_games(base_dir, parent, games, replay_gens)
+    training_games = replay_training_games(base_dir, parent, games, config.replay_gens)
     logger.info(
         "Training on {} games from up to {} generations",
         len(training_games.results),
-        replay_gens,
+        config.replay_gens,
     )
     train, test = training_games.split_train_test(
-        0.8, 1337, mask_terminal_policy=mask_terminal_policy
+        0.8, 1337, mask_terminal_policy=config.mask_terminal_policy
     )
-    data_module = SampleDataModule(train, test, training_batch_size)
+    data_module = SampleDataModule(train, test, config.training_batch_size)
     best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
     trainer = GenerationTrainer(
         max_epochs=100,
@@ -330,18 +309,7 @@ def train_single_gen(
     gen = TrainingGen(
         created_at=datetime.now(),
         gen_n=parent.gen_n + 1,
-        n_mcts_iterations=n_mcts_iterations,
-        c_exploration=c_exploration,
-        c_ply_penalty=c_ply_penalty,
-        self_play_batch_size=self_play_batch_size,
-        training_batch_size=training_batch_size,
-        greedy_after_ply=greedy_after_ply,
-        root_noise_alpha=root_noise_alpha,
-        root_noise_frac=root_noise_frac,
-        value_target_q_weight=value_target_q_weight,
-        temperature_schedule=temperature_schedule,
-        mask_terminal_policy=mask_terminal_policy,
-        replay_gens=replay_gens,
+        **config.model_dump(),
         parent=parent.created_at,
         val_loss=best_model_cb.best_score,
     )
@@ -352,38 +320,17 @@ def train_single_gen(
 def training_loop(
     base_dir: str,
     device: torch.device,
-    n_self_play_games: int,
-    n_mcts_iterations: int,
-    c_exploration: float,
-    c_ply_penalty: float,
-    self_play_batch_size: int,
-    training_batch_size: int,
+    config: GenConfig,
     model_config: ModelConfig,
     max_gens: int | None = None,
     eval_config: EvalConfig | None = None,
-    greedy_after_ply: int | None = None,
-    root_noise_alpha: float | None = None,
-    root_noise_frac: float = 0.0,
-    value_target_q_weight: float = 0.0,
-    temperature_schedule: TemperatureSchedule | None = None,
-    mask_terminal_policy: bool = False,
-    replay_gens: int = 1,
 ) -> TrainingGen:
     """Main training loop. Sequentially trains generation after generation. Each generation's
     saved model is scored on `eval_config` (default: raw network on the v1 dev suite)."""
-    if replay_gens < 1:
-        raise ValueError("replay_gens must be at least 1")
-    if temperature_schedule is None:
-        temperature_schedule = list(DEFAULT_TEMPERATURE_SCHEDULE)
     eval_config = eval_config or default_eval_config()
     logger.info("Beginning training loop")
     logger.info("device: {}", device)
-    logger.info("n_self_play_games: {}", n_self_play_games)
-    logger.info("n_mcts_iterations: {}", n_mcts_iterations)
-    logger.info("c_exploration: {}", c_exploration)
-    logger.info("c_ply_penalty: {}", c_ply_penalty)
-    logger.info("self_play_batch_size: {}", self_play_batch_size)
-    logger.info("training_batch_size: {}", training_batch_size)
+    logger.info("config: \n{}", config.model_dump_json(indent=2))
     logger.info("model_config: \n{}", model_config.model_dump_json(indent=2))
     logger.info("max_gens: {}", max_gens)
     logger.info(
@@ -394,20 +341,9 @@ def training_loop(
 
     gen = TrainingGen.load_latest_with_default(
         base_dir=base_dir,
-        n_mcts_iterations=n_mcts_iterations,
-        c_exploration=c_exploration,
-        c_ply_penalty=c_ply_penalty,
-        self_play_batch_size=self_play_batch_size,
-        training_batch_size=training_batch_size,
+        config=config,
         model_config=model_config,
         eval_config=eval_config,
-        greedy_after_ply=greedy_after_ply,
-        root_noise_alpha=root_noise_alpha,
-        root_noise_frac=root_noise_frac,
-        value_target_q_weight=value_target_q_weight,
-        temperature_schedule=temperature_schedule,
-        mask_terminal_policy=mask_terminal_policy,
-        replay_gens=replay_gens,
     )
 
     while True:
@@ -415,20 +351,8 @@ def training_loop(
             base_dir=base_dir,
             device=device,
             parent=gen,
-            n_self_play_games=n_self_play_games,
-            n_mcts_iterations=n_mcts_iterations,
-            c_exploration=c_exploration,
-            c_ply_penalty=c_ply_penalty,
-            self_play_batch_size=self_play_batch_size,
-            training_batch_size=training_batch_size,
+            config=config,
             eval_config=eval_config,
-            greedy_after_ply=greedy_after_ply,
-            root_noise_alpha=root_noise_alpha,
-            root_noise_frac=root_noise_frac,
-            value_target_q_weight=value_target_q_weight,
-            temperature_schedule=temperature_schedule,
-            mask_terminal_policy=mask_terminal_policy,
-            replay_gens=replay_gens,
         )
         if max_gens is not None and gen.gen_n >= max_gens:
             return gen

@@ -37,6 +37,7 @@ from c4a0.supervised import TARGET_VERSION, CeilingReport, fit_supervised  # noq
 from c4a0.sweep import perform_hparam_sweep  # noqa: E402
 from c4a0.tournament import ModelID, RandomPlayer, UniformPlayer  # noqa: E402
 from c4a0.training import (  # noqa: E402
+    GenConfig,
     TrainingGen,
     default_eval_config,
     parse_lr_schedule,
@@ -97,25 +98,28 @@ def train(
         l2_reg=l2_reg,
     )
 
-    training_loop(
-        base_dir=base_dir,
-        device=torch.device(device),
+    config = GenConfig(
         n_self_play_games=n_self_play_games,
         n_mcts_iterations=n_mcts_iterations,
         c_exploration=c_exploration,
         c_ply_penalty=c_ply_penalty,
         self_play_batch_size=self_play_batch_size,
         training_batch_size=training_batch_size,
-        model_config=model_config,
-        max_gens=max_gens,
-        eval_config=default_eval_config(eval_mcts_iterations),
         greedy_after_ply=greedy_after_ply,
         root_noise_alpha=root_noise_alpha,
         root_noise_frac=root_noise_frac,
         value_target_q_weight=value_target_q_weight,
-        temperature_schedule=parsed_temperature_schedule,
+        temperature_schedule=tuple(parsed_temperature_schedule),
         mask_terminal_policy=mask_terminal_policy,
         replay_gens=replay_gens,
+    )
+    training_loop(
+        base_dir=base_dir,
+        device=torch.device(device),
+        config=config,
+        model_config=model_config,
+        max_gens=max_gens,
+        eval_config=default_eval_config(eval_mcts_iterations),
     )
 
 
@@ -200,12 +204,14 @@ def mcts_sweep(
         gen = training_loop(
             base_dir=str(trial_path),
             device=torch.device(device),
-            n_self_play_games=trial.suggest_int("n_self_play_games", 1000, 5000),
-            n_mcts_iterations=trial.suggest_int("n_mcts_iterations", 100, 1500),
-            c_exploration=trial.suggest_float("c_exploration", 0.5, 12.0),
-            c_ply_penalty=c_ply_penalty,
-            self_play_batch_size=self_play_batch_size,
-            training_batch_size=training_batch_size,
+            config=GenConfig(
+                n_self_play_games=trial.suggest_int("n_self_play_games", 1000, 5000),
+                n_mcts_iterations=trial.suggest_int("n_mcts_iterations", 100, 1500),
+                c_exploration=trial.suggest_float("c_exploration", 0.5, 12.0),
+                c_ply_penalty=c_ply_penalty,
+                self_play_batch_size=self_play_batch_size,
+                training_batch_size=training_batch_size,
+            ),
             model_config=model_config,
             max_gens=max_gens_per_trial,
             eval_config=eval_config,
