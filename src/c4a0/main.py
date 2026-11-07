@@ -61,7 +61,7 @@ def train(
     n_policy_layers: int = 4,
     n_value_layers: int = 2,
     lr_schedule: list[float] = typer.Option(
-        default_factory=lambda: [0, 2e-3, 10, 8e-4]
+        default_factory=lambda: [0, 2e-3, 10, 8e-4], show_default="0 2e-3 10 8e-4"
     ),
     l2_reg: float = 4e-4,
     max_gens: int | None = None,
@@ -77,7 +77,9 @@ def train(
     replay_gens: int = typer.Option(8, min=1),
     train_max_epochs: int = typer.Option(20, min=1),
     train_patience: int = typer.Option(3, min=1),
-    eval_mcts_iterations: list[int] = typer.Option(default_factory=lambda: [64, 256]),
+    eval_mcts_iterations: list[int] = typer.Option(
+        default_factory=lambda: [64, 256], show_default="64 256"
+    ),
 ) -> None:
     """Trains a model via self-play. Each generation's saved model is scored on the v1 dev
     suite (raw network, plus MCTS at each --eval-mcts-iterations budget)."""
@@ -210,7 +212,9 @@ def ceiling(
     seed: int = 0,
     c_exploration: float = 2.0,
     c_ply_penalty: float = 0.01,
-    mcts_iterations: list[int] = typer.Option(default_factory=list),
+    mcts_iterations: list[int] = typer.Option(
+        default_factory=list, show_default="none"
+    ),
     report_test: bool = False,
 ) -> None:
     """
@@ -278,7 +282,9 @@ def ceiling(
 def eval_gens(
     base_dir: str = "training",
     split: Split = Split.DEV,
-    mcts_iterations: list[int] = typer.Option(default_factory=list),
+    mcts_iterations: list[int] = typer.Option(
+        default_factory=list, show_default="none"
+    ),
 ) -> None:
     """Scores every published generation's model.pkl on a suite and stores it in the
     generation's evals (replacing any earlier score on that suite)."""

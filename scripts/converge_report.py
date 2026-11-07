@@ -1,8 +1,9 @@
 """Summarize convergence runs: per run, the dev-suite score curve across generations.
 
-Usage: uv run python scripts/converge_report.py <experiment-dir> [--budget 256] [--every 5]
+Usage: uv run python scripts/converge_report.py <dir> [--budget 256] [--every 5]
 
-<experiment-dir> holds one base dir per run (e.g. ctrl-r1/, q05-r1/). The headline is the
+<dir> is one training base dir (e.g. training/) or a directory holding one base dir per run
+(e.g. ctrl-r1/, q05-r1/). The headline is the
 convergence predicate: MCTS keeps-the-result top-1 at --budget. Strict fastest-win top-1 and the
 opening buckets (plies 0-11) are shown beside it. Runs whose arm name differs only in a trailing
 -r<N> are grouped, so replicate spread is visible.
@@ -58,11 +59,15 @@ def main() -> None:
     ap.add_argument("--every", type=int, default=5)
     args = ap.parse_args()
 
-    runs = {
-        d.name: curve(d, args.budget)
-        for d in sorted(args.experiment.iterdir())
-        if d.is_dir()
-    }
+    # One run (generation dirs inside) or a directory of runs.
+    if any(args.experiment.glob("*/metadata.json")):
+        runs = {args.experiment.name: curve(args.experiment, args.budget)}
+    else:
+        runs = {
+            d.name: curve(d, args.budget)
+            for d in sorted(args.experiment.iterdir())
+            if d.is_dir()
+        }
     arms: dict[str, list[str]] = defaultdict(list)
     for name in runs:
         arms[re.sub(r"-r\d+$", "", name)].append(name)
