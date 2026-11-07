@@ -96,7 +96,8 @@ RUN_DIR=$(dirname "$0")
 C4A0_RUN_DIR=$RUN_DIR
 limit=$(cat "$RUN_DIR/timeout")
 git rev-parse HEAD > "$RUN_DIR/commit"
-timeout -k 30s "$limit" mise exec -- "$@"
+# alapin is the maintainer's desktop: runs always yield CPU to it.
+nice -n 19 timeout -k 30s "$limit" mise exec -- "$@"
 rc=$?
 printf '%s\n' "$rc" > "$RUN_DIR/exit_code.tmp"
 mv "$RUN_DIR/exit_code.tmp" "$RUN_DIR/exit_code"
