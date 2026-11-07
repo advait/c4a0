@@ -291,7 +291,6 @@ dependencies = [
     { name = "tensorboard" },
     { name = "tensorboardx" },
     { name = "torch" },
-    { name = "torchmetrics" },
     { name = "tqdm" },
     { name = "typer" },
 ]
@@ -324,7 +323,6 @@ requires-dist = [
     { name = "tensorboard", specifier = ">=2.21.0" },
     { name = "tensorboardx", specifier = ">=2.6.5" },
     { name = "torch", specifier = ">=2.12.1" },
-    { name = "torchmetrics", specifier = ">=1.9.0" },
     { name = "tqdm", specifier = ">=4.68.3" },
     { name = "typer", specifier = ">=0.26.8" },
 ]

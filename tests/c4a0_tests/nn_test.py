@@ -1,3 +1,5 @@
+import copy
+
 import pytest
 import torch
 
@@ -149,3 +151,52 @@ def test_terminal_policy_mask_keeps_value_loss(
     assert logits.grad is not None
     if mask:
         assert torch.count_nonzero(logits.grad[0]).item() == 0
+
+
+def _tiny_net() -> ConnectFourNet:
+    return ConnectFourNet(
+        ModelConfig(
+            n_residual_blocks=1,
+            conv_filter_size=8,
+            n_policy_layers=1,
+            n_value_layers=1,
+            lr_schedule={0: 1e-3},
+            l2_reg=0.0,
+        )
+    )
+
+
+def _batch(n: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    generator = torch.Generator().manual_seed(0)
+    return (
+        torch.rand(n, 2, 6, 7, generator=generator),
+        torch.softmax(torch.rand(n, 7, generator=generator), dim=1),
+        torch.rand(n, generator=generator) * 2 - 1,
+        torch.rand(n, generator=generator) * 2 - 1,
+    )
+
+
+def test_model_deepcopies_after_a_training_step() -> None:
+    # BestModelCheckpoint deep-copies the model at validation end. A torchmetrics loss module
+    # kept its last training result with an autograd graph, which made that copy fail.
+    model = _tiny_net()
+    model.train()
+    model.step(_batch(4), "train")
+    copy.deepcopy(model)
+
+
+def test_policy_loss_is_batchmean_kl_of_target_to_prediction() -> None:
+    model = _tiny_net()
+    pos, policy, q_penalty, q_no_penalty = _batch(6)
+    with torch.no_grad():
+        loss = model.step((pos, policy, q_penalty, q_no_penalty), "val")
+        logprob, qp, qn = model.forward(pos)
+        target_log = torch.log(policy + ConnectFourNet.EPS)
+        expected = (
+            torch.nn.functional.kl_div(
+                logprob, target_log, log_target=True, reduction="batchmean"
+            )
+            + torch.nn.functional.mse_loss(qp, q_penalty)
+            + torch.nn.functional.mse_loss(qn, q_no_penalty)
+        )
+    assert torch.allclose(loss, expected, atol=1e-6)

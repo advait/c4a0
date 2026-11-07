@@ -5,7 +5,6 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import torchmetrics
 from einops import rearrange
 from loguru import logger
 from numpy.typing import NDArray
@@ -102,11 +101,6 @@ class ConnectFourNet(pl.LightningModule):
             nn.Tanh(),
         )
 
-        # Metrics
-        self.policy_kl_div = torchmetrics.KLDivergence(log_prob=True)
-        self.q_penalty_mse = torchmetrics.MeanSquaredError()
-        self.q_no_penalty_mse = torchmetrics.MeanSquaredError()
-
         self.save_hyperparameters(config.model_dump())
 
     def forward(
@@ -174,19 +168,18 @@ class ConnectFourNet(pl.LightningModule):
         policy_logprob, q_penalty_pred, q_no_penalty_pred = self.forward(pos)
         policy_logprob_targets = torch.log(policy_target + self.EPS)
 
-        # Losses
+        # Losses. Computed functionally: torchmetrics modules cache their last result with its
+        # autograd graph, which made BestModelCheckpoint's deepcopy of the model fail.
+        # KL(target || prediction) per row; rows with an all-zero target (masked terminal
+        # positions) contribute zero, and the mean is over the full batch so other rows keep
+        # their weight.
         has_policy = policy_target.sum(dim=1) > 0
-        if bool(has_policy.all()):
-            policy_loss = self.policy_kl_div(policy_logprob_targets, policy_logprob)
-        else:
-            # Zero targets mask terminal policy loss. Divide by the full batch size
-            # so masked rows contribute exactly zero without reweighting other rows.
-            row_kl = (
-                policy_logprob_targets.exp() * (policy_logprob_targets - policy_logprob)
-            ).sum(dim=1)
-            policy_loss = row_kl.masked_fill(~has_policy, 0.0).mean()
-        q_penalty_loss = self.q_penalty_mse(q_penalty_pred, q_penalty_target)
-        q_no_penalty_loss = self.q_no_penalty_mse(
+        row_kl = (
+            policy_logprob_targets.exp() * (policy_logprob_targets - policy_logprob)
+        ).sum(dim=1)
+        policy_loss = row_kl.masked_fill(~has_policy, 0.0).mean()
+        q_penalty_loss = nn.functional.mse_loss(q_penalty_pred, q_penalty_target)
+        q_no_penalty_loss = nn.functional.mse_loss(
             q_no_penalty_pred, q_no_penalty_target
         )
         loss = policy_loss + q_penalty_loss + q_no_penalty_loss
