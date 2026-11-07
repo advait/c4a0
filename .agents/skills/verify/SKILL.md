@@ -23,8 +23,12 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
 - PUCT with true-mean Q is the only search; the exploration default is now 2.0.
   Search tests assert preferred moves and visit spread, including the low-prior immediate
   win that the old formula starved. Do not restore old-formula visit-share thresholds.
-- For experiment controls, `pybridge_test.py` covers greedy moves, root noise and terminal
-  target masking; `nn_test.py` checks masked policy loss and gradients. `training_test.py`
+- For experiment controls, `mcts.rs` tests root-Q blending at W=0, W=0.25 and W=1,
+  unchanged terminal targets, signed-zero preservation in draws, and positive targets
+  for either player in immediate-win positions. `self_play.rs` checks the default
+  temperature at every ply 0-41, custom boundaries and the greedy override.
+  `pybridge_test.py` covers greedy moves, root noise, value blending, temperature schedules
+  and terminal target masking; `nn_test.py` checks masked policy loss and gradients. `training_test.py`
   checks replay from disk, saved metadata and the saved model's validation loss on the
   replay union. `main_test.py` checks CLI defaults and flag forwarding.
 - Raw-network dev eval of a default model (2447 positions, suite load through `SuiteEval`)
@@ -39,7 +43,8 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   Rust self-play, the PyO3 callback, Lightning training and saving.
 - The smoke task uses default controls. To exercise enabled controls, use its tiny CLI
   command with `--max-gens 2 --greedy-after-ply 8 --root-noise-alpha 0.3
-  --root-noise-frac 0.25 --mask-terminal-policy --replay-gens 2`. Generation two trains on
+  --root-noise-frac 0.25 --mask-terminal-policy --replay-gens 2
+  --value-target-q-weight 0.6 --temperature-schedule 2:1.5`. Generation two trains on
   eight games but saves only its four new games. This proves plumbing, not convergence.
 - One realistic generation (256 games, 256 MCTS iterations, default 1-block 32-filter
   network, `--device cpu`) took 276 s. Self-play was 229 s and training 43 s. Use a
@@ -103,10 +108,22 @@ the architecture's raw top-1 is not a bound on MCTS play.
   applies to `eval` backfills, which read exploration from each generation's metadata.
   Label old and new search results and match budgets and exploration before comparing.
 - All new controls preserve the previous self-play and training behavior by default:
-  `greedy_after_ply=None` keeps temperatures 4 below ply 4, 2 below ply 8, then 1;
+  `temperature_schedule=[(4, 4.0), (8, 2.0)]` keeps temperatures 4 below ply 4,
+  2 below ply 8, then 1; `greedy_after_ply=None` leaves that schedule in effect;
+  `value_target_q_weight=0.0` keeps the exact final-outcome value targets;
   `root_noise_alpha=None` and `root_noise_frac=0` disable noise;
   `mask_terminal_policy=False` keeps terminal policy supervision; `replay_gens=1` uses
   only new games. These are also the defaults when loading old metadata.
+- `--value-target-q-weight W` blends each non-terminal head's final-outcome target z
+  with that head's root MCTS mean, `(1-W)*z + W*q_root`. Root means are captured before
+  advancing the root and use the player-to-move perspective. W must be finite and in
+  [0, 1]. Terminal samples always keep z. No convergence benefit is established by
+  component or smoke tests.
+- `--temperature-schedule SPEC` takes comma-separated `until_ply:temperature` pairs.
+  Plies are non-negative integers in strictly increasing order; temperatures are finite
+  and positive. Boundaries are exclusive, with 1.0 after the last pair. For example,
+  `2:1.5` uses 1.5 at plies 0-1 and 1.0 afterwards. `greedy_after_ply` takes precedence.
+  Metadata stores `temperature_schedule` as a list of pairs.
 - Root noise affects self-play only, once per move over legal priors, including retained
   subtrees. Evaluation and interactive play never mix noise. Alpha must be positive and
   finite; fraction must be in [0, 1], with alpha supplied when fraction is positive.

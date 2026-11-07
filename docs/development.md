@@ -154,12 +154,20 @@ Old metadata loads with the defaults below.
 | `--greedy-after-ply K` | unset | `greedy_after_ply` | At ply >= K, choose a most-visited legal move with uniform random ties. Ply counts moves already played; 0 is greedy throughout. |
 | `--root-noise-alpha A` | unset | `root_noise_alpha` | Positive finite Dirichlet concentration over legal root moves. Requires a positive noise fraction to take effect. |
 | `--root-noise-frac E` | 0 | `root_noise_frac` | Mix `(1-E)*P + E*eta` once per self-play root. E is in [0, 1]; positive E requires alpha. |
+| `--value-target-q-weight W` | 0.0 | `value_target_q_weight` | Blend each non-terminal value target as `(1-W)*z + W*q_root` for each head. W must be finite and in [0, 1]. Terminal targets keep z. |
+| `--temperature-schedule SPEC` | `4:4.0,8:2.0` | `temperature_schedule` | Comma list of `until_ply:temperature` pairs, stored as a list of pairs. Boundaries are non-negative integers in strictly increasing order; temperatures are finite and positive. Use 1.0 after the last boundary. The greedy cutoff overrides the schedule. |
 | `--mask-terminal-policy` | off | `mask_terminal_policy` | Terminal rows contribute both value losses and zero policy loss. Policy loss averages over the full batch. |
 | `--replay-gens G` | 1 | `replay_gens` | Train on new games plus up to G-1 ancestors' games loaded from `games.pkl`, split by whole game. G must be at least 1. |
 
-Without a greedy cutoff, the move temperature remains 4.0 below ply 4, 2.0 below ply 8,
-and 1.0 afterwards. Root noise uses a separate RNG stream seeded by game ID and ply.
+The default schedule uses temperature 4.0 below ply 4, 2.0 below ply 8, and 1.0 afterwards.
+For example, `--temperature-schedule 2:1.5` uses 1.5 for plies 0 and 1, then 1.0.
+Root noise uses a separate RNG stream seeded by game ID and ply.
 It never affects evaluation or interactive play, and never changes cached NN estimates.
+Value blending records both root MCTS means after search, before the move advances the root.
+Each mean uses the player-to-move perspective at the recorded position, as does the final
+outcome z. W=1 uses those root means for non-terminal samples; W=0 preserves the exact
+previous sample values. This control tests whether noisy continuations distort opening
+value targets. Its effect on convergence still needs an experiment.
 Terminal masking changes training copies and leaves saved targets intact.
 Each generation saves only its new games, so replay does not duplicate past windows.
 If a resumed run changes self-play settings, its replay window can include games from
@@ -167,7 +175,8 @@ the earlier settings until those generations leave the window.
 
 To check all controls together, run the tiny command above with `--max-gens 2` and add
 `--greedy-after-ply 8 --root-noise-alpha 0.3 --root-noise-frac 0.25
---mask-terminal-policy --replay-gens 2`.
+--mask-terminal-policy --replay-gens 2 --value-target-q-weight 0.6
+--temperature-schedule 2:1.5`.
 
 To measure convergence, hold the MCTS budget fixed and include
 `--eval-mcts-iterations 64`. Judge move selection by MCTS top-1 against the solver.
