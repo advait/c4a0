@@ -11,11 +11,9 @@ dependencies = [
   "tensorboardx>=2.6.5",
   "tensorboard>=2.21.0",
   "tqdm>=4.68.3",
-  "jupyterlab>=4.6.1",
   "pydantic>=2.13.4",
   "tabulate>=0.10.0",
   "matplotlib>=3.11.0",
-  "maturin>=1.14.1",
   "loguru>=0.7.3",
   "typer>=0.26.8",
   "optuna>=4.9.0",
@@ -23,7 +21,7 @@ dependencies = [
   "torch>=2.12.1",
 ]
 readme = "README.md"
-requires-python = ">= 3.11"
+requires-python = "==3.11.15"
 
 [build-system]
 requires = ["maturin>=1.14.1,<2"]
@@ -34,19 +32,16 @@ python-source = "src"
 python-packages = ["c4a0", "c4a0_rust"]
 module-name = "c4a0_rust._native"
 
-[tool.uv]
-managed = true
-
 [dependency-groups]
 dev = [
+  "maturin==1.14.1",
   "pytest>=9.1.1",
   "pytest-asyncio>=1.4.0",
   "pyright>=1.1.411",
-  "jupyterlab>=4.6.1",
-  "pandas>=3.0.3",
-  "rankit>=0.3.3",
   "ruff>=0.15.20",
 ]
+
+notebook = ["jupyterlab>=4.6.1", "pandas>=3.0.3", "rankit>=0.3.3"]
 
 [tool.pyright]
 typeCheckingMode = "basic"

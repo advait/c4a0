@@ -4,16 +4,15 @@ min_version = "2026.1.6"
 dir = "{{config_root}}"
 
 [tools]
-python = "3.11.15"
 rust = "stable"
-uv = "0.11.25"
+uv = "0.13.7"
 
 [env]
 UV_LINK_MODE = "copy"
 
 [tasks.install]
 description = "Install Python dependencies and build the editable package with uv"
-run = "uv sync --frozen"
+run = "uv sync --locked"
 sources = [
   "pyproject.toml",
   "uv.lock",
@@ -27,15 +26,13 @@ outputs = [".venv/pyvenv.cfg"]
 [tasks."install:update"]
 description = "Install dependencies and allow uv.lock updates"
 run = "uv sync"
-sources = ["pyproject.toml", "uv.lock"]
-outputs = [".venv/pyvenv.cfg"]
 
 # Build
 
 [tasks.build]
 description = "Build/install the optimized PyO3 extension into the uv environment"
 depends = ["install"]
-run = "uv run maturin develop --release"
+run = "uv run --locked maturin develop --release"
 
 # Validation
 
@@ -51,12 +48,12 @@ run = [
 [tasks.lint]
 description = "Run Ruff lint checks"
 depends = ["install"]
-run = "uv run ruff check"
+run = "uv run --locked ruff check"
 
 [tasks.typecheck]
 description = "Run Pyright type checks"
 depends = ["install"]
-run = "uv run pyright"
+run = "uv run --locked pyright"
 
 [tasks.test]
 description = "Run all Rust and Python tests"
@@ -71,7 +68,7 @@ run = "cargo test"
 description = "Run Python tests"
 depends = ["build"]
 # Timeout: self-play can deadlock at shutdown (see verify skill); fail fast instead of hanging.
-run = "timeout 300 uv run pytest -q"
+run = "timeout 900 uv run --locked pytest -q"
 
 [tasks.ci]
 description = "Run the full CI validation suite"
@@ -88,7 +85,7 @@ run = [
 [tasks."suite:build"]
 description = "Rebuild the committed v1 dev/test solver suites (needs solver/ built per the README)"
 depends = ["build"]
-run = "uv run python src/c4a0/main.py build-suite"
+run = "uv run --locked python src/c4a0/main.py build-suite"
 
 # Training / app lifecycle
 
@@ -97,7 +94,7 @@ description = "Run a fast CPU end-to-end smoke training job"
 depends = ["build"]
 run = '''
 rm -rf training/ci-smoke
-uv run python src/c4a0/main.py train \
+timeout 900 uv run --locked python src/c4a0/main.py train \
   --base-dir training/ci-smoke \
   --device cpu \
   --n-self-play-games 4 \

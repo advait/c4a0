@@ -18,7 +18,7 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   block, a terminal node) and watch it fail before the fix.
 - `mise run check` takes about 22 s warm. That is lint, typecheck, Rust and Python tests.
   The first run after a source change rebuilds the extension (about 2 minutes).
-- A single Python file runs with `uv run pytest -q tests/c4a0_tests/<file>_test.py`, in
+- A single Python file runs with `timeout 900 uv run --locked pytest -q tests/c4a0_tests/<file>_test.py`, in
   about 1 to 13 s.
 - Raw-network dev eval of a default model (2447 positions, suite load through `SuiteEval`)
   took a median 0.15 s (0.148 to 0.166 s, 3 runs, load average 5, 16 torch threads); the
@@ -68,7 +68,7 @@ a convergence delta.
 
 - **Self-play shutdown deadlock.** `rust/src/self_play.rs` decrements `n_games_remaining`
   then reloads it, so two workers can both start shutdown and overfill the job queue.
-  `test:python` hung in 2 of 3 runs before `mise.toml` wrapped it in `timeout 300`. Exit code
+  `test:python` hung in 2 of 3 runs before `mise.toml` wrapped it in `timeout 900`. Exit code
   124 from `test:python` means this hang, not a test failure. Wrap any ad hoc self-play or
   training run in `timeout`.
 - A Python exception in the NN callback panics the NN thread and leaves workers waiting

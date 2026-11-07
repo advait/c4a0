@@ -63,7 +63,7 @@ mise run ci
 This is a mixed maturin Python/Rust package. After `mise run build`, both imports should work without `PYTHONPATH` hacks:
 
 ```sh
-mise exec -- uv run python - <<'PY'
+mise exec -- uv run --locked python - <<'PY'
 import c4a0
 import c4a0_rust
 
@@ -79,7 +79,7 @@ PY
 Show available commands:
 
 ```sh
-mise exec -- uv run python src/c4a0/main.py --help
+mise exec -- uv run --locked python src/c4a0/main.py --help
 ```
 
 Current commands:
@@ -105,7 +105,7 @@ The task runs a tiny CPU job equivalent to:
 
 ```sh
 rm -rf training/ci-smoke
-uv run python src/c4a0/main.py train \
+uv run --locked python src/c4a0/main.py train \
   --base-dir training/ci-smoke \
   --device cpu \
   --n-self-play-games 4 \
@@ -145,7 +145,7 @@ PyTorch Lightning logs are written to `lightning_logs/`.
 Use this after a training run:
 
 ```sh
-mise exec -- uv run python - <<'PY'
+mise exec -- uv run --locked python - <<'PY'
 from c4a0.training import TrainingGen
 
 base = "training/ci-smoke"
@@ -172,7 +172,7 @@ PY
 The README default is much larger and intended for a GPU-class machine:
 
 ```sh
-mise exec -- uv run python src/c4a0/main.py train --max-gens 10
+mise exec -- uv run --locked python src/c4a0/main.py train --max-gens 10
 ```
 
 Useful knobs:
@@ -190,14 +190,14 @@ Useful knobs:
 After training at least one generation:
 
 ```sh
-mise exec -- uv run python src/c4a0/main.py play --base-dir training/ci-smoke --model best
+mise exec -- uv run --locked python src/c4a0/main.py play --base-dir training/ci-smoke --model best
 ```
 
 Other model options:
 
 ```sh
-mise exec -- uv run python src/c4a0/main.py play --model random
-mise exec -- uv run python src/c4a0/main.py play --model uniform
+mise exec -- uv run --locked python src/c4a0/main.py play --model random
+mise exec -- uv run --locked python src/c4a0/main.py play --model uniform
 ```
 
 This opens a terminal UI, so run it in an interactive terminal.
@@ -207,13 +207,13 @@ This opens a terminal UI, so run it in an interactive terminal.
 There is no web app dev server in this repo. The useful local servers are for experiment inspection:
 
 ```sh
-mise exec -- uv run tensorboard --logdir lightning_logs --port 6006
+mise exec -- uv run --locked tensorboard --logdir lightning_logs --port 6006
 ```
 
 For Optuna sweeps:
 
 ```sh
-mise exec -- uv run optuna-dashboard sqlite:///optuna.db
+mise exec -- uv run --locked optuna-dashboard sqlite:///optuna.db
 ```
 
 ## Solver-optimal evaluation
@@ -236,7 +236,7 @@ legacy parent self-play score and is never written again.
 Score MCTS budgets on an existing run (idempotent; replaces the stored v1/dev entry):
 
 ```sh
-mise exec -- uv run python src/c4a0/main.py eval --base-dir training/ci-smoke --mcts-iterations 64
+mise exec -- uv run --locked python src/c4a0/main.py eval --base-dir training/ci-smoke --mcts-iterations 64
 ```
 
 The suites are committed, so none of this needs the solver. To rebuild them or label training
@@ -259,14 +259,26 @@ Split membership (train, dev, test) is a salted hash of the mirror-canonical boa
 Can the network represent solver-perfect play at all? Train it directly on solver labels:
 
 ```sh
-mise exec -- uv run python src/c4a0/main.py label training/labels/train-s7.tsv --per-ply 24000 --seed 7
-mise exec -- uv run python src/c4a0/main.py ceiling training/labels/train-s7.tsv /tmp/c4a0-ceiling/b1f32 --seed 0
+mise exec -- uv run --locked python src/c4a0/main.py label training/labels/train-s7.tsv --per-ply 24000 --seed 7
+mise exec -- uv run --locked python src/c4a0/main.py ceiling training/labels/train-s7.tsv /tmp/c4a0-ceiling/b1f32 --seed 0
 ```
 
 `ceiling` refuses non-train files, early-stops on dev loss, saves `model.pkl`, and writes
 `report.json` (a `CeilingReport`) scored on dev. Pass `--report-test` only after choosing a
 configuration on dev. Pass the architecture flags (`--n-residual-blocks`, `--conv-filter-size`,
 ...) to compare network sizes.
+
+## Python environment
+
+uv owns the interpreter and `.venv`. `project.requires-python` pins Python 3.11.15
+for this training application. mise pins uv 0.13.7 and Rust. There is no separate
+Python pin in mise or `.python-version`.
+
+Tasks use `uv sync --locked` and `uv run --locked`; a stale lock fails.
+Use `mise run install:update` after changing dependencies, then commit `uv.lock`.
+Maturin remains the build backend and a development tool for `mise run build`.
+Notebook packages are optional and unused by CI. Start Jupyter with
+`mise exec -- uv run --locked --group notebook jupyter lab`.
 
 ## Verified checks
 
@@ -281,6 +293,5 @@ Verified in this environment:
 
 Current benign warnings observed:
 
-- `tool.uv.dev-dependencies` is deprecated; migrate to `dependency-groups.dev` later.
 - pytest-asyncio warns that `asyncio_default_fixture_loop_scope` is unset.
 - `Cannot read termcap database; using dumb terminal settings` can appear in non-interactive terminals.

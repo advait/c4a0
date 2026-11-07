@@ -14,7 +14,7 @@ is no TypeScript here.
 22 seconds warm). A change to self-play, training or the CLI also passes `mise run
 train:smoke`. Run `cargo fmt` in `rust/` on Rust you touch. CI does not run it yet.
 
-**Python.** 3.11 (`mise.toml`). Ruff with default rules. Pyright in `basic` mode
+**Python.** 3.11.15 (`project.requires-python` in `pyproject.toml`, managed by uv). Ruff with default rules. Pyright in `basic` mode
 (`pyproject.toml`). Existing `# type: ignore` comments mark untyped PyO3 calls. Add a stub to
 `src/c4a0_rust/__init__.pyi` instead of adding more.
 

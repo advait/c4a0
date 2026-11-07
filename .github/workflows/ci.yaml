@@ -19,4 +19,6 @@ jobs:
           cache: true
 
       - name: Run CI tasks
-        run: mise run ci
+        run: |
+          mise exec -- uv lock --check
+          mise run ci
