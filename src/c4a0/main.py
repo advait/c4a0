@@ -8,7 +8,6 @@ import sys
 import warnings
 from pathlib import Path
 
-import optuna
 import torch
 import typer
 from loguru import logger
@@ -34,7 +33,6 @@ from c4a0.labels import (  # noqa: E402
 )
 from c4a0.nn import ConnectFourNet, ModelConfig  # noqa: E402
 from c4a0.supervised import TARGET_VERSION, CeilingReport, fit_supervised  # noqa: E402
-from c4a0.sweep import perform_hparam_sweep  # noqa: E402
 from c4a0.tournament import ModelID, RandomPlayer, UniformPlayer  # noqa: E402
 from c4a0.training import (  # noqa: E402
     GenConfig,
@@ -52,7 +50,6 @@ app = typer.Typer()
 def train(
     base_dir: str = "training",
     device: str = str(get_torch_device()),
-    # These parameters were chosen based on the results of the nn_sweep and mcts_sweep
     n_self_play_games: int = 1700,
     n_mcts_iterations: int = 1400,
     c_exploration: float = 2.0,
@@ -154,88 +151,6 @@ def play(
         c_exploration,
         c_ply_penalty,
     )
-
-
-@app.command()
-def nn_sweep(base_dir: str = "training") -> None:
-    """
-    Performs a hyperparameter sweep to determine best nn model params based on existing training
-    data.
-    """
-    perform_hparam_sweep(base_dir)
-
-
-@app.command()
-def mcts_sweep(
-    device: str = str(get_torch_device()),
-    c_ply_penalty: float = 0.01,
-    self_play_batch_size: int = 2000,
-    training_batch_size: int = 2000,
-    # These NN parameters were chosen based on the results of the nn_sweep
-    n_residual_blocks: int = 1,
-    conv_filter_size: int = 32,
-    n_policy_layers: int = 4,
-    n_value_layers: int = 2,
-    lr_schedule: list[float] = typer.Option(default_factory=lambda: [0, 2e-3]),
-    l2_reg: float = 4e-4,
-    # End NN parameters
-    base_training_dir: str = "training-sweeps",
-    optuna_db_path: str = "optuna.db",
-    n_trials: int = 100,
-    max_gens_per_trial: int = 10,
-) -> None:
-    """
-    Performs sweep of MCTS hyperparameters (e.g. n_self_play_games, n_mcts_iterations,
-    c_exploration) to determine optimal values by performing `n_trials` independent training
-    runs, each with `max_gens_per_trial` generations, seeking to maximize the final generation's
-    raw-network top-1 agreement with solver-best moves on the v1 dev suite.
-    """
-    eval_config = default_eval_config()
-    base_path = Path(base_training_dir)
-    base_path.mkdir(exist_ok=True)
-
-    model_config = ModelConfig(
-        n_residual_blocks=n_residual_blocks,
-        conv_filter_size=conv_filter_size,
-        n_policy_layers=n_policy_layers,
-        n_value_layers=n_value_layers,
-        lr_schedule=parse_lr_schedule(lr_schedule),
-        l2_reg=l2_reg,
-    )
-
-    def objective(trial: optuna.Trial) -> float:
-        trial_path = base_path / f"trial_{trial.number}"
-        trial_path.mkdir(exist_ok=False)
-        gen = training_loop(
-            base_dir=str(trial_path),
-            device=torch.device(device),
-            config=GenConfig(
-                n_self_play_games=trial.suggest_int("n_self_play_games", 1000, 5000),
-                n_mcts_iterations=trial.suggest_int("n_mcts_iterations", 100, 1500),
-                c_exploration=trial.suggest_float("c_exploration", 0.5, 12.0),
-                c_ply_penalty=c_ply_penalty,
-                self_play_batch_size=self_play_batch_size,
-                training_batch_size=training_batch_size,
-            ),
-            model_config=model_config,
-            max_gens=max_gens_per_trial,
-            eval_config=eval_config,
-        )
-        score = gen.evals[eval_config.suite.name].raw.top1
-        logger.info("Trial {} completed. Dev raw top1: {}", trial.number, score)
-        assert score is not None
-        return score
-
-    storage_name = f"sqlite:///{optuna_db_path}"
-    study = optuna.create_study(
-        # The objective changed to saved-child dev top-1 (v1); never resume legacy studies.
-        study_name="mcts_sweep-v1-dev-top1",
-        storage=storage_name,
-        load_if_exists=True,
-        direction="maximize",
-        pruner=optuna.pruners.MedianPruner(),
-    )
-    study.optimize(objective, n_trials=n_trials)
 
 
 @app.command()

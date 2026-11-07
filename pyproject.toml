@@ -11,12 +11,8 @@ dependencies = [
   "tensorboard>=2.21.0",
   "tqdm>=4.68.3",
   "pydantic>=2.13.4",
-  "tabulate>=0.10.0",
-  "matplotlib>=3.11.0",
   "loguru>=0.7.3",
   "typer>=0.26.8",
-  "optuna>=4.9.0",
-  "optuna-dashboard>=0.20.0",
   "torch>=2.12.1",
 ]
 readme = "README.md"
@@ -40,7 +36,6 @@ dev = [
   "ruff==0.17.4",
 ]
 
-notebook = ["jupyterlab>=4.6.1", "pandas>=3.0.3", "rankit>=0.3.3"]
 
 # Both ty and Ruff infer the target Python version from project.requires-python.
 [tool.ty.environment]
@@ -48,8 +43,6 @@ root = ["src", "tests"]
 
 [tool.ty.src]
 include = ["src", "tests"]
-# Exploratory notebooks are not part of the training package or CI.
-exclude = ["**/*.ipynb"]
 
 [tool.ty.analysis]
 respect-type-ignore-comments = false
@@ -71,7 +64,7 @@ ignore-comment-unknown-rule = "error"
 blanket-ignore-comment = "error"
 
 [tool.ruff]
-# Check all importable Python and stubs; notebooks are exploratory, outside CI.
+# Check all importable Python and stubs.
 include = ["*.py", "*.pyi", "**/pyproject.toml"]
 
 [tool.ruff.lint]
