@@ -118,6 +118,11 @@ def train(
     train_steps: int | None = typer.Option(
         None, min=1, help="Fixed optimizer steps; publish the final model."
     ),
+    train_anneal_epochs: int | None = typer.Option(
+        None,
+        min=1,
+        help="Train exactly this many epochs per generation, cosine-annealing the rate to 1%.",
+    ),
     eval_mcts_iterations: list[int] = typer.Option(
         default_factory=lambda: [64, 256], show_default="64 256"
     ),
@@ -173,6 +178,7 @@ def train(
         bf16=bf16,
         compile=compile,
         train_steps=train_steps,
+        train_anneal_epochs=train_anneal_epochs,
     )
     training_loop(
         base_dir=base_dir,
@@ -284,6 +290,11 @@ def ceiling(
     batch_size: int = 4096,
     max_epochs: int = 100,
     patience: int = 10,
+    anneal_epochs: int | None = typer.Option(
+        None,
+        min=1,
+        help="Train exactly this many epochs, cosine-annealing the rate to 1% (no early stop).",
+    ),
     seed: int = 0,
     c_exploration: float = 2.0,
     c_ply_penalty: float = 0.01,
@@ -325,6 +336,7 @@ def ceiling(
         batch_size,
         max_epochs,
         patience,
+        anneal_epochs,
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     model_path = out_dir / "model.pkl"
@@ -343,6 +355,7 @@ def ceiling(
         train_sha256=hashlib.sha256(labels.read_bytes()).hexdigest(),
         n_train=len(train),
         epochs=epochs,
+        anneal_epochs=anneal_epochs,
         batch_size=batch_size,
         seed=seed,
         c_ply_penalty=c_ply_penalty,

@@ -103,6 +103,7 @@ def fit_supervised(
     batch_size: int,
     max_epochs: int,
     patience: int = 10,
+    anneal_epochs: int | None = None,
 ) -> tuple[ConnectFourNet, int]:
     """Trains on `train` (plus mirror images) with the self-play loss, early stopping on `val`
     loss. Returns the best model and the number of epochs run."""
@@ -116,10 +117,12 @@ def fit_supervised(
     )
     best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
     trainer = GenerationTrainer(
-        max_epochs=max_epochs,
+        max_epochs=anneal_epochs or max_epochs,
         accelerator="auto",
         devices="auto",
-        callbacks=[
+        callbacks=[best_model_cb]
+        if anneal_epochs is not None
+        else [
             best_model_cb,
             EarlyStopping(monitor="val_loss", patience=patience, mode="min"),
         ],
@@ -129,6 +132,7 @@ def fit_supervised(
         enable_progress_bar=False,
     )
     trainer.gen_n = 0
+    trainer.anneal_epochs = anneal_epochs
     trainer.callbacks.append(_EpochLog())
     model.train()
     trainer.fit(model, train_dl, val_dl)
@@ -143,6 +147,8 @@ class CeilingReport(BaseModel):
     train_sha256: str
     n_train: int
     epochs: int
+    anneal_epochs: int | None = None
+    """Cosine-annealed epoch count; None for a constant rate with early stopping."""
     batch_size: int
     seed: int
     c_ply_penalty: float

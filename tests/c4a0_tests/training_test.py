@@ -780,3 +780,29 @@ def test_sample_datasets_live_on_requested_device_and_loaders_share_them(
             assert source.device.type == device
             assert source.data_ptr() == stored.data_ptr()
         assert all(t.device.type == device for t in next(iter(loader)))
+
+
+def test_annealed_generation_trains_fixed_epochs_with_decaying_rate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rates: list[float] = []
+    original_fit = training.GenerationTrainer.fit
+
+    def fit(
+        self: training.GenerationTrainer,
+        model: ConnectFourNet,
+        datamodule: SampleDataModule,
+    ) -> None:
+        assert not any(isinstance(cb, EarlyStopping) for cb in self.callbacks)
+        original_fit(self, model, datamodule)
+        assert self.current_epoch == 3
+        rates.append(self.optimizers[0].param_groups[0]["lr"])
+
+    monkeypatch.setattr(training.GenerationTrainer, "fit", fit)
+    config = TINY_GEN_CONFIG.model_copy(
+        update={"train_anneal_epochs": 3, "training_batch_size": 16}
+    )
+    gen = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()), config=config)
+    # TINY_CONFIG's rate is 1e-3; three cosine epochs end at its 1% floor.
+    assert rates == [pytest.approx(1e-5)]
+    assert TrainingGen.load(str(tmp_path), gen.created_at).train_anneal_epochs == 3

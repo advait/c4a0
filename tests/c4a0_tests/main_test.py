@@ -149,7 +149,9 @@ def test_ceiling_head_options_reach_model_pickle_and_report(
         batch_size: int,
         max_epochs: int,
         patience: int,
+        anneal_epochs: int | None,
     ) -> tuple[ConnectFourNet, int]:
+        assert anneal_epochs is None
         assert model.head == head
         assert model.hparams["value_hidden"] == 17
         return model.eval(), 0

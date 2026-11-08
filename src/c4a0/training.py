@@ -88,6 +88,8 @@ class GenConfig(BaseModel):
     bf16: bool = False
     compile: bool = False
     train_steps: int | None = Field(default=None, ge=1)
+    train_anneal_epochs: int | None = Field(default=None, ge=1)
+    """Train exactly this many epochs per generation with a cosine-annealed rate."""
 
 
 class TrainingGen(GenConfig):
@@ -365,7 +367,9 @@ def train_single_gen(
             monitor="val_loss", mode="min"
         )
         trainer = GenerationTrainer(
-            max_epochs=1 if config.train_steps is not None else config.train_max_epochs,
+            max_epochs=1
+            if config.train_steps is not None
+            else config.train_anneal_epochs or config.train_max_epochs,
             max_steps=config.train_steps if config.train_steps is not None else -1,
             accelerator=lightning_accelerator(device),
             devices=[
@@ -377,6 +381,8 @@ def train_single_gen(
             else 1,
             callbacks=[]
             if config.train_steps is not None
+            else [best_model_cb]
+            if config.train_anneal_epochs is not None
             else [
                 best_model_cb,
                 EarlyStopping(
@@ -387,6 +393,7 @@ def train_single_gen(
             precision="bf16-mixed" if config.bf16 else "32-true",
         )
         trainer.gen_n = gen_n
+        trainer.anneal_epochs = config.train_anneal_epochs
         model.train()  # Switch batch normalization to train mode for training bn params
         trainer.fit(model, data_module)
     release_cuda_cache(device)

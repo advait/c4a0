@@ -76,3 +76,30 @@ def test_tiny_net_overfits_solver_labels() -> None:
     uniform = tally_policy(top1_credit(np.zeros_like(policy), rows), rows).top1
     assert uniform is not None and trained is not None
     assert trained > uniform + 0.5, (trained, uniform)
+
+
+def test_annealed_fit_runs_exactly_the_requested_epochs() -> None:
+    dev = load_suite(Split.DEV).labels
+    rows = dev.take(np.flatnonzero(~dev.trivial)[:64])
+    model = ConnectFourNet(
+        ModelConfig(
+            n_residual_blocks=1,
+            conv_filter_size=8,
+            n_policy_layers=1,
+            n_value_layers=1,
+            lr_schedule={0: 1e-3},
+            l2_reg=0.0,
+        )
+    )
+    # Patience 1 would stop a constant-rate fit early; annealing ignores it.
+    _, epochs = fit_supervised(
+        model,
+        rows,
+        rows,
+        0.01,
+        batch_size=32,
+        max_epochs=50,
+        patience=1,
+        anneal_epochs=3,
+    )
+    assert epochs == 3

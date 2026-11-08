@@ -72,6 +72,8 @@ class GenerationTrainer(Trainer):
     """Lightning trainer with the generation metadata consumed by the LR schedule."""
 
     gen_n: int
+    anneal_epochs: int | None = None
+    """When set, cosine-anneal the learning rate to 1% over this many epochs."""
     # Lightning initializes this through its callback connector.
     callbacks: list[Callback]
 
