@@ -335,8 +335,11 @@ def train_single_gen(
     )
     with metrics.phase("sample_conversion") if metrics else nullcontext():
         train, test = training_games.split_train_test_numpy(0.8, 1337)
+        # Replay data stays in host memory; Lightning copies each batch to the device. Keeping
+        # the whole replay window on the GPU saved ~2.5 s per generation but grew every run's
+        # GPU memory with the window, so concurrent runs ran out of memory.
         data_module = SampleDataModule(
-            train, test, config.training_batch_size, device, config.train_steps
+            train, test, config.training_batch_size, "cpu", config.train_steps
         )
     with metrics.phase("training") if metrics else nullcontext():
         best_model_cb = BestModelCheckpoint[ConnectFourNet](
