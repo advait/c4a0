@@ -424,3 +424,46 @@ def test_legacy_metadata_ignores_retired_controls(tmp_path: Path) -> None:
         not {"greedy_after_ply", "mask_terminal_policy", "temperature_schedule"}
         & loaded.model_dump().keys()
     )
+
+
+def test_generation_metrics_and_reusing_games(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from c4a0.benchmark import GenerationMetrics
+
+    config = TINY_GEN_CONFIG.model_copy(
+        update={"train_max_epochs": 1, "replay_gens": 2}
+    )
+    parent = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()), config=config)
+
+    def unexpected_play(*args: object, **kwargs: object) -> Never:
+        raise AssertionError("training benchmark must skip self-play")
+
+    monkeypatch.setattr(c4a0_rust, "play_games", unexpected_play)
+    metrics = GenerationMetrics(torch.device("cpu"))
+    child = training.train_single_gen(
+        str(tmp_path),
+        torch.device("cpu"),
+        parent,
+        config,
+        EvalConfig(_tiny_suite()),
+        metrics=metrics,
+        reuse_games=True,
+    )
+    assert child.gen_n == parent.gen_n + 1
+    assert child.parent == parent.created_at
+    games = child.get_games(str(tmp_path))
+    old_games = parent.get_games(str(tmp_path))
+    assert games is not None and old_games is not None
+    assert games.__getstate__() == old_games.__getstate__()
+    assert metrics.epochs == metrics.optimizer_steps == 1
+    assert set(metrics.seconds) == {
+        "setup",
+        "self_play",
+        "replay_load",
+        "sample_conversion",
+        "training",
+        "evaluation",
+        "publish",
+    }
+    assert all(t >= 0 for t in metrics.seconds.values())

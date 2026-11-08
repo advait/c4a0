@@ -6,6 +6,7 @@ import copy
 import os
 import pickle
 from collections.abc import Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,7 @@ from pytorch_lightning.callbacks import EarlyStopping
 from torch.utils.data import DataLoader
 
 import c4a0_rust
+from c4a0.benchmark import GenerationMetrics
 from c4a0.evaluation import SuiteEval, evaluate_model
 from c4a0.labels import Split, Suite, load_suite
 from c4a0.nn import ConnectFourNet, ModelConfig
@@ -103,6 +105,7 @@ class TrainingGen(GenConfig):
         games: PlayGamesResult | None,
         model: ConnectFourNet,
         eval_config: EvalConfig,
+        metrics: GenerationMetrics | None = None,
     ) -> None:
         """Saves games and model, scores the model as reloaded from model.pkl, then writes
         metadata.json last. If scoring fails, no metadata is written and loaders skip the
@@ -110,21 +113,23 @@ class TrainingGen(GenConfig):
         gen_dir = self.gen_folder(base_dir)
         os.makedirs(gen_dir, exist_ok=True)
 
-        play_result_path = os.path.join(gen_dir, "games.pkl")
-        with open(play_result_path, "wb") as f:
-            pickle.dump(games, f)
+        with metrics.phase("publish") if metrics else nullcontext():
+            play_result_path = os.path.join(gen_dir, "games.pkl")
+            with open(play_result_path, "wb") as f:
+                pickle.dump(games, f)
 
-        model_path = Path(gen_dir) / "model.pkl"
-        with open(model_path, "wb") as f:
-            pickle.dump(model, f)
+            model_path = Path(gen_dir) / "model.pkl"
+            with open(model_path, "wb") as f:
+                pickle.dump(model, f)
 
-        suite_eval = evaluate_model(
-            model_path,
-            eval_config.suite,
-            eval_config.mcts_iterations,
-            self.c_exploration,
-            self.c_ply_penalty,
-        )
+        with metrics.phase("evaluation") if metrics else nullcontext():
+            suite_eval = evaluate_model(
+                model_path,
+                eval_config.suite,
+                eval_config.mcts_iterations,
+                self.c_exploration,
+                self.c_ply_penalty,
+            )
         self.evals[suite_eval.suite] = suite_eval
         logger.info(
             "Gen {} on {}: raw top1 {}, mcts top1 {}, value accuracy {}",
@@ -134,7 +139,8 @@ class TrainingGen(GenConfig):
             {n: e.top1 for n, e in suite_eval.mcts.items()},
             suite_eval.value.accuracy,
         )
-        self.save_metadata(base_dir)
+        with metrics.phase("publish") if metrics else nullcontext():
+            self.save_metadata(base_dir)
 
     def save_metadata(self, base_dir: str) -> None:
         """Writes metadata.json atomically (temp file, then rename)."""
@@ -237,6 +243,9 @@ def train_single_gen(
     parent: TrainingGen,
     config: GenConfig,
     eval_config: EvalConfig,
+    *,
+    metrics: GenerationMetrics | None = None,
+    reuse_games: bool = False,
 ) -> TrainingGen:
     """
     Trains a new generation from the given parent.
@@ -249,41 +258,55 @@ def train_single_gen(
 
     # TODO: log experiment metadata in MLFlow
 
-    # Self play
-    model = parent.get_model(base_dir)
-    model.to(device)
-    # game_id seeds random starts, move sampling and root noise in Rust. Ids unique
-    # across generations give each generation fresh random streams.
-    first_id = gen_n * config.n_self_play_games
-    reqs = [
-        c4a0_rust.GameMetadata(first_id + i, 0, 0)
-        for i in range(config.n_self_play_games)
-    ]
-    games = c4a0_rust.play_games(
-        reqs,
-        config.self_play_batch_size,
-        config.n_mcts_iterations,
-        config.c_exploration,
-        config.c_ply_penalty,
-        lambda player_id, pos: model.forward_numpy(pos),
-        root_noise_alpha=config.root_noise_alpha,
-        root_noise_frac=config.root_noise_frac,
-        value_target_q_weight=config.value_target_q_weight,
-        random_start_frac=config.random_start_frac,
-        random_start_max_ply=config.random_start_max_ply,
-    )
+    with metrics.phase("setup") if metrics else nullcontext():
+        # Self play
+        model = parent.get_model(base_dir)
+        model.to(device)
+        # game_id seeds random starts, move sampling and root noise in Rust. Ids unique
+        # across generations give each generation fresh random streams.
+        first_id = gen_n * config.n_self_play_games
+        reqs = [
+            c4a0_rust.GameMetadata(first_id + i, 0, 0)
+            for i in range(config.n_self_play_games)
+        ]
+    with metrics.phase("self_play") if metrics else nullcontext():
+        if not reuse_games:
+            games = c4a0_rust.play_games(
+                reqs,
+                config.self_play_batch_size,
+                config.n_mcts_iterations,
+                config.c_exploration,
+                config.c_ply_penalty,
+                lambda player_id, pos: model.forward_numpy(pos),
+                root_noise_alpha=config.root_noise_alpha,
+                root_noise_frac=config.root_noise_frac,
+                value_target_q_weight=config.value_target_q_weight,
+                random_start_frac=config.random_start_frac,
+                random_start_max_ply=config.random_start_max_ply,
+            )
 
     # Training
     logger.info("Beginning training")
     model = copy.deepcopy(model)
-    training_games = replay_training_games(base_dir, parent, games, config.replay_gens)
+    with metrics.phase("replay_load") if metrics else nullcontext():
+        replay_parent = parent
+        if reuse_games:
+            games = parent.get_games(base_dir)
+            if games is None:
+                raise ValueError("The newest generation has no games to reuse")
+            if parent.parent is not None:
+                replay_parent = TrainingGen.load(base_dir, parent.parent)
+        training_games = replay_training_games(
+            base_dir, replay_parent, games, config.replay_gens
+        )
     logger.info(
         "Training on {} games from up to {} generations",
         len(training_games.results),
         config.replay_gens,
     )
-    train, test = training_games.split_train_test(0.8, 1337)
-    data_module = SampleDataModule(train, test, config.training_batch_size)
+    with metrics.phase("sample_conversion") if metrics else nullcontext():
+        train, test = training_games.split_train_test(0.8, 1337)
+        data_module = SampleDataModule(train, test, config.training_batch_size)
     best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
     trainer = GenerationTrainer(
         max_epochs=config.train_max_epochs,
@@ -299,7 +322,11 @@ def train_single_gen(
     )
     trainer.gen_n = gen_n
     model.train()  # Switch batch normalization to train mode for training bn params
-    trainer.fit(model, data_module)
+    with metrics.phase("training") if metrics else nullcontext():
+        trainer.fit(model, data_module)
+    if metrics:
+        metrics.epochs = trainer.current_epoch
+        metrics.optimizer_steps = trainer.global_step
     logger.info("Finished training")
 
     best_model = best_model_cb.get_best_model()
@@ -310,7 +337,7 @@ def train_single_gen(
         parent=parent.created_at,
         val_loss=best_model_cb.best_score,
     )
-    gen.publish(base_dir, games, best_model, eval_config)
+    gen.publish(base_dir, games, best_model, eval_config, metrics)
     return gen
 
 

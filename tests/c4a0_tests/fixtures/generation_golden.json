@@ -1,0 +1,122 @@
+{
+  "generations": [
+    {
+      "games": null,
+      "samples": [],
+      "val_loss": null,
+      "model": {
+        "conv.0.weight": "39f662f6cfe4590c4843bd3e0438d42aba22b41a860351a2098bb7211d72733e",
+        "conv.0.bias": "d5b8e546e07e2b664bb0117f9dbdede541000867190ebaee6ff5fba50245361a",
+        "conv.1.block.0.weight": "bcbe953e35bb819163f3eadbadd87bce8ba1c3c4521fdde9bbad8dd8097b2cc0",
+        "conv.1.block.0.bias": "058d24c2ce3cfe243dd04a74cb9a07cea06582c410afc16b0b06c0ac141d0636",
+        "conv.1.block.1.weight": "a4a6cc5fd1174f195f893feb1c21e7e3c0b8db24a54b63507ca9918b0ca65d64",
+        "conv.1.block.1.bias": "94c40dcee092a1ba15fd220b771cf408aa4aa2248581dfe20de9944bd0121f33",
+        "conv.1.block.2.weight": "4f05df05f8da9356bd66425351f166a5f7305b7c805e6900d9ec0f50790c9886",
+        "conv.1.block.2.bias": "66687aadf862bd776c8fc18b8e9f8e20089714856ee233b3902a591d0d5f2925",
+        "conv.1.block.2.running_mean": "757d424265b1b030ea7895b1855641e49398929f59c7e6c2dfa24aea1759ecb1",
+        "conv.1.block.2.running_var": "d6d6c3db1c65086bb999f61e0b4d258db5bfef3f6abd0b931cb465ea45c50b39",
+        "conv.1.block.2.num_batches_tracked": "7c9fa136d4413fa6173637e883b6998d32e1d675f88cddff9dcbcf331820f4b8",
+        "fc_policy.0.weight": "59aa788e080fdf807b5924c3efdc657a6ca032802024591250339047a024399f",
+        "fc_policy.0.bias": "5a6fc4bcc33fb36fa55c234787571d2658c3b1395dcbca8508b60bd779f9c29f",
+        "fc_value.0.weight": "f4d21dc27f878e79eecdc887f8aef4691795f58d30800eda1e585ea4f33636b1",
+        "fc_value.0.bias": "467889d5f7ee342213f7a3a3d48620b40fb3950bc8bcae17c63051b92d92bab9"
+      }
+    },
+    {
+      "games": "d73b22b8c1f41b365d9c40aea73b145cdd42a52e667f9d52266245fa0ff6866e",
+      "samples": [
+        [
+          "b47232791036c0fb228eafab29ca3a029dcb46aa8db59f86a288314808c77054",
+          "0c0be72be39462ac134e2f50c9079ecb63cb2f50fc366679a482743c670e5113",
+          "da7d4c676f58578e01f5afe3f129439e11b98fba3d82e35b4b74a638d943335d",
+          "4fb4e37179a65e4b6e02e7c6abf3c424b5a66762facf8dfc227be32ad34604ad"
+        ],
+        [
+          "1283353db271e28141e2b82533fb203ae8abf5d74e47fac36243a8290b5d7cab",
+          "633da8a1b72dd6e9d3fc92e40199ccc3d232fd8dc35a9749d85aedf58349394d",
+          "9dbb2dfce3587bc23b5a219e1e6750a181dd0e05e24b3dd1bec3d47158902c4c",
+          "f51e22d10bed0849efd59e2aceb44295749968f6202ef0c3fb9b0f17d4432c00"
+        ]
+      ],
+      "val_loss": 1.6785234212875366,
+      "model": {
+        "conv.0.weight": "43e4e1f84f3669e68967314c8e985eb1f9a90346deac9683ab002bd6aa15cd98",
+        "conv.0.bias": "29dc61b1b5babdd3d8d013c3063984aac1ac1c65bb29f08eea332778d446b454",
+        "conv.1.block.0.weight": "4be11bb1eb1d0344a266651266ce6b85e4d4a6bc468ab7d04c3a1a9ad4722683",
+        "conv.1.block.0.bias": "273bace0c7bb0645a03746048699a79e703b088bf8d3e8302c763c704a50c1a5",
+        "conv.1.block.1.weight": "2319c39085faf99a75395975bdc37f9b3f18726783fc831cb02f94ffb0969a4f",
+        "conv.1.block.1.bias": "5c5b6ba35ea0a5365fd498bdf93e212308040781f7de886b43278aaa26cbcc5d",
+        "conv.1.block.2.weight": "d8356bb94781d293b73099fe4e9a717adef13a710392f9c123bb1fd43e4e481b",
+        "conv.1.block.2.bias": "baaf7b01f99fb0bec3fcb358d62e46701e9e8668c4cec2a931d32b005a3f88cc",
+        "conv.1.block.2.running_mean": "467cb44dc23e47c0dbde528555cce119d4cff040000722752e3322c5365ea556",
+        "conv.1.block.2.running_var": "6c041369d98fd208e1501e2b1410eb9fb34f42c35884e2c0372667f2d979c653",
+        "conv.1.block.2.num_batches_tracked": "35be322d094f9d154a8aba4733b8497f180353bd7ae7b0a15f90b586b549f28b",
+        "fc_policy.0.weight": "00815ab4fe7eec5a4f1d8d4c46555a62036e29f9bd8a4433cb9ed058d87cc49b",
+        "fc_policy.0.bias": "f6036058dbdef40cd0e9a05815583736408e5e77377156b98dc4d2218e04e403",
+        "fc_value.0.weight": "b34cb66f91362863e5b767f6730529cdec4caee07a488e4f99851d203c2363be",
+        "fc_value.0.bias": "7d24e63f0dba8b6221cf24479aa73cf9ae77ff33b9228234a2669786a5709f8c"
+      }
+    },
+    {
+      "games": "f137c294a803729ca48bbea4cb16c3064afee210a487ebd246e947ed7c6ad04f",
+      "samples": [
+        [
+          "9d315ccb03c721bb8bfb27345158f1bf6cd68d046574e92dc083fd541379b75b",
+          "e783d530faa0d8b594e4eb6150b0df0e83440cde3eb8eddb077a5b636fd3a5cd",
+          "d5ab348a50ecd8266a02e9e7cf8f5052881ce0c9a90c857a6410cc2e493168c8",
+          "ccc4067e4a67d1e8a2b74368d0248a7584cada620a2a30b96a03e84d5c451d2b"
+        ],
+        [
+          "406b2be41d0ef32146e754f6230791356f3f843ff21bafc7963985b26cf281f8",
+          "e6d65ed65fc9dc797944f887b73e68c56196cdac104cfbe76da66d8790c3d3ff",
+          "0b66fe469d7b64b14e5e017dd9a9c9a68ca5d23835cc0f3f21c52e16468ed8f7",
+          "915f68433c208de3cf462d6c41e07472cca6462ff4c2d3974e7d6e04cddd5d98"
+        ]
+      ],
+      "val_loss": 1.6741900444030762,
+      "model": {
+        "conv.0.weight": "eaf8ab07e1534a64f6541d1478c352e36255db7e1f334b8eed2d91d600f00cd3",
+        "conv.0.bias": "18b990d8a733dd4d65293136288998810b6ff2dffca9fe72ada616c05fd55cfc",
+        "conv.1.block.0.weight": "1b65d3e74fec141fd7071a7c80bb0981781820657037c040c2821f2bdb2a822c",
+        "conv.1.block.0.bias": "2df0d67d373adba10ab91a6f5630b4acc63cb9e199c5afe0494fafc961a22cfa",
+        "conv.1.block.1.weight": "58c7c7ca71d8a8e67c69b6435c9ba320aa7ba6c1d7ff4257e9634babfbaff413",
+        "conv.1.block.1.bias": "77a28d2f7c2bb2a89f7a8d62803c90e08ba6855ce8ec4201b2a9bf1de4c7f319",
+        "conv.1.block.2.weight": "b7e827f3f1df5b437edad2291ba0e39054524e15aa72eeb17746657d92e07e1a",
+        "conv.1.block.2.bias": "836b90b9af2af9eaf20862bec5eefd420805b34f5f03a027763a60936ddbb252",
+        "conv.1.block.2.running_mean": "f4b1992634d82eb07cc29e9b7e4694c96d8635e4bebf2bb39ade2b6ddf05dc3f",
+        "conv.1.block.2.running_var": "0f552aaf26d06cb7ad1504d080420e24c663aa971d946d64b81734e91a3c3055",
+        "conv.1.block.2.num_batches_tracked": "5fd1b79ebdef9619a57916a3bfc264b54d37a792659b3693f8ab36ec3ebce448",
+        "fc_policy.0.weight": "5c7aed5e6f5817371e04a7743d604616517dbe6e03cc52f8b5ced58140a15204",
+        "fc_policy.0.bias": "88e1feac7dd8fd9519fe9d31994fd606fb2625ca5111a9bd897b64deee2d44ca",
+        "fc_value.0.weight": "7fc735c99379b0c4a6b1a42c90cdfc5aeb375f6e675cf04c753e8a9c0ee60caa",
+        "fc_value.0.bias": "839fc3802b05b4346aed44aa713e80c233bc2f11764fa47fc0216d24537572c6"
+      }
+    }
+  ],
+  "losses": {
+    "train": [
+      1.885484218597412,
+      1.8166279792785645,
+      1.5404150485992432,
+      1.6163053512573242,
+      1.6105152368545532,
+      1.648829460144043,
+      1.5955698490142822,
+      1.7169694900512695,
+      1.3437014818191528,
+      1.385450005531311,
+      1.5179755687713623,
+      1.240658164024353
+    ],
+    "val": [
+      1.6628531217575073,
+      2.1799731254577637,
+      1.6751521825790405,
+      2.1852054595947266,
+      1.6877057552337646,
+      1.6831955909729004,
+      1.6780844926834106,
+      1.6664012670516968
+    ]
+  }
+}
