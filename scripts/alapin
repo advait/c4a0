@@ -76,7 +76,7 @@ run)
     limit=${ALAPIN_TIMEOUT:-6h}
     workdir=${ALAPIN_DIR:-c4a0}
     # Per-process CUDA memory cap (fraction of the GPU); concurrent runs fail alone, not the card.
-    gpu_fraction=${ALAPIN_GPU_FRACTION:-0.08}
+    gpu_fraction=${ALAPIN_GPU_FRACTION:-0.12}
     valid_name "$workdir"
     case $limit in ''|*[!0-9smhd.]*|0|0s|0m|0h|0d) echo 'ALAPIN_TIMEOUT must be a positive timeout duration' >&2; exit 2;; esac
     args=''
@@ -98,7 +98,9 @@ quote() { printf "'"; printf '%s' "$1" | sed "s/'/'\\\\''/g"; printf "'"; }
     cat <<'RUNNER'
 . "$HOME/agent-work/env.sh"
 cd "$HOME/agent-work/$(cat "$(dirname "$0")/workdir")" || exit 1
-export RUN_DIR C4A0_RUN_DIR C4A0_CUDA_MEMORY_FRACTION
+# expandable_segments reduces fragmentation under the per-process cap.
+export RUN_DIR C4A0_RUN_DIR C4A0_CUDA_MEMORY_FRACTION PYTORCH_CUDA_ALLOC_CONF
+PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 C4A0_CUDA_MEMORY_FRACTION=$(cat "$(dirname "$0")/gpu_fraction")
 RUN_DIR=$(dirname "$0")
 C4A0_RUN_DIR=$RUN_DIR
