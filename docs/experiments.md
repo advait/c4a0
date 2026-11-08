@@ -43,6 +43,25 @@ Experiments ran on `alapin` (one RTX 3090) through `scripts/alapin`. A generatio
 - **The supervised ceiling is about 92% strict.** Trained directly on 846k solver-labeled positions, the network scores 91.8 to 92.6% strict on held-out positions whether it is 1x32, 4x64 or 8x128. That number measures generalization to unseen positions. It is not a cap on self-play, which visits its own positions repeatedly.
 - **The labels are trustworthy.** A clean-room Rust solver (`rust/src/native_solver/`) agrees with Pons on every one of 228,041 compared positions across all plies. Brute-force minimax confirms both on 119,181 late positions, and Pons is self-consistent on 1,058,402 child positions.
 
+## Toward optimal play
+
+After keeping the result reached 98%, the goal became optimal play: MCTS-256 must pick a solver-best move (the fastest win, or the slowest loss) on at least 99% of dev positions. This is the **strict** metric (`mcts` in the metadata). The 98% model scored 95.3% strict under the current search. Experiments ran on conv heads after hypothesis 15, with each arm compared to a same-code control at matched generation windows.
+
+| # | Hypothesis | Change tested | Result | Decision |
+|---|---|---|---|---|
+| 12 | Strict misses pick the wrong win or loss distance because the distance signal (0.02 value per move) is inside the value head's noise. | Ply penalty 0.02 and 0.023, and a multiplicative discount `+-gamma^ply` with gamma 0.97 (`--ply-discount`). | All three trailed the control on strict at generations 10 to 19 (control 94.21 and 94.00%; penalty 0.02 93.22 and 93.08%; discount 93.27 and 93.40%; penalty 0.023 92.95 and 92.78%). | Refuted. Penalty stays 0.01. |
+| 13 | Search noise between near-equal moves causes the misses. | Root visit counts on the 96 misses of the 98% model. | The solver-best move got 0.08 to 0.35 times the visits of the chosen move, and the network prior favoured the wrong move 2 to 5 times. Only 7 to 18% of misses were near-ties. | Refuted. The network misranks moves and 256 iterations cannot overturn it. |
+| 14 | The network spends its capacity in the wrong place. | Parameter count of the 4x64 network. | 99% of 29.3M parameters sat in fully connected heads (2688x2688 layers); the convolutional trunk had 297k. | Led to hypothesis 15. |
+| 15 | AlphaZero-style heads (1x1 convolution, then a small linear layer) lose nothing and train much faster. | `--head conv`: 0.31M parameters at 4x64. | Conv 4x64 plateaued at 95.4% strict, the same as FC heads (95.1 to 95.4%), and ran about twice as many generations per hour. | Kept for speed. Does not break the plateau. |
+| 16 | Self-play rarely reaches the middle-game positions where misses cluster. | Random starts for 80% of games instead of 50%. | Matched the control in every window (generations 30 to 39 strict: 94.97 and 95.23% against 95.03 and 95.28%; keeps the result 97.6 to 97.8% against 97.8%). | Rejected. Coverage is not the limit. |
+| 17 | A deeper conv trunk ranks opening moves better. | Conv 8x64. | Both runs ahead of both controls by about 0.2 points at generations 10 to 19 (94.16 and 94.20% against 93.89 and 94.11%) and 20 to 29 (95.22 and 95.17% against 94.85 and 95.01%). | Small gain, kept tentatively; testing 12x64 and 1,024 self-play iterations next. |
+
+The plateau sits near 95.2% strict and 97.8% keeps the result.
+
+### Running many experiments on one GPU
+
+A generation of the default configuration took about 2 minutes alone on the RTX 3090, and running several at once gave no more total throughput. Results-identical speedups (Rust bulk sample conversion, 5.7 s to 0.1 s per generation; generation 0 scored on the GPU) and conv heads made generations several times faster. Keeping the replay window in GPU memory saved only about 2.5 s and made every run's memory grow until concurrent runs crashed, so replay data stays in host memory. A full-replay conv 4x64 generation then peaks near 0.8 GB per process. `scripts/alapin run` caps each process (default 0.06 of the card) and refuses runs that would not fit beside a 6 GB desktop reserve. Of the optional speedups, `--bf16` was 1.46x faster on the FC network but is not validated for accuracy, `--compile` gave nothing, and `--train-steps 700` gave a worse validation loss.
+
 ## Bugs found along the way
 
 These were real defects, each fixed with a test that fails before the fix:
