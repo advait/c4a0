@@ -142,13 +142,18 @@ def test_cuda_memory_helpers_are_noops_off_cuda(
 def test_cuda_memory_fraction_is_validated(monkeypatch: pytest.MonkeyPatch) -> None:
     from c4a0.utils import CUDA_MEMORY_FRACTION_ENV, limit_cuda_memory
 
-    calls: list[float] = []
-    monkeypatch.setattr(
-        torch.cuda, "set_per_process_memory_fraction", lambda f, d: calls.append(f)
-    )
+    calls: list[tuple[float, int]] = []
+
+    def record(fraction: float, device: object) -> None:
+        # Mirrors the real API, which rejects a torch.device without an index.
+        assert isinstance(device, int), device
+        calls.append((fraction, device))
+
+    monkeypatch.setattr(torch.cuda, "set_per_process_memory_fraction", record)
+    monkeypatch.setattr(torch.cuda, "current_device", lambda: 0)
     monkeypatch.setenv(CUDA_MEMORY_FRACTION_ENV, "1.5")
     with pytest.raises(ValueError, match="must be in"):
         limit_cuda_memory("cuda")
     monkeypatch.setenv(CUDA_MEMORY_FRACTION_ENV, "0.08")
     limit_cuda_memory("cuda")
-    assert calls == [0.08]
+    assert calls == [(0.08, 0)]

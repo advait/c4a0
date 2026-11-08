@@ -178,7 +178,9 @@ def limit_cuda_memory(device: str | torch.device) -> None:
         raise ValueError(
             f"{CUDA_MEMORY_FRACTION_ENV} must be in (0, 1], got {fraction}"
         )
-    torch.cuda.set_per_process_memory_fraction(value, device)
+    # The API needs a device index; a bare "cuda" device means the current one.
+    index = device.index if device.index is not None else torch.cuda.current_device()
+    torch.cuda.set_per_process_memory_fraction(value, index)
 
 
 def release_cuda_cache(device: str | torch.device) -> None:
