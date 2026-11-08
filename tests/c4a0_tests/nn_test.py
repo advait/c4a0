@@ -9,7 +9,13 @@ import numpy as np
 import pytest
 import torch
 
-from c4a0.nn import ConnectFourNet, Head, ModelConfig, NumpyEvaluator
+from c4a0.nn import (
+    ConnectFourNet,
+    Head,
+    ModelConfig,
+    NumpyEvaluator,
+    two_hot_cross_entropy,
+)
 from c4a0.training import parse_lr_schedule
 from c4a0_rust import BUF_N_CHANNELS, N_COLS, N_ROWS
 
@@ -436,3 +442,63 @@ def test_mirror_inference_is_symmetric_and_normalized() -> None:
         NumpyEvaluator(model)(x), (policy, q_penalty, q_no_penalty), strict=True
     ):
         np.testing.assert_allclose(a, b, atol=1e-5)
+
+
+def test_two_hot_cross_entropy_is_minimized_by_the_two_hot_target() -> None:
+    n_bins = 201
+    target = torch.tensor([-1.0, -0.375, 0.0, 0.42, 1.0])
+    centers = torch.linspace(-1.0, 1.0, n_bins)
+    position = (target + 1) / 2 * (n_bins - 1)
+    low = position.floor().clamp(max=n_bins - 2)
+    two_hot = torch.zeros(len(target), n_bins)
+    two_hot[torch.arange(len(target)), low.long()] = 1 - (position - low)
+    two_hot[torch.arange(len(target)), low.long() + 1] += position - low
+    # The encoding's mean is the target, and its own log-probabilities minimize the loss.
+    torch.testing.assert_close(two_hot @ centers, target)
+    best = two_hot_cross_entropy(torch.log(two_hot + 1e-12), target)
+    worse = two_hot_cross_entropy(torch.zeros(len(target), n_bins), target)
+    assert best < worse
+
+
+def test_value_bins_head_returns_the_mean_and_learns_a_target() -> None:
+    torch.manual_seed(0)
+    config = ModelConfig(
+        head="conv",
+        value_hidden=16,
+        value_bins=21,
+        n_residual_blocks=1,
+        conv_filter_size=8,
+        n_policy_layers=1,
+        n_value_layers=1,
+        lr_schedule={0: 1e-2},
+        l2_reg=0.0,
+    )
+    model = ConnectFourNet(config)
+    pos = torch.rand(64, 2, N_ROWS, N_COLS).round()
+    _, q_penalty, q_no_penalty, logits = model.forward_with_bins(pos)
+    assert logits is not None and logits.shape == (64, 21)
+    torch.testing.assert_close(q_penalty, logits.softmax(1) @ torch.linspace(-1, 1, 21))
+    assert q_no_penalty.abs().max() <= 1
+    target = torch.full((64,), 0.3)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+    for _ in range(200):
+        optimizer.zero_grad()
+        bins = model.forward_with_bins(pos)[3]
+        assert bins is not None
+        two_hot_cross_entropy(bins, target).backward()
+        optimizer.step()
+    model.eval()
+    assert model.forward(pos)[1].sub(0.3).abs().max() < 0.02
+
+
+def test_value_bins_require_conv_heads() -> None:
+    with pytest.raises(ValueError, match="conv heads"):
+        ModelConfig(
+            value_bins=21,
+            n_residual_blocks=1,
+            conv_filter_size=8,
+            n_policy_layers=1,
+            n_value_layers=1,
+            lr_schedule={0: 1e-3},
+            l2_reg=0.0,
+        )

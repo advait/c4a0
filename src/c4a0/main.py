@@ -96,6 +96,14 @@ def train(
     value_hidden: int = typer.Option(
         256, min=1, help="Value hidden width for conv heads and token models."
     ),
+    value_bins: int = typer.Option(
+        0,
+        min=0,
+        help="Conv heads: q_penalty as a two-hot distribution over this many bins.",
+    ),
+    value_loss_weight: float = typer.Option(
+        1.0, min=0.0, help="Weight on the q_penalty loss relative to the policy loss."
+    ),
     lr_schedule: list[float] = typer.Option(
         default_factory=lambda: [0, 2e-3, 10, 8e-4], show_default="0 2e-3 10 8e-4"
     ),
@@ -149,6 +157,8 @@ def train(
         n_heads=n_heads,
         head=head,
         value_hidden=value_hidden,
+        value_bins=value_bins,
+        value_loss_weight=value_loss_weight,
         n_residual_blocks=n_residual_blocks,
         conv_filter_size=conv_filter_size,
         n_policy_layers=n_policy_layers,
@@ -289,6 +299,14 @@ def ceiling(
     value_hidden: int = typer.Option(
         256, min=1, help="Value hidden width for conv heads and token models."
     ),
+    value_bins: int = typer.Option(
+        0,
+        min=0,
+        help="Conv heads: q_penalty as a two-hot distribution over this many bins.",
+    ),
+    value_loss_weight: float = typer.Option(
+        1.0, min=0.0, help="Weight on the q_penalty loss relative to the policy loss."
+    ),
     lr: float = 2e-3,
     l2_reg: float = 4e-4,
     batch_size: int = 4096,
@@ -325,6 +343,8 @@ def ceiling(
         n_heads=n_heads,
         head=head,
         value_hidden=value_hidden,
+        value_bins=value_bins,
+        value_loss_weight=value_loss_weight,
         n_residual_blocks=n_residual_blocks,
         conv_filter_size=conv_filter_size,
         n_policy_layers=n_policy_layers,
