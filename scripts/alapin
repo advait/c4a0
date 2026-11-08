@@ -91,13 +91,28 @@ python3 - "$1" "$2" <<'PY'
 import os, subprocess, sys
 fraction, procs = float(sys.argv[1]), int(sys.argv[2])
 total = float(subprocess.check_output(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"]).split()[0]) / 1024
-live = sum(1 for line in subprocess.check_output(["pgrep", "-fa", "main.py train"]).decode().splitlines() if "agent-work" in line and "uv run" not in line) if subprocess.call(["pgrep", "-f", "main.py train"], stdout=subprocess.DEVNULL) == 0 else 0
+def live_fractions():
+    # Each live train process's own cap, read from its environment (0.06 if unset).
+    out = subprocess.run(["pgrep", "-f", "main.py (train|ceiling)"], capture_output=True, text=True).stdout.split()
+    for pid in out:
+        try:
+            cmd = open(f"/proc/{pid}/cmdline", "rb").read().decode(errors="replace")
+            argv0 = cmd.split("\0", 1)[0]
+            # Only the Python training process itself, not its timeout/sh/uv wrappers.
+            if "agent-work" not in cmd or not argv0.split("/")[-1].startswith("python"):
+                continue
+            env = open(f"/proc/{pid}/environ", "rb").read().decode(errors="replace").split("\0")
+        except OSError:
+            continue
+        vals = [e.split("=", 1)[1] for e in env if e.startswith("C4A0_CUDA_MEMORY_FRACTION=")]
+        yield float(vals[0]) if vals else 0.06
+live = [f * total + 0.4 for f in live_fractions()]
 per = fraction * total + 0.4
 budget = total - 6.0
-need = (live + procs) * per
-print(f"gpu budget: {live} live + {procs} new processes x {per:.1f} GB = {need:.1f} GB of {budget:.1f} GB", file=sys.stderr)
+need = sum(live) + procs * per
+print(f"gpu budget: {len(live)} live ({sum(live):.1f} GB) + {procs} new x {per:.1f} GB = {need:.1f} GB of {budget:.1f} GB", file=sys.stderr)
 if need > budget:
-    print(f"refusing: at most {int(budget // per)} processes fit at fraction {fraction}", file=sys.stderr)
+    print(f"refusing: {int((budget - sum(live)) // per)} more processes fit at fraction {fraction}", file=sys.stderr)
     sys.exit(1)
 PY
 BUDGET
