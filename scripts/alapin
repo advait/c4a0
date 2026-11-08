@@ -75,14 +75,16 @@ run)
     [ "$1" = -- ] || usage; shift
     limit=${ALAPIN_TIMEOUT:-6h}
     workdir=${ALAPIN_DIR:-c4a0}
+    # Per-process CUDA memory cap (fraction of the GPU); concurrent runs fail alone, not the card.
+    gpu_fraction=${ALAPIN_GPU_FRACTION:-0.08}
     valid_name "$workdir"
     case $limit in ''|*[!0-9smhd.]*|0|0s|0m|0h|0d) echo 'ALAPIN_TIMEOUT must be a positive timeout duration' >&2; exit 2;; esac
     args=''
     for arg do args="$args $(quote "$arg")"; done
-    remote "sh -s -- $(quote "$name") $(quote "$limit") $(quote "$workdir") $args" <<'REMOTE'
+    remote "sh -s -- $(quote "$name") $(quote "$limit") $(quote "$workdir") $(quote "$gpu_fraction") $args" <<'REMOTE'
 set -eu
 . "$HOME/agent-work/env.sh"
-name=$1; limit=$2; workdir=$3; shift 3
+name=$1; limit=$2; workdir=$3; gpu_fraction=$4; shift 4
 [ -d "$HOME/agent-work/$workdir/.git" ] || [ -f "$HOME/agent-work/$workdir/.git" ] || { echo "no checkout at ~/agent-work/$workdir" >&2; exit 1; }
 timeout "$limit" true
 [ ! -d "$HOME/agent-work/setup/sync.lock" ] || { echo 'sync is active' >&2; exit 1; }
@@ -96,7 +98,8 @@ quote() { printf "'"; printf '%s' "$1" | sed "s/'/'\\\\''/g"; printf "'"; }
     cat <<'RUNNER'
 . "$HOME/agent-work/env.sh"
 cd "$HOME/agent-work/$(cat "$(dirname "$0")/workdir")" || exit 1
-export RUN_DIR C4A0_RUN_DIR
+export RUN_DIR C4A0_RUN_DIR C4A0_CUDA_MEMORY_FRACTION
+C4A0_CUDA_MEMORY_FRACTION=$(cat "$(dirname "$0")/gpu_fraction")
 RUN_DIR=$(dirname "$0")
 C4A0_RUN_DIR=$RUN_DIR
 limit=$(cat "$RUN_DIR/timeout")
@@ -111,6 +114,7 @@ RUNNER
 } > "$run_dir/runner.sh"
 printf '%s\n' "$limit" > "$run_dir/timeout"
 printf '%s\n' "$workdir" > "$run_dir/workdir"
+printf '%s\n' "$gpu_fraction" > "$run_dir/gpu_fraction"
 setsid nohup sh "$run_dir/runner.sh" > "$run_dir/log" 2>&1 < /dev/null &
 printf '%s\n' "$!" > "$run_dir/pid"
 printf 'started %s pid=%s outputs=%s\n' "$name" "$!" "$run_dir"

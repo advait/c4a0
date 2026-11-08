@@ -123,3 +123,32 @@ def test_fixed_batch_budget_samples_with_replacement_on_requested_device() -> No
     assert len(batches) == 5
     assert all(batch[0].shape == (8,) for batch in batches)
     assert all(0 <= int(v) < 3 for batch in batches for v in batch[0])
+
+
+def test_cuda_memory_helpers_are_noops_off_cuda(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from c4a0.utils import (
+        CUDA_MEMORY_FRACTION_ENV,
+        limit_cuda_memory,
+        release_cuda_cache,
+    )
+
+    monkeypatch.setenv(CUDA_MEMORY_FRACTION_ENV, "0.1")
+    limit_cuda_memory("cpu")
+    release_cuda_cache(torch.device("cpu"))
+
+
+def test_cuda_memory_fraction_is_validated(monkeypatch: pytest.MonkeyPatch) -> None:
+    from c4a0.utils import CUDA_MEMORY_FRACTION_ENV, limit_cuda_memory
+
+    calls: list[float] = []
+    monkeypatch.setattr(
+        torch.cuda, "set_per_process_memory_fraction", lambda f, d: calls.append(f)
+    )
+    monkeypatch.setenv(CUDA_MEMORY_FRACTION_ENV, "1.5")
+    with pytest.raises(ValueError, match="must be in"):
+        limit_cuda_memory("cuda")
+    monkeypatch.setenv(CUDA_MEMORY_FRACTION_ENV, "0.08")
+    limit_cuda_memory("cuda")
+    assert calls == [0.08]

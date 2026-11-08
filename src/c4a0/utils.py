@@ -1,5 +1,6 @@
 import copy
 import io
+import os
 import pickle
 from pathlib import Path
 from typing import TYPE_CHECKING, BinaryIO, Generic, TypeVar, cast
@@ -160,3 +161,27 @@ def tensor_batches(
     return DataLoader(
         ds, batch_size=None, sampler=BatchSampler(sampler, batch_size, False)
     )
+
+
+CUDA_MEMORY_FRACTION_ENV = "C4A0_CUDA_MEMORY_FRACTION"
+
+
+def limit_cuda_memory(device: str | torch.device) -> None:
+    """Caps this process's CUDA memory at the fraction in $C4A0_CUDA_MEMORY_FRACTION, so several
+    concurrent runs on one GPU fail individually instead of exhausting the card."""
+    device = torch.device(device)
+    fraction = os.environ.get(CUDA_MEMORY_FRACTION_ENV)
+    if device.type != "cuda" or not fraction:
+        return
+    value = float(fraction)
+    if not 0 < value <= 1:
+        raise ValueError(
+            f"{CUDA_MEMORY_FRACTION_ENV} must be in (0, 1], got {fraction}"
+        )
+    torch.cuda.set_per_process_memory_fraction(value, device)
+
+
+def release_cuda_cache(device: str | torch.device) -> None:
+    """Returns cached, unused CUDA memory to the driver between phases."""
+    if torch.device(device).type == "cuda":
+        torch.cuda.empty_cache()

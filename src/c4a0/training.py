@@ -30,7 +30,9 @@ from c4a0.utils import (
     BestModelCheckpoint,
     GenerationTrainer,
     lightning_accelerator,
+    limit_cuda_memory,
     load_model,
+    release_cuda_cache,
     tensor_batches,
 )
 from c4a0_rust import PlayGamesResult
@@ -146,6 +148,7 @@ class TrainingGen(GenConfig):
                 device=device,
             )
         self.evals[suite_eval.suite] = suite_eval
+        release_cuda_cache(device)
         logger.info(
             "Gen {} on {}: raw top1 {}, mcts top1 {}, value accuracy {}",
             self.gen_n,
@@ -364,6 +367,7 @@ def train_single_gen(
         trainer.gen_n = gen_n
         model.train()  # Switch batch normalization to train mode for training bn params
         trainer.fit(model, data_module)
+    release_cuda_cache(device)
     if metrics:
         metrics.epochs = trainer.current_epoch
         metrics.optimizer_steps = trainer.global_step
@@ -398,6 +402,7 @@ def training_loop(
     """Main training loop. Sequentially trains generation after generation. Each generation's
     saved model is scored on `eval_config` (default: raw network on the v1 dev suite)."""
     eval_config = eval_config or default_eval_config()
+    limit_cuda_memory(device)
     logger.info("Beginning training loop")
     logger.info("device: {}", device)
     logger.info("config: \n{}", config.model_dump_json(indent=2))
