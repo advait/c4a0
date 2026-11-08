@@ -39,6 +39,14 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   Legacy metadata tests include retired fields. `main_test.py` checks winning CLI
   defaults, control forwarding, device selection, baseline play without training data,
   and the error for a missing trained model.
+- Head tests in `nn_test.py` pin default and explicit `fc` tensor shapes and bytes to
+  `1bccc92` with seed 1337 and one torch thread. The fixture includes BatchNorm buffers.
+  Keep `fc_4x64_seed1337.json` and `legacy_model.pkl` from that pre-change code.
+  Do not regenerate them from the implementation under test. Tests also check legacy
+  metadata defaults, conv output shapes and ranges, singleton batches, gradients, numpy
+  callbacks, and pickle round trips. A 4-block 64-filter conv model has 309,470 parameters
+  with `value_hidden=256`, below 1M. FC head depth settings have no effect on conv heads.
+  CLI tests check head forwarding for `train` and `ceiling`, including ceiling reports.
 - `generation_golden_test.py` pins two generations to master `57d3a2a`: game CBOR,
   augmented dataset bytes, every training and validation batch loss, validation scores,
   and every published model tensor. It uses seed 1337, one torch thread, singleton NN
@@ -64,12 +72,18 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
 
 ## Lane 2: end to end (seconds to minutes)
 
-- `mise run train:smoke` runs one tiny generation (4 games, 4 MCTS iterations) through
-  Rust self-play, the PyO3 callback, Lightning training and saving.
+- `mise run train:smoke` runs two tiny CPU jobs, one with `--head fc` and one with
+  `--head conv`. Each runs one generation with 4 games and 4 MCTS iterations through
+  Rust self-play, the PyO3 callback, Lightning training, saving, and dev evaluation.
+  FC artifacts go to `training/ci-smoke`, conv artifacts to `training/ci-smoke-conv`.
+  The task removes both directories before their runs.
 - The smoke task explicitly uses a 1-block 8-filter CPU network, 2 epochs with
   patience 1, and MCTS-4 evaluation. It exercises the winning self-play controls.
   For replay across generations, repeat its tiny command with `--max-gens 2`.
   Generation two saves only its new games. This proves plumbing, not convergence.
+- `training_test.py` also runs a conv generation with `value_hidden=17`, ignored FC
+  head depths, and MCTS-4 evaluation. It checks optimizer updates and reloads root and
+  child models and metadata. `main_test.py` checks the saved ceiling model and report.
 - For phase timing after the smoke run, copy its artifacts and append one measured
   generation. `--phase training` reuses the newest games, includes each older ancestor
   once, and still evaluates and publishes:
@@ -197,6 +211,14 @@ the architecture's raw top-1 is not a bound on MCTS play.
   `--train-patience P` stops after P validation checks without improved `val_loss`.
   Validation runs once per epoch. Both must be at least 1 and are recorded as flat
   metadata fields through `GenConfig`.
+- `--head fc|conv` defaults to `fc` for both new and legacy configurations. Conv heads
+  use `--value-hidden N` (default 256, positive) and ignore `--n-policy-layers` and
+  `--n-value-layers`. Both `train` and `ceiling` expose these options. `train` records
+  them in flat metadata; `ceiling` records them under `net` in `report.json`.
+  A resumed run must use the saved model's head architecture and, for conv, value width.
+  Use a fresh `--base-dir` to change either. These options change results. Component
+  tests and smoke runs establish no convergence benefit; compare architectures using
+  lane 3 at a fixed MCTS-256 budget on dev.
 - `--random-start-frac F` starts a fraction of self-play games from random openings.
   F must be finite and in [0, 1]. `--random-start-max-ply K` must be at least 1 and
   defaults to 20 for `train` (legacy metadata falls back to 12). Rust caps K at 41,

@@ -34,7 +34,7 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `train`, `play`, `eval`, `report`, `plot` | Usage tasks. Extra arguments go after `--`. |
 | `check` | Ruff lint and format check, ty, Rust tests, Python tests. Run it before every commit. |
 | `ci` | `check` plus `train:smoke`. CI runs this on every push. |
-| `train:smoke` | One tiny CPU generation through self-play, training, saving and evaluation. |
+| `train:smoke` | Two tiny CPU runs, one per head architecture, through self-play, training, saving and evaluation. |
 | `suite:build` | Rebuilds the committed suites. Needs the solver in `solver/`. |
 | `solver:native:build`, `solver:native:book` | Build the native solver and its ply-10 opening book in `native-solver/` (gitignored). |
 | `solver:diff` | Compares the native solver against Pons and adjudicates every disagreement. Set `C4A0_SOLVER` and `C4A0_BOOK` to the Pons binary and book. |
@@ -66,8 +66,28 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `--compile` | off | `torch.compile` of the self-play forward with dynamic batches. Falls back to eager on setup or execution failure, with a warning. Compilation stays outside the saved model. |
 | `--train-steps N` | unset | Exactly N optimizer steps with full minibatches sampled with replacement from the augmented training split. Validates at the end and publishes the final model. Ignores epoch caps and patience. N must be positive. |
 | `--n-residual-blocks`, `--conv-filter-size` | 4, 64 | Network size. |
+| `--head` | `fc` | Policy and value heads: `fc` uses the existing fully connected heads; `conv` uses AlphaZero-style 1×1 convolutional heads. |
+| `--value-hidden` | 256 | Hidden value layer width for `--head conv`. Must be positive. Ignored with `--head fc`. |
+| `--n-policy-layers`, `--n-value-layers` | 4, 2 | Fully connected head depths. Both are ignored with `--head conv`. |
 | `--eval-mcts-iterations` | 64 256 | MCTS budgets scored on the dev suite each generation. |
 | `--device` | auto | `cuda`, then `mps`, then `cpu`. Lightning trains on the same device. |
+
+`ceiling` accepts the same head options and records them in `report.json` under `net`.
+`train` records `head` and `value_hidden` as flat generation metadata fields.
+Old configurations and metadata default to `fc` and a value width of 256. Old `model.pkl`
+files retain their fully connected heads.
+
+The convolutional policy head has two channels, batch normalization, ReLU, flattening,
+and a linear layer that produces seven log probabilities. The convolutional value head
+has one channel, batch normalization, ReLU, flattening, and two linear layers with ReLU
+between them. Tanh produces the same `q_penalty` and `q_no_penalty` outputs as the FC head.
+`--value-hidden` sets the width between those value layers. Legal-move masking stays in
+the existing search and evaluation code.
+
+Head options must match the saved model when resuming a run. A different head architecture
+or convolutional value width requires a fresh `--base-dir`. Component tests and CPU smoke
+runs establish compatibility and training behavior. The effect on solver-optimal play
+requires convergence experiments at MCTS-256 on dev.
 
 ## Benchmarking
 
