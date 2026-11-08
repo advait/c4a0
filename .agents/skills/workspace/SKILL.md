@@ -36,3 +36,8 @@ Status: implemented
   - `scripts/alapin status [name]`, `scripts/alapin stop <name>` (kills the run's whole
     session), and `scripts/alapin fetch <name>` (to `/tmp/alapin-runs/<name>`).
 - Labels for the ceiling live at `~/agent-work/data/train-s7.tsv`.
+- GPU memory is budgeted per training process. `scripts/alapin run` caps each process at
+  `ALAPIN_GPU_FRACTION` of the card (default 0.12, about 2.8 GB) and refuses to start when the
+  live processes plus `ALAPIN_GPU_PROCS` new ones would not fit beside a 6 GB desktop reserve.
+  Set `ALAPIN_GPU_PROCS` to the number of `train` processes the command starts. At the default
+  cap, at most 5 run at once.
