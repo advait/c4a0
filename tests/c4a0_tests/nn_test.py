@@ -16,7 +16,10 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 
 @pytest.mark.parametrize("explicit_fc", [False, True])
-def test_fc_initialization_matches_pre_head_option_bytes(explicit_fc: bool) -> None:
+@pytest.mark.parametrize("explicit_arch", [False, True])
+def test_fc_initialization_matches_pre_head_option_bytes(
+    explicit_fc: bool, explicit_arch: bool
+) -> None:
     # Captured from 1bccc92 before editing nn.py with one torch thread, including
     # BatchNorm buffers from the dummy trunk pass. Never regenerate from new code.
     config = ModelConfig(
@@ -27,6 +30,8 @@ def test_fc_initialization_matches_pre_head_option_bytes(explicit_fc: bool) -> N
         lr_schedule={0: 0.001},
         l2_reg=0.0,
     )
+    if explicit_arch:
+        config = config.model_copy(update={"arch": "resnet"})
     if explicit_fc:
         config = config.model_copy(update={"head": "fc", "value_hidden": 17})
     threads = torch.get_num_threads()

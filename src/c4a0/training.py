@@ -25,7 +25,7 @@ import c4a0_rust
 from c4a0.benchmark import GenerationMetrics
 from c4a0.evaluation import SuiteEval, evaluate_model
 from c4a0.labels import Split, Suite, load_suite
-from c4a0.nn import ConnectFourNet, Head, ModelConfig, NumpyEvaluator
+from c4a0.nn import Arch, ConnectFourNet, Head, ModelConfig, NumpyEvaluator
 from c4a0.utils import (
     BestModelCheckpoint,
     GenerationTrainer,
@@ -63,6 +63,10 @@ class GenConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    arch: Arch = "resnet"
+    n_layers: int = Field(default=6, ge=1)
+    d_model: int = Field(default=128, ge=1)
+    n_heads: int = Field(default=4, ge=1)
     head: Head = "fc"
     value_hidden: int = Field(default=256, ge=1)
 
@@ -280,9 +284,24 @@ def train_single_gen(
     with metrics.phase("setup") if metrics else nullcontext():
         # Self play
         model = parent.get_model(base_dir, device)
-        if getattr(model, "head", "fc") != config.head or (
-            config.head == "conv"
-            and model.hparams["value_hidden"] != config.value_hidden
+        if getattr(model, "arch", "resnet") != config.arch or (
+            config.arch in ("transformer", "hybrid")
+            and any(
+                model.hparams[name] != getattr(config, name)
+                for name in ("n_layers", "d_model", "n_heads", "value_hidden")
+            )
+        ):
+            raise ValueError(
+                "Architecture options differ from the saved model. Use its --arch, "
+                "--n-layers, --d-model, --n-heads and --value-hidden settings to resume, "
+                "or a new --base-dir to change architecture."
+            )
+        if config.arch in ("resnet", "resnet_gpool") and (
+            getattr(model, "head", "fc") != config.head
+            or (
+                config.head == "conv"
+                and model.hparams["value_hidden"] != config.value_hidden
+            )
         ):
             raise ValueError(
                 "Head options differ from the saved model. Use its --head and "

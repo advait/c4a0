@@ -1,5 +1,5 @@
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, Literal, Self, cast
 
 import numpy as np
 import pytorch_lightning as pl
@@ -8,7 +8,7 @@ import torch.nn as nn
 from einops import rearrange
 from loguru import logger
 from numpy.typing import NDArray
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from torch.optim.adam import Adam
 
 from c4a0.utils import GenerationTrainer
@@ -18,16 +18,22 @@ if TYPE_CHECKING:
     from c4a0.training import GenConfig
 
 Head = Literal["fc", "conv"]
+Arch = Literal["resnet", "resnet_gpool", "transformer", "hybrid"]
 
 
 class ModelConfig(BaseModel):
     """Configuration for ConnectFourNet."""
 
+    arch: Arch = "resnet"
+    n_layers: int = Field(default=6, ge=1)
+    d_model: int = Field(default=128, ge=1)
+    n_heads: int = Field(default=4, ge=1)
+
     head: Head = "fc"
     """Policy and value head architecture."""
 
     value_hidden: int = Field(default=256, ge=1)
-    """Hidden value layer width, used only by convolutional heads."""
+    """Hidden value layer width for convolutional and token heads."""
 
     n_residual_blocks: int
     """The number of residual blocks."""
@@ -49,6 +55,12 @@ class ModelConfig(BaseModel):
 
     l2_reg: float
     """L2 weight decay regularization for the optimizer"""
+
+    @model_validator(mode="after")
+    def validate_attention_width(self) -> Self:
+        if self.arch in ("transformer", "hybrid") and self.d_model % self.n_heads:
+            raise ValueError("d_model must be divisible by n_heads for token models")
+        return self
 
 
 class ConnectFourNet(pl.LightningModule):
@@ -74,13 +86,26 @@ class ConnectFourNet(pl.LightningModule):
         self.lr_schedule = config.lr_schedule
         self.l2_reg = config.l2_reg
         self.head = config.head
+        self.arch = config.arch
 
+        if config.arch in ("transformer", "hybrid"):
+            self.tokens = TokenTrunk(config)
+            self.token_policy = nn.Linear(config.d_model, 1)
+            self.token_value = nn.Sequential(
+                nn.Linear(config.d_model, config.value_hidden),
+                nn.GELU(),
+                nn.Linear(config.value_hidden, 2),
+                nn.Tanh(),
+            )
+            self.save_hyperparameters(config.model_dump())
+            return
+
+        block = (
+            GlobalPoolResidualBlock if config.arch == "resnet_gpool" else ResidualBlock
+        )
         self.conv = nn.Sequential(
             nn.Conv2d(2, config.conv_filter_size, kernel_size=3, padding=1),
-            *[
-                ResidualBlock(config.conv_filter_size)
-                for i in range(config.n_residual_blocks)
-            ],
+            *[block(config.conv_filter_size) for i in range(config.n_residual_blocks)],
         )
 
         if config.head == "conv":
@@ -143,6 +168,13 @@ class ConnectFourNet(pl.LightningModule):
     def forward(
         self, x: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if getattr(self, "arch", "resnet") in ("transformer", "hybrid"):
+            x = self.tokens(x)  # batch, row, column, feature
+            policy_logprobs = (
+                self.token_policy(x.mean(dim=1)).squeeze(-1).log_softmax(dim=1)
+            )
+            q_values = self.token_value(x.mean(dim=(1, 2)))
+            return policy_logprobs, q_values[:, 0], q_values[:, 1]
         x = self.conv(x)
         # Pickles saved before head selection have no `head` attribute.
         if getattr(self, "head", "fc") == "conv":
@@ -319,3 +351,68 @@ class ResidualBlock(pl.LightningModule):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return x + self.block(x)
+
+
+class GlobalPoolResidualBlock(nn.Module):
+    """Broadcast mean/max context after conv1, immediately before conv2."""
+
+    def __init__(self, n_channels: int) -> None:
+        super().__init__()
+        self.conv1 = nn.Conv2d(n_channels, n_channels, 3, padding=1)
+        self.pool_bias = nn.Linear(2 * n_channels, n_channels)
+        self.conv2 = nn.Conv2d(n_channels, n_channels, 3, padding=1)
+        self.norm = nn.BatchNorm2d(n_channels)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        activations = self.conv1(x)
+        context = torch.cat(
+            (activations.mean(dim=(2, 3)), activations.amax(dim=(2, 3))), dim=1
+        )
+        activations = activations + self.pool_bias(context)[:, :, None, None]
+        return x + self.norm(self.conv2(activations)).relu()
+
+
+class TokenTrunk(nn.Module):
+    """42 row-major tokens with separable learned positions and pre-norm attention.
+
+    Token models always use token heads, independent of the fc/conv head option.
+    Hybrid's convolutional stem uses n_residual_blocks and conv_filter_size.
+    """
+
+    def __init__(self, config: ModelConfig) -> None:
+        super().__init__()
+        channels = 2
+        self.stem: nn.Module = nn.Identity()
+        if config.arch == "hybrid":
+            channels = config.conv_filter_size
+            self.stem = nn.Sequential(
+                nn.Conv2d(2, channels, 3, padding=1),
+                *[ResidualBlock(channels) for _ in range(config.n_residual_blocks)],
+            )
+        self.embed = nn.Linear(channels, config.d_model)
+        self.row_embedding = nn.Parameter(torch.empty(N_ROWS, 1, config.d_model))
+        self.col_embedding = nn.Parameter(torch.empty(1, N_COLS, config.d_model))
+        nn.init.normal_(self.row_embedding, std=0.02)
+        nn.init.normal_(self.col_embedding, std=0.02)
+        # Construct each layer independently rather than cloning identical initial weights.
+        self.layers = nn.Sequential(
+            *[
+                nn.TransformerEncoderLayer(
+                    d_model=config.d_model,
+                    nhead=config.n_heads,
+                    dim_feedforward=4 * config.d_model,
+                    dropout=0.0,
+                    activation="gelu",
+                    batch_first=True,
+                    norm_first=True,
+                )
+                for _ in range(config.n_layers)
+            ],
+            nn.LayerNorm(config.d_model),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.embed(self.stem(x).permute(0, 2, 3, 1))
+        x = x + self.row_embedding + self.col_embedding
+        x = self.layers(x.flatten(1, 2))
+        return x.unflatten(1, (N_ROWS, N_COLS))
