@@ -5,6 +5,7 @@ import pickle
 from collections.abc import Callable
 from pathlib import Path
 
+import numpy as np
 import pytest
 import torch
 
@@ -407,3 +408,31 @@ def test_compiled_forward_handles_dynamic_batches_and_stays_out_of_pickle(
         )
     assert evaluator.compiled
     assert not hasattr(pickle.loads(pickle.dumps(model)), "_orig_mod")
+
+
+def test_mirror_inference_is_symmetric_and_normalized() -> None:
+    torch.manual_seed(0)
+    config = ModelConfig(
+        n_residual_blocks=1,
+        conv_filter_size=8,
+        n_policy_layers=1,
+        n_value_layers=1,
+        lr_schedule={0: 1e-3},
+        l2_reg=0.0,
+        mirror_inference=True,
+    )
+    model = ConnectFourNet(config)
+    x = torch.rand(5, 2, N_ROWS, N_COLS).round().numpy()
+    policy, q_penalty, q_no_penalty = model.forward_numpy(x)
+    m_policy, m_q_penalty, m_q_no_penalty = model.forward_numpy(
+        np.ascontiguousarray(x[..., ::-1])
+    )
+    np.testing.assert_allclose(policy, m_policy[:, ::-1], atol=1e-5)
+    np.testing.assert_allclose(q_penalty, m_q_penalty, atol=1e-6)
+    np.testing.assert_allclose(q_no_penalty, m_q_no_penalty, atol=1e-6)
+    np.testing.assert_allclose(np.exp(policy).sum(1), 1.0, atol=1e-5)
+    # Self-play's evaluator searches with the same mirrored network.
+    for a, b in zip(
+        NumpyEvaluator(model)(x), (policy, q_penalty, q_no_penalty), strict=True
+    ):
+        np.testing.assert_allclose(a, b, atol=1e-5)

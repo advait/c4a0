@@ -123,6 +123,9 @@ def train(
         min=1,
         help="Train exactly this many epochs per generation, cosine-annealing the rate to 1%.",
     ),
+    mirror_inference: bool = typer.Option(
+        False, help="Average each network call with its left-right mirror."
+    ),
     eval_mcts_iterations: list[int] = typer.Option(
         default_factory=lambda: [64, 256], show_default="64 256"
     ),
@@ -152,6 +155,7 @@ def train(
         n_value_layers=n_value_layers,
         lr_schedule=parse_lr_schedule(lr_schedule),
         l2_reg=l2_reg,
+        mirror_inference=mirror_inference,
     )
 
     config = GenConfig(

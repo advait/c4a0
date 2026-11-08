@@ -1,3 +1,4 @@
+import math
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Literal, Self, cast
 
@@ -58,6 +59,9 @@ class ModelConfig(BaseModel):
     l2_reg: float
     """L2 weight decay regularization for the optimizer"""
 
+    mirror_inference: bool = False
+    """Average every inference call with its left-right mirror (Connect Four is symmetric)."""
+
     @model_validator(mode="after")
     def validate_attention_width(self) -> Self:
         if self.arch in ("transformer", "hybrid") and self.d_model % self.n_heads:
@@ -87,6 +91,7 @@ class ConnectFourNet(pl.LightningModule):
         super().__init__()
         self.lr_schedule = config.lr_schedule
         self.l2_reg = config.l2_reg
+        self.mirror_inference = config.mirror_inference
         self.head = config.head
         self.arch = config.arch
 
@@ -191,6 +196,23 @@ class ConnectFourNet(pl.LightningModule):
         q_no_penalty = q_no_penalty.squeeze(1)  # b
         return policy_logprobs, q_penalty, q_no_penalty
 
+    def infer(
+        self, pos: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """The forward pass self-play and evaluation search with: `forward`, averaged with the
+        left-right mirror when `mirror_inference` is set."""
+        policy, q_penalty, q_no_penalty = self.forward(pos)
+        # Models pickled before this option lack the attribute.
+        if not getattr(self, "mirror_inference", False):
+            return policy, q_penalty, q_no_penalty
+        m_policy, m_q_penalty, m_q_no_penalty = self.forward(pos.flip(-1))
+        # Log-probabilities: average the probabilities so the policy stays normalized.
+        return (
+            torch.logaddexp(policy, m_policy.flip(-1)) - math.log(2),
+            (q_penalty + m_q_penalty) / 2,
+            (q_no_penalty + m_q_no_penalty) / 2,
+        )
+
     def forward_numpy(
         self, x: NDArray[np.float32]
     ) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]:
@@ -200,7 +222,7 @@ class ConnectFourNet(pl.LightningModule):
         self.eval()
         pos = torch.from_numpy(x).to(self.device)
         with torch.inference_mode():
-            policy, q_penalty, q_no_penalty = self.forward(pos)
+            policy, q_penalty, q_no_penalty = self.infer(pos)
         policy_np = policy.cpu().numpy()
         q_penalty_np = q_penalty.cpu().numpy()
         q_no_penalty_np = q_no_penalty.cpu().numpy()
@@ -292,12 +314,12 @@ class NumpyEvaluator:
         self.bf16 = config.bf16 if config else False
         self.forward: Callable[
             [torch.Tensor], tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        ] = model.forward
+        ] = model.infer
         self.compiled = False
         if config and config.compile:
             try:
                 # Compile a bound forward, leaving the module and its pickle untouched.
-                self.forward = torch.compile(model.forward, dynamic=True)
+                self.forward = torch.compile(model.infer, dynamic=True)
                 self.compiled = True
             except Exception as error:
                 logger.warning(
@@ -314,7 +336,7 @@ class NumpyEvaluator:
         except Exception as error:
             # Backend availability errors often arrive on the first call, not at compile().
             logger.warning("Compiled self-play forward failed; using eager: {}", error)
-            self.forward = self.model.forward
+            self.forward = self.model.infer
             self.compiled = False
             return self.forward(pos)
 
