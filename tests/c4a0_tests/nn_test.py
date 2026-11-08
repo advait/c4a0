@@ -1,4 +1,5 @@
 import copy
+from collections.abc import Callable
 
 import pytest
 import torch
@@ -161,23 +162,107 @@ def test_policy_loss_is_batchmean_kl_of_target_to_prediction() -> None:
     assert torch.allclose(loss, expected, atol=1e-6)
 
 
-def test_inference_callback_matches_legacy_across_batch_sizes() -> None:
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="CUDA required"
+            ),
+        ),
+    ],
+)
+def test_inference_callback_matches_legacy_across_batch_sizes(device: str) -> None:
     import numpy as np
 
     import c4a0_rust
     from c4a0.nn import NumpyEvaluator
     from c4a0_tests.training_test import TINY_CONFIG
 
-    model = ConnectFourNet(TINY_CONFIG).eval()
+    model = ConnectFourNet(TINY_CONFIG).to(device).eval()
     evaluator = NumpyEvaluator(model)
     for size in [1, 4, 32, 2, 17, 1]:
         positions = c4a0_rust.encode_positions(["123", "33", "1234", ""] * size)
         with torch.no_grad():
             expected = tuple(
                 np.ascontiguousarray(t.cpu().numpy())
-                for t in model(torch.from_numpy(positions))
+                for t in model.forward(torch.from_numpy(positions).to(device))
             )
         for output in (model.forward_numpy(positions), evaluator(positions)):
             for actual, legacy in zip(output, expected, strict=True):
                 assert actual.shape == legacy.shape
                 assert actual.tobytes() == legacy.tobytes()
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_compile_failures_fall_back_once(
+    monkeypatch: pytest.MonkeyPatch, lazy: bool
+) -> None:
+    import c4a0_rust
+    from c4a0.nn import NumpyEvaluator
+    from c4a0_tests.training_test import TINY_CONFIG, TINY_GEN_CONFIG
+
+    attempts: list[bool] = []
+
+    def failing_compile(forward: object, *, dynamic: bool) -> object:
+        attempts.append(dynamic)
+        if not lazy:
+            raise RuntimeError("unsupported backend")
+
+        def failed_forward(pos: torch.Tensor) -> None:
+            raise RuntimeError("lazy backend failure")
+
+        return failed_forward
+
+    monkeypatch.setattr(torch, "compile", failing_compile)
+    model = ConnectFourNet(TINY_CONFIG).eval()
+    evaluator = NumpyEvaluator(
+        model, TINY_GEN_CONFIG.model_copy(update={"compile": True})
+    )
+    for moves in [[""], ["3", "33", "12"], ["1", "11"]]:
+        pos = c4a0_rust.encode_positions(moves)
+        expected = model.forward_numpy(pos)
+        actual = evaluator(pos)
+        assert all(
+            a.tobytes() == b.tobytes() for a, b in zip(actual, expected, strict=True)
+        )
+    assert attempts == [True]
+    assert not evaluator.compiled
+
+
+def test_compiled_forward_handles_dynamic_batches_and_stays_out_of_pickle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import pickle
+
+    import c4a0_rust
+    from c4a0.nn import NumpyEvaluator
+    from c4a0_tests.training_test import TINY_CONFIG, TINY_GEN_CONFIG
+
+    real_compile = torch.compile
+
+    def compile_eager(
+        forward: Callable[
+            [torch.Tensor], tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        ],
+        *,
+        dynamic: bool,
+    ) -> object:
+        # Exercise real Dynamo graph capture without an expensive CPU Inductor build.
+        return real_compile(forward, dynamic=dynamic, backend="eager")
+
+    monkeypatch.setattr(torch, "compile", compile_eager)
+    model = ConnectFourNet(TINY_CONFIG).eval()
+    evaluator = NumpyEvaluator(
+        model, TINY_GEN_CONFIG.model_copy(update={"compile": True})
+    )
+    for n in [1, 7, 3, 1]:
+        pos = c4a0_rust.encode_positions(["123"] * n)
+        assert all(
+            a.tobytes() == b.tobytes()
+            for a, b in zip(evaluator(pos), model.forward_numpy(pos), strict=True)
+        )
+    assert evaluator.compiled
+    assert not hasattr(pickle.loads(pickle.dumps(model)), "_orig_mod")

@@ -112,12 +112,18 @@ def tensor_batches(
     batch_size: int,
     shuffle: bool,
     device: str | torch.device,
+    n_batches: int | None = None,
 ) -> DataLoader[tuple[torch.Tensor, ...]]:
     """Whole-batch indexing into tensors kept on `device`. The default per-sample collate pins one
     CPU core and starves the GPU (about 33% utilization for the default net, and about 5 of
     8 minutes per self-play generation with a replay window)."""
     ds = TensorDataset(*(t.to(device) for t in tensors))
-    sampler = RandomSampler(ds) if shuffle else SequentialSampler(ds)
+    if n_batches is not None:
+        sampler = RandomSampler(
+            ds, replacement=True, num_samples=n_batches * batch_size
+        )
+    else:
+        sampler = RandomSampler(ds) if shuffle else SequentialSampler(ds)
     return DataLoader(
         ds, batch_size=None, sampler=BatchSampler(sampler, batch_size, False)
     )

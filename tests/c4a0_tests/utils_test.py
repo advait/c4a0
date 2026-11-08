@@ -65,3 +65,22 @@ def test_auto_device_prefers_cuda_then_mps_then_cpu(
     monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
     monkeypatch.setattr(torch.backends.mps, "is_available", lambda: mps)
     assert get_torch_device() == torch.device(expected)
+
+
+def test_fixed_batch_budget_samples_with_replacement_on_requested_device() -> None:
+    from torch.utils.data import BatchSampler, RandomSampler, TensorDataset
+
+    from c4a0.utils import tensor_batches
+
+    # More draws than rows proves replacement; each batch has the requested size.
+    data = torch.arange(3)
+    loader = tensor_batches((data,), 8, True, torch.device("cpu"), n_batches=5)
+    assert isinstance(loader.dataset, TensorDataset)
+    assert loader.dataset.tensors[0].data_ptr() == data.data_ptr()
+    assert isinstance(loader.sampler, BatchSampler)
+    assert isinstance(loader.sampler.sampler, RandomSampler)
+    assert loader.sampler.sampler.replacement
+    batches = list(loader)
+    assert len(batches) == 5
+    assert all(batch[0].shape == (8,) for batch in batches)
+    assert all(0 <= int(v) < 3 for batch in batches for v in batch[0])

@@ -77,6 +77,11 @@ def train(
     replay_gens: int = typer.Option(8, min=1),
     train_max_epochs: int = typer.Option(20, min=1),
     train_patience: int = typer.Option(3, min=1),
+    bf16: bool = typer.Option(False, help="BF16 autocast for self-play and training."),
+    compile: bool = typer.Option(False, help="Compile the self-play network forward."),
+    train_steps: int | None = typer.Option(
+        None, min=1, help="Fixed optimizer steps; publish the final model."
+    ),
     eval_mcts_iterations: list[int] = typer.Option(
         default_factory=lambda: [64, 256], show_default="64 256"
     ),
@@ -116,6 +121,9 @@ def train(
         replay_gens=replay_gens,
         train_max_epochs=train_max_epochs,
         train_patience=train_patience,
+        bf16=bf16,
+        compile=compile,
+        train_steps=train_steps,
     )
     training_loop(
         base_dir=base_dir,

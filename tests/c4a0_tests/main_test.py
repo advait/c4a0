@@ -32,10 +32,17 @@ def _plain(output: str) -> str:
                 "replay_gens": 8,
                 "train_max_epochs": 20,
                 "train_patience": 3,
+                "bf16": False,
+                "compile": False,
+                "train_steps": None,
             },
         ),
         (
             [
+                "--bf16",
+                "--compile",
+                "--train-steps",
+                "5",
                 "--root-noise-alpha",
                 "0.3",
                 "--root-noise-frac",
@@ -62,6 +69,9 @@ def _plain(output: str) -> str:
                 "replay_gens": 3,
                 "train_max_epochs": 7,
                 "train_patience": 2,
+                "bf16": True,
+                "compile": True,
+                "train_steps": 5,
             },
         ),
     ],
@@ -90,7 +100,9 @@ def test_train_cli_rejects_invalid_window(flags: list[str]) -> None:
     assert result.exit_code == 2
 
 
-@pytest.mark.parametrize("flag", ["--train-max-epochs", "--train-patience"])
+@pytest.mark.parametrize(
+    "flag", ["--train-max-epochs", "--train-patience", "--train-steps"]
+)
 @pytest.mark.parametrize("value", ["0", "-1"])
 def test_train_cli_rejects_invalid_training_length(flag: str, value: str) -> None:
     result = CliRunner().invoke(main.app, ["train", flag, value])

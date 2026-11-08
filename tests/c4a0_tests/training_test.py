@@ -462,3 +462,108 @@ def test_generation_metrics_and_reusing_games(
         "publish",
     }
     assert all(t >= 0 for t in metrics.seconds.values())
+
+
+@pytest.mark.parametrize("steps", [1, 5, 11])
+def test_fixed_steps_publish_final_model_and_record_its_loss(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, steps: int
+) -> None:
+    observed: list[dict[str, torch.Tensor]] = []
+    original_fit = training.GenerationTrainer.fit
+
+    def fit(
+        self: training.GenerationTrainer,
+        model: ConnectFourNet,
+        datamodule: SampleDataModule,
+    ) -> None:
+        assert not any(isinstance(cb, EarlyStopping) for cb in self.callbacks)
+        original_fit(self, model, datamodule)
+        assert self.global_step == steps
+        assert self.current_epoch == 1
+        observed.append({k: v.detach().clone() for k, v in model.state_dict().items()})
+
+    monkeypatch.setattr(training.GenerationTrainer, "fit", fit)
+    config = TINY_GEN_CONFIG.model_copy(
+        update={"train_steps": steps, "training_batch_size": 16}
+    )
+    gen = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()), config=config)
+    saved = gen.get_model(str(tmp_path))
+    assert len(observed) == 1
+    assert all(torch.equal(t, saved.state_dict()[k]) for k, t in observed[0].items())
+    assert gen.train_steps == steps
+    assert TrainingGen.load(str(tmp_path), gen.created_at).train_steps == steps
+    games = gen.get_games(str(tmp_path))
+    assert games is not None
+    train, val = games.split_train_test_numpy(0.8, 1337)
+    dm = SampleDataModule(train, val, 16)
+    assert gen.val_loss == pytest.approx(
+        _manual_loss(saved, dm.validation_data), abs=1e-5
+    )
+
+
+def test_bf16_self_play_and_training_fit_and_metadata(tmp_path: Path) -> None:
+    config = TINY_GEN_CONFIG.model_copy(
+        update={"bf16": True, "train_steps": 2, "training_batch_size": 16}
+    )
+    gen = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()), config=config)
+    assert gen.bf16 is True
+    assert gen.val_loss is not None and np.isfinite(gen.val_loss)
+    assert TrainingGen.load(str(tmp_path), gen.created_at).bf16 is True
+    # Mixed precision keeps the published parameters in float32.
+    assert all(
+        t.dtype == torch.float32 for t in gen.get_model(str(tmp_path)).parameters()
+    )
+
+
+@pytest.mark.parametrize("steps", [0, -1])
+def test_invalid_fixed_steps(steps: int) -> None:
+    with pytest.raises(ValidationError, match="train_steps"):
+        GenConfig.model_validate({**TINY_GEN_CONFIG.model_dump(), "train_steps": steps})
+
+
+def test_compile_fallback_reaches_generation_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unsupported(*args: object, **kwargs: object) -> Never:
+        raise RuntimeError("unsupported test backend")
+
+    monkeypatch.setattr(torch, "compile", unsupported)
+    config = TINY_GEN_CONFIG.model_copy(update={"compile": True, "train_steps": 1})
+    gen = _tiny_loop(tmp_path, EvalConfig(_tiny_suite()), config=config)
+    assert gen.compile is True
+    assert TrainingGen.load(str(tmp_path), gen.created_at).compile is True
+
+
+@pytest.mark.parametrize(
+    "device",
+    [
+        "cpu",
+        pytest.param(
+            "cuda",
+            marks=pytest.mark.skipif(
+                not torch.cuda.is_available(), reason="CUDA required"
+            ),
+        ),
+    ],
+)
+def test_sample_datasets_live_on_requested_device_and_loaders_share_them(
+    device: str,
+) -> None:
+    from torch.utils.data import TensorDataset
+
+    arrays = (
+        np.zeros((8, 2, 6, 7), np.float32),
+        np.zeros((8, 7), np.float32),
+        np.zeros(8, np.float32),
+        np.zeros(8, np.float32),
+    )
+    dm = SampleDataModule(arrays, arrays, 4, device)
+    for tensors, loader in [
+        (dm.training_data, dm.train_dataloader()),
+        (dm.validation_data, dm.val_dataloader()),
+    ]:
+        assert isinstance(loader.dataset, TensorDataset)
+        for source, stored in zip(tensors, loader.dataset.tensors, strict=True):
+            assert source.device.type == device
+            assert source.data_ptr() == stored.data_ptr()
+        assert all(t.device.type == device for t in next(iter(loader)))

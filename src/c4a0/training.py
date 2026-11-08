@@ -75,6 +75,9 @@ class GenConfig(BaseModel):
     replay_gens: int = Field(default=1, ge=1)
     train_max_epochs: int = Field(default=100, ge=1)
     train_patience: int = Field(default=10, ge=1)
+    bf16: bool = False
+    compile: bool = False
+    train_steps: int | None = Field(default=None, ge=1)
 
 
 class TrainingGen(GenConfig):
@@ -276,7 +279,7 @@ def train_single_gen(
         ]
     with metrics.phase("self_play") if metrics else nullcontext():
         if not reuse_games:
-            evaluator = NumpyEvaluator(model)
+            evaluator = NumpyEvaluator(model, config)
             games = c4a0_rust.play_games(
                 reqs,
                 config.self_play_batch_size,
@@ -290,6 +293,7 @@ def train_single_gen(
                 random_start_frac=config.random_start_frac,
                 random_start_max_ply=config.random_start_max_ply,
             )
+            del evaluator
 
     # Training
     logger.info("Beginning training")
@@ -312,23 +316,29 @@ def train_single_gen(
     )
     with metrics.phase("sample_conversion") if metrics else nullcontext():
         train, test = training_games.split_train_test_numpy(0.8, 1337)
-        data_module = SampleDataModule(train, test, config.training_batch_size, device)
+        data_module = SampleDataModule(
+            train, test, config.training_batch_size, device, config.train_steps
+        )
     best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
     trainer = GenerationTrainer(
-        max_epochs=config.train_max_epochs,
+        max_epochs=1 if config.train_steps is not None else config.train_max_epochs,
+        max_steps=config.train_steps if config.train_steps is not None else -1,
         accelerator=lightning_accelerator(device),
         devices=[
             device.index if device.index is not None else torch.cuda.current_device()
         ]
         if device.type == "cuda"
         else 1,
-        callbacks=[
+        callbacks=[]
+        if config.train_steps is not None
+        else [
             best_model_cb,
             EarlyStopping(
                 monitor="val_loss", patience=config.train_patience, mode="min"
             ),
         ],
         num_sanity_val_steps=0,
+        precision="bf16-mixed" if config.bf16 else "32-true",
     )
     trainer.gen_n = gen_n
     model.train()  # Switch batch normalization to train mode for training bn params
@@ -339,13 +349,19 @@ def train_single_gen(
         metrics.optimizer_steps = trainer.global_step
     logger.info("Finished training")
 
-    best_model = best_model_cb.get_best_model()
+    if config.train_steps is None:
+        best_model = best_model_cb.get_best_model()
+        val_loss = best_model_cb.best_score
+    else:
+        # The fixed budget publishes the final model, even if an earlier one was better.
+        best_model = model
+        val_loss = float(trainer.callback_metrics["val_loss"])
     gen = TrainingGen(
         created_at=datetime.now(),
         gen_n=parent.gen_n + 1,
         **config.model_dump(),
         parent=parent.created_at,
-        val_loss=best_model_cb.best_score,
+        val_loss=val_loss,
     )
     gen.publish(base_dir, games, best_model, eval_config, metrics)
     return gen
@@ -401,6 +417,7 @@ class SampleDataModule(pl.LightningDataModule):
         validation_data: SampleArrays,
         batch_size: int,
         device: str | torch.device = "cpu",
+        n_batches: int | None = None,
     ) -> None:
         super().__init__()
         self.batch_size = batch_size
@@ -411,9 +428,12 @@ class SampleDataModule(pl.LightningDataModule):
             torch.from_numpy(a).to(device) for a in validation_data
         )
         self.device = device
+        self.n_batches = n_batches
 
     def train_dataloader(self) -> DataLoader[tuple[torch.Tensor, ...]]:
-        return tensor_batches(self.training_data, self.batch_size, True, self.device)
+        return tensor_batches(
+            self.training_data, self.batch_size, True, self.device, self.n_batches
+        )
 
     def val_dataloader(self) -> DataLoader[tuple[torch.Tensor, ...]]:
         return tensor_batches(self.validation_data, self.batch_size, False, self.device)

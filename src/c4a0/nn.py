@@ -1,5 +1,5 @@
-from collections.abc import Sequence
-from typing import cast
+from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pytorch_lightning as pl
@@ -13,6 +13,9 @@ from torch.optim.adam import Adam
 
 from c4a0.utils import GenerationTrainer
 from c4a0_rust import N_COLS, N_ROWS
+
+if TYPE_CHECKING:
+    from c4a0.training import GenConfig
 
 
 class ModelConfig(BaseModel):
@@ -199,10 +202,40 @@ class NumpyEvaluator:
     the input copy before that thread can overwrite the pinned buffer on the next call.
     """
 
-    def __init__(self, model: ConnectFourNet) -> None:
+    def __init__(
+        self, model: ConnectFourNet, config: "GenConfig | None" = None
+    ) -> None:
         self.model = model.eval()
         self.host: torch.Tensor | None = None
         self.positions: torch.Tensor | None = None
+        self.bf16 = config.bf16 if config else False
+        self.forward: Callable[
+            [torch.Tensor], tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        ] = model.forward
+        self.compiled = False
+        if config and config.compile:
+            try:
+                # Compile a bound forward, leaving the module and its pickle untouched.
+                self.forward = torch.compile(model.forward, dynamic=True)
+                self.compiled = True
+            except Exception as error:
+                logger.warning(
+                    "Cannot compile self-play forward; using eager: {}", error
+                )
+
+    def _evaluate(
+        self, pos: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        if not self.compiled:
+            return self.forward(pos)
+        try:
+            return self.forward(pos)
+        except Exception as error:
+            # Backend availability errors often arrive on the first call, not at compile().
+            logger.warning("Compiled self-play forward failed; using eager: {}", error)
+            self.forward = self.model.forward
+            self.compiled = False
+            return self.forward(pos)
 
     @torch.inference_mode()
     def __call__(
@@ -219,7 +252,12 @@ class NumpyEvaluator:
             pos.copy_(self.host[: len(x)], non_blocking=True)
         else:
             pos = pos.to(self.model.device)
-        policy, q_penalty, q_no_penalty = self.model.forward(pos)
+        with torch.autocast(pos.device.type, dtype=torch.bfloat16, enabled=self.bf16):
+            policy, q_penalty, q_no_penalty = self._evaluate(pos)
+        # The Rust callback API always consumes f32, including with bf16 autocast.
+        policy = policy.float()
+        q_penalty = q_penalty.float()
+        q_no_penalty = q_no_penalty.float()
         if pos.device.type == "cuda":
             # One device-to-host copy and synchronization for all three outputs.
             outputs = torch.cat(

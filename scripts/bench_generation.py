@@ -25,6 +25,11 @@ def main() -> None:
     parser.add_argument(
         "--eval-mcts-iterations", type=int, nargs="*", default=[64, 256]
     )
+    parser.add_argument("--bf16", action=argparse.BooleanOptionalAction, default=None)
+    parser.add_argument(
+        "--compile", action=argparse.BooleanOptionalAction, default=None
+    )
+    parser.add_argument("--train-steps", type=int)
     args = parser.parse_args()
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -35,11 +40,19 @@ def main() -> None:
     metrics.synchronize()
     start = time.perf_counter()
     parent = TrainingGen.load_latest(str(args.base_dir))
+    overrides = {
+        key: value
+        for key, value in vars(args).items()
+        if key in {"bf16", "compile", "train_steps"} and value is not None
+    }
+    config = type(parent.config).model_validate(
+        {**parent.config.model_dump(), **overrides}
+    )
     gen = train_single_gen(
         str(args.base_dir),
         device,
         parent,
-        parent.config,
+        config,
         default_eval_config(args.eval_mcts_iterations),
         metrics=metrics,
         reuse_games=args.phase == "training",

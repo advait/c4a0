@@ -3,13 +3,16 @@
 import hashlib
 import json
 import random
+from collections.abc import Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 import torch
 from torch.utils.data import TensorDataset
 
+import c4a0_rust
 from c4a0.nn import ConnectFourNet
 from c4a0.training import EvalConfig, SampleDataModule, TrainingGen
 from c4a0_tests.training_test import (
@@ -17,6 +20,9 @@ from c4a0_tests.training_test import (
     _tiny_loop,
     _tiny_suite,
 )
+
+if TYPE_CHECKING:
+    from c4a0_rust import EvalPosCb
 
 GOLDEN = Path(__file__).parent / "fixtures" / "generation_golden.json"
 
@@ -26,13 +32,48 @@ def tensor_hash(tensor: torch.Tensor) -> str:
 
 
 def capture_generations(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, explicit_off: bool = False
 ) -> dict[str, object]:
     random.seed(1337)
     np.random.seed(1337)
     torch.manual_seed(1337)
     torch.set_num_threads(1)
     torch.use_deterministic_algorithms(True)
+    # Master returns games in worker completion order, so its split is otherwise
+    # scheduling-dependent even at batch size one. Serialize games only in this test.
+    native_play = c4a0_rust.play_games
+
+    def serial_play(
+        reqs: Sequence[c4a0_rust.GameMetadata],
+        max_nn_batch_size: int,
+        n_mcts_iterations: int,
+        c_exploration: float,
+        c_ply_penalty: float,
+        callback: "EvalPosCb",
+        root_noise_alpha: float | None = None,
+        root_noise_frac: float = 0.0,
+        value_target_q_weight: float = 0.0,
+        random_start_frac: float = 0.0,
+        random_start_max_ply: int = 12,
+    ) -> c4a0_rust.PlayGamesResult:
+        result = c4a0_rust.PlayGamesResult()
+        for req in reqs:
+            result = result + native_play(
+                [req],
+                max_nn_batch_size,
+                n_mcts_iterations,
+                c_exploration,
+                c_ply_penalty,
+                callback,
+                root_noise_alpha=root_noise_alpha,
+                root_noise_frac=root_noise_frac,
+                value_target_q_weight=value_target_q_weight,
+                random_start_frac=random_start_frac,
+                random_start_max_ply=random_start_max_ply,
+            )
+        return result
+
+    monkeypatch.setattr(c4a0_rust, "play_games", serial_play)
     losses: dict[str, list[float]] = {"train": [], "val": []}
     original_step = ConnectFourNet.step
 
@@ -51,6 +92,10 @@ def capture_generations(
             "self_play_batch_size": 1,
         }
     )
+    if explicit_off:
+        config = config.model_copy(
+            update={"bf16": False, "compile": False, "train_steps": None}
+        )
     _tiny_loop(tmp_path, EvalConfig(_tiny_suite()), max_gens=2, config=config)
     generations: list[dict[str, object]] = []
     for gen in reversed(TrainingGen.load_all(str(tmp_path))):
@@ -81,7 +126,10 @@ def capture_generations(
     return {"generations": generations, "losses": losses}
 
 
+@pytest.mark.parametrize("explicit_off", [False, True])
 def test_two_generation_master_golden(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, explicit_off: bool
 ) -> None:
-    assert capture_generations(tmp_path, monkeypatch) == json.loads(GOLDEN.read_text())
+    assert capture_generations(tmp_path, monkeypatch, explicit_off) == json.loads(
+        GOLDEN.read_text()
+    )
