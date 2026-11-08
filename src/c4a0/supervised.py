@@ -136,6 +136,8 @@ def fit_supervised(
 
 class CeilingReport(BaseModel):
     net: ModelConfig
+    parameter_count: int | None = None
+    """Trainable parameters. Absent from reports saved before architecture variants."""
     train_labels: str
     train_sha256: str
     n_train: int

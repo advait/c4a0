@@ -327,6 +327,7 @@ def ceiling(
 
     report = CeilingReport(
         net=config,
+        parameter_count=sum(p.numel() for p in model.parameters()),
         train_labels=str(labels),
         train_sha256=hashlib.sha256(labels.read_bytes()).hexdigest(),
         n_train=len(train),
