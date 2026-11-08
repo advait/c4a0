@@ -106,12 +106,13 @@ def fit_supervised(
 ) -> tuple[ConnectFourNet, int]:
     """Trains on `train` (plus mirror images) with the self-play loss, early stopping on `val`
     loss. Returns the best model and the number of epochs run."""
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # Label sets stay on the host like self-play replay data; Lightning moves each batch, so
+    # millions of positions fit under the per-process GPU cap.
     train_dl = tensor_batches(
-        _mirrored(solver_targets(train, c_ply_penalty)), batch_size, True, device
+        _mirrored(solver_targets(train, c_ply_penalty)), batch_size, True, "cpu"
     )
     val_dl = tensor_batches(
-        solver_targets(val, c_ply_penalty), batch_size, False, device
+        solver_targets(val, c_ply_penalty), batch_size, False, "cpu"
     )
     best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
     trainer = GenerationTrainer(
