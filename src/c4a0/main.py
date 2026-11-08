@@ -41,9 +41,20 @@ from c4a0.training import (  # noqa: E402
     parse_lr_schedule,
     training_loop,
 )
-from c4a0.utils import get_torch_device  # noqa: E402
+from c4a0.utils import (  # noqa: E402
+    get_torch_device,
+    limit_cuda_memory,
+)
 
 app = typer.Typer()
+
+
+@app.callback()
+def _cap_gpu_memory() -> None:
+    """Applies $C4A0_CUDA_MEMORY_FRACTION before any command touches CUDA, so `ceiling`, `eval`
+    and `play` are capped like `train`."""
+    if torch.cuda.is_available():
+        limit_cuda_memory("cuda")
 
 
 def validate_token_width(arch: Arch, d_model: int, n_heads: int) -> None:

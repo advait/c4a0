@@ -91,22 +91,23 @@ python3 - "$1" "$2" <<'PY'
 import os, subprocess, sys
 fraction, procs = float(sys.argv[1]), int(sys.argv[2])
 total = float(subprocess.check_output(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"]).split()[0]) / 1024
-def live_fractions():
-    # Each live train process's own cap, read from its environment (0.06 if unset).
-    out = subprocess.run(["pgrep", "-f", "main.py (train|ceiling)"], capture_output=True, text=True).stdout.split()
-    for pid in out:
+def live_usage():
+    # Every Python process under ~/agent-work holding GPU memory, charged at the larger of its
+    # cap (from its environment) and what nvidia-smi says it uses now. Uncapped scripts count too.
+    smi = subprocess.check_output(["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"]).decode()
+    for line in smi.splitlines():
+        pid, used = (x.strip() for x in line.split(","))
         try:
             cmd = open(f"/proc/{pid}/cmdline", "rb").read().decode(errors="replace")
-            argv0 = cmd.split("\0", 1)[0]
-            # Only the Python training process itself, not its timeout/sh/uv wrappers.
-            if "agent-work" not in cmd or not argv0.split("/")[-1].startswith("python"):
-                continue
             env = open(f"/proc/{pid}/environ", "rb").read().decode(errors="replace").split("\0")
         except OSError:
             continue
-        vals = [e.split("=", 1)[1] for e in env if e.startswith("C4A0_CUDA_MEMORY_FRACTION=")]
-        yield float(vals[0]) if vals else 0.06
-live = [f * total + 0.4 for f in live_fractions()]
+        if "agent-work" not in cmd:
+            continue
+        caps = [float(e.split("=", 1)[1]) for e in env if e.startswith("C4A0_CUDA_MEMORY_FRACTION=")]
+        cap_gb = caps[0] * total + 0.4 if caps else 0.0
+        yield max(cap_gb, float(used) / 1024)
+live = list(live_usage())
 per = fraction * total + 0.4
 budget = total - 6.0
 need = sum(live) + procs * per
