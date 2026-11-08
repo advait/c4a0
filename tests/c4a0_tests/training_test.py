@@ -269,6 +269,54 @@ def test_resume_rejects_head_changes_before_self_play(
         )
 
 
+def test_conv_self_play_training_saves_reloaded_heads_and_metadata(
+    tmp_path: Path,
+) -> None:
+    config = TINY_GEN_CONFIG.model_copy(
+        update={
+            "head": "conv",
+            "value_hidden": 17,
+            "training_batch_size": 16,
+            "train_max_epochs": 2,
+            "train_patience": 1,
+        }
+    )
+    gen = training_loop(
+        base_dir=str(tmp_path),
+        device=torch.device("cpu"),
+        config=config,
+        model_config=TINY_CONFIG.model_copy(
+            update={
+                "head": config.head,
+                "value_hidden": config.value_hidden,
+                "n_policy_layers": 99,
+                "n_value_layers": 0,
+            }
+        ),
+        max_gens=1,
+        eval_config=EvalConfig(_tiny_suite(), (4,)),
+    )
+    assert gen.val_loss is not None and np.isfinite(gen.val_loss)
+    child, root = TrainingGen.load_all(str(tmp_path))
+    for published in (root, child):
+        assert published.config == config
+        metadata = json.loads(
+            (Path(published.gen_folder(str(tmp_path))) / "metadata.json").read_text()
+        )
+        assert metadata["head"] == "conv"
+        assert metadata["value_hidden"] == 17
+        model = published.get_model(str(tmp_path))
+        assert model.head == "conv"
+        assert model.hparams["value_hidden"] == 17
+        assert 4 in published.evals["v1/dev-50"].mcts
+    assert (
+        _sum_abs_model_diff(
+            child.get_model(str(tmp_path)), root.get_model(str(tmp_path))
+        )
+        > 0
+    )
+
+
 def test_random_starts_run_one_generation_and_reach_metadata(tmp_path: Path) -> None:
     config = TINY_GEN_CONFIG.model_copy(
         update={
