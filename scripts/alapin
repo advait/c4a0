@@ -28,18 +28,18 @@ sync)
     token=$(basename "$temp")
     remote "mkdir -p ~/agent-work/setup"
     scp -q -o BatchMode=yes "$temp/source.bundle" "$host:agent-work/setup/$token.bundle"
-    remote "sh -s -- $(quote "$token") $(quote "$commit") $(quote "$branch")" <<'REMOTE'
+    remote "sh -s -- $(quote "$token") $(quote "$commit") $(quote "$branch") $(quote "${ALAPIN_DIR:-c4a0}")" <<'REMOTE'
 set -eu
 . "$HOME/agent-work/env.sh"
 bundle="$HOME/agent-work/setup/$1.bundle"
 trap 'rm -f "$bundle"' EXIT HUP INT TERM
-cd "$HOME/agent-work/c4a0"
+cd "$HOME/agent-work/$4"
 mkdir "$HOME/agent-work/setup/sync.lock" || { echo 'another sync is active' >&2; exit 1; }
 trap 'rm -f "$bundle"; rmdir "$HOME/agent-work/setup/sync.lock"' EXIT HUP INT TERM
 for d in "$HOME"/agent-work/runs/*; do
     [ -f "$d/pid" ] || continue
-    # Only runs in the checkout being synced (~/agent-work/c4a0) block it.
-    [ "$(cat "$d/workdir" 2>/dev/null || echo c4a0)" = c4a0 ] || continue
+    # Only runs in the checkout being synced ($ALAPIN_DIR, default c4a0) block it.
+    [ "$(cat "$d/workdir" 2>/dev/null || echo c4a0)" = "$4" ] || continue
     if [ ! -f "$d/exit_code" ] && kill -0 "$(cat "$d/pid")" 2>/dev/null; then
         echo "refusing sync during active run: $d" >&2; exit 1
     fi
@@ -54,7 +54,7 @@ else
 fi
 # ls-tree pathspecs are literal prefixes, not globs: list the source directories themselves.
 fingerprint=$(git ls-tree -r "$2" -- rust src uv.lock pyproject.toml | sha256sum | cut -d ' ' -f 1)
-state="$HOME/agent-work/setup/built-source-tree"
+state="$HOME/agent-work/setup/built-source-tree-$4"
 built=$(cat "$state" 2>/dev/null || true)
 if [ -n "$3" ]; then git checkout -B "$3" "$2"; else git checkout --detach "$2"; fi
 if [ "$fingerprint" != "$built" ] || [ ! -x .venv/bin/python ]; then
