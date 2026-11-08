@@ -1,5 +1,8 @@
 import copy
-from typing import Generic, TypeVar, cast
+import io
+import pickle
+from pathlib import Path
+from typing import TYPE_CHECKING, BinaryIO, Generic, TypeVar, cast
 
 import pytorch_lightning as pl
 import torch
@@ -12,6 +15,36 @@ from torch.utils.data import (
     SequentialSampler,
     TensorDataset,
 )
+
+if TYPE_CHECKING:
+    from c4a0.nn import ConnectFourNet
+
+
+def _load_storage_on_cpu(data: bytes) -> object:
+    return torch.load(io.BytesIO(data), map_location="cpu", weights_only=False)
+
+
+class _CPUUnpickler(pickle.Unpickler):
+    def find_class(self, module: str, name: str) -> object:
+        if (module, name) == ("torch.storage", "_load_from_bytes"):
+            return _load_storage_on_cpu
+        return super().find_class(module, name)
+
+
+def load_model(
+    source: str | Path | BinaryIO, device: str | torch.device = "cpu"
+) -> "ConnectFourNet":
+    """Load a trusted model pickle through CPU storages, then move to `device`.
+
+    Legacy CUDA pickles work without CUDA. A byte stream lets evaluation load and hash
+    the same snapshot of the saved file.
+    """
+    if isinstance(source, (str, Path)):
+        with open(source, "rb") as f:
+            model = _CPUUnpickler(f).load()
+    else:
+        model = _CPUUnpickler(source).load()
+    return cast("ConnectFourNet", model).to(device)
 
 
 def lightning_accelerator(device: torch.device) -> str:

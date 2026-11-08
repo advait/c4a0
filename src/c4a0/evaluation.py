@@ -8,18 +8,19 @@ intervals derived.
 """
 
 import hashlib
-import pickle
+import io
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
 import numpy as np
+import torch
 from numpy.typing import NDArray
 from pydantic import BaseModel, computed_field
 
 import c4a0_rust
 from c4a0.labels import BUCKET_NAMES, Labels, Moves, Recipe, Split, Suite
-from c4a0.nn import ConnectFourNet
+from c4a0.utils import load_model
 
 
 class Tally(BaseModel):
@@ -163,11 +164,12 @@ def evaluate_model(
     mcts_iterations: Sequence[int],
     c_exploration: float,
     c_ply_penalty: float,
+    device: str | torch.device = "cpu",
 ) -> SuiteEval:
     """Scores the model pickled at `model_path` on `suite`: raw policy and value on every row,
     plus root-visit MCTS policies at each budget in `mcts_iterations` on non-trivial rows."""
     model_bytes = model_path.read_bytes()
-    model: ConnectFourNet = pickle.loads(model_bytes)
+    model = load_model(io.BytesIO(model_bytes), device)
     labels = suite.labels
 
     policy, _q_penalty, q_no_penalty = model.forward_numpy(

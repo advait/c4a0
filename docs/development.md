@@ -169,7 +169,9 @@ timeout 300 uv run --locked pytest -q tests/c4a0_tests/nn_test.py tests/c4a0_tes
 
 Each generation is a directory under the base directory (default `training/`) named by its creation time:
 
-- `model.pkl` is the trained network.
+- `model.pkl` is a CPU copy of the trained network, loadable on machines without CUDA.
+  Root and child suite evaluations reload these exact bytes onto the training device.
+  `load_model` also maps legacy CUDA pickles through CPU before moving to the requested device.
 - `games.pkl` holds the self-play games that trained it.
 - `metadata.json` holds its `GenConfig` fields, its parent, its validation loss, and `evals`, the dev-suite scores of this exact `model.pkl`.
 

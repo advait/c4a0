@@ -6,6 +6,7 @@ import pytest
 from typer.testing import CliRunner
 
 from c4a0 import main
+from c4a0.nn import ConnectFourNet
 from c4a0.training import GenConfig
 
 if TYPE_CHECKING:
@@ -283,6 +284,59 @@ def test_play_baselines_need_no_training_directory(
     )
     assert result.exit_code == 0, result.output
     assert called == [True]
+
+
+@pytest.mark.parametrize("command", ["play", "eval"])
+def test_cli_loads_legacy_cuda_model_on_cpu(
+    legacy_cuda_model: tuple[ConnectFourNet, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+) -> None:
+    import hashlib
+    from datetime import datetime
+
+    import numpy as np
+    import torch
+
+    from c4a0.labels import Suite
+    from c4a0.training import TrainingGen
+    from c4a0_tests.labels_test import PONS_ROWS, make_labels
+    from c4a0_tests.training_test import TINY_GEN_CONFIG
+
+    model, path = legacy_cuda_model
+    base_dir = str(path.parent)
+    gen = TrainingGen(
+        created_at=datetime.now(), gen_n=0, **TINY_GEN_CONFIG.model_dump()
+    )
+    folder = Path(gen.gen_folder(base_dir))
+    folder.mkdir()
+    model_path = folder / "model.pkl"
+    path.rename(model_path)
+    gen.save_metadata(base_dir)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    called: list[bool] = []
+
+    def run_tui(callback: "EvalPosCb", *_args: object) -> None:
+        positions = main.c4a0_rust.encode_positions(["3344"])
+        for actual, expected in zip(
+            callback(0, positions), model.forward_numpy(positions), strict=True
+        ):
+            np.testing.assert_array_equal(actual, expected)
+        called.append(True)
+
+    suite = Suite(labels=make_labels(PONS_ROWS), name="test/tiny", sha256="abc")
+    monkeypatch.setattr(main.c4a0_rust, "run_tui", run_tui)
+    monkeypatch.setattr(main, "load_suite", lambda _split: suite)
+    flags = ["--mcts-iterations", "4"] if command == "eval" else []
+    result = CliRunner().invoke(main.app, [command, "--base-dir", base_dir, *flags])
+
+    assert result.exit_code == 0, result.output
+    if command == "play":
+        assert called == [True]
+    else:
+        score = TrainingGen.load_latest(base_dir).evals[suite.name]
+        assert score.model_sha256 == hashlib.sha256(model_path.read_bytes()).hexdigest()
+        assert set(score.mcts) == {4}
 
 
 @pytest.mark.parametrize("existing_dir", [False, True])

@@ -1,10 +1,13 @@
+import pickle
+from pathlib import Path
+
 import pytest
 import torch
 from pytorch_lightning import Trainer
 
 from c4a0.nn import ConnectFourNet, ModelConfig
 from c4a0.training import parse_lr_schedule
-from c4a0.utils import BestModelCheckpoint
+from c4a0.utils import BestModelCheckpoint, load_model
 
 
 def make_model() -> ConnectFourNet:
@@ -18,6 +21,42 @@ def make_model() -> ConnectFourNet:
             l2_reg=0.0,
         )
     )
+
+
+@pytest.mark.parametrize("device", ["cpu", "meta"])
+def test_load_model_round_trips_to_requested_device(
+    tmp_path: Path, device: str
+) -> None:
+    model = make_model()
+    path = tmp_path / "model.pkl"
+    path.write_bytes(pickle.dumps(model))
+
+    restored = load_model(path, torch.device(device))
+
+    assert restored.device == torch.device(device)
+    assert restored.state_dict().keys() == model.state_dict().keys()
+    for name, tensor in restored.state_dict().items():
+        assert tensor.device == torch.device(device)
+        assert tensor.shape == model.state_dict()[name].shape
+        if device == "cpu":
+            torch.testing.assert_close(tensor, model.state_dict()[name], rtol=0, atol=0)
+
+
+def test_load_legacy_cuda_pickle_on_cpu_without_cuda(
+    legacy_cuda_model: tuple[ConnectFourNet, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model, path = legacy_cuda_model
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    with pytest.raises(
+        RuntimeError, match="Attempting to deserialize object on a CUDA device"
+    ):
+        pickle.loads(path.read_bytes())
+
+    restored = load_model(path, "cpu")
+
+    for name, tensor in restored.state_dict().items():
+        assert tensor.device.type == "cpu"
+        torch.testing.assert_close(tensor, model.state_dict()[name], rtol=0, atol=0)
 
 
 def test_best_model_checkpoint_ignores_sanity_validation() -> None:

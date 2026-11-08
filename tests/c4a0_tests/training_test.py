@@ -1,3 +1,4 @@
+import hashlib
 import json
 import pickle
 import shutil
@@ -173,6 +174,132 @@ def test_each_generation_records_evals_of_its_own_saved_model(tmp_path: Path) ->
     parent = TrainingGen.load(str(tmp_path), gen.parent)
     child_sha = child.evals["v1/dev-50"].model_sha256
     assert child_sha != parent.evals["v1/dev-50"].model_sha256
+
+
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_publish_saves_portable_cpu_copy_and_scores_saved_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, device: str
+) -> None:
+    if device == "cuda" and not torch.cuda.is_available():
+        pytest.skip("CUDA hardware is needed to publish a real CUDA model")
+    model = ConnectFourNet(TINY_CONFIG).to(device)
+    before = {name: tensor.clone() for name, tensor in model.state_dict().items()}
+    gen = TrainingGen(
+        created_at=datetime.now(), gen_n=0, **TINY_GEN_CONFIG.model_dump()
+    )
+    suite = _tiny_suite()
+    forward_numpy = ConnectFourNet.forward_numpy
+    seen_devices: list[torch.device] = []
+
+    def checked_forward(
+        self: ConnectFourNet, positions: NDArray[np.float32]
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]:
+        seen_devices.append(self.device)
+        assert self.device.type == device
+        return forward_numpy(self, positions)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(ConnectFourNet, "forward_numpy", checked_forward)
+        gen.publish(str(tmp_path), None, model, EvalConfig(suite, (4,)), device=device)
+    assert seen_devices  # Covers raw, MCTS and openings inference after reloading.
+    assert model.device.type == device
+    for name, tensor in model.state_dict().items():
+        torch.testing.assert_close(tensor, before[name], rtol=0, atol=0)
+
+    path = Path(gen.gen_folder(str(tmp_path))) / "model.pkl"
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    # Plain pickle must work too: portable bytes cannot rely on our remapping loader.
+    saved = pickle.loads(path.read_bytes())
+    assert saved.device.type == "cpu"
+    for name, tensor in saved.state_dict().items():
+        assert tensor.device.type == "cpu"
+        torch.testing.assert_close(tensor, before[name].cpu(), rtol=0, atol=0)
+    assert (
+        gen.evals[suite.name].model_sha256
+        == hashlib.sha256(path.read_bytes()).hexdigest()
+    )
+
+
+def test_root_and_child_evaluate_on_training_device(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An explicit CPU index distinguishes the requested device from the default "cpu".
+    device = torch.device("cpu:0")
+    devices: list[str | torch.device] = []
+
+    def check_device(
+        path: Path,
+        suite: Suite,
+        mcts_iterations: tuple[int, ...],
+        c_exploration: float,
+        c_ply_penalty: float,
+        device: str | torch.device = "cpu",
+    ) -> training.SuiteEval:
+        devices.append(device)
+        return evaluate_model(
+            path, suite, mcts_iterations, c_exploration, c_ply_penalty, device
+        )
+
+    monkeypatch.setattr(training, "evaluate_model", check_device)
+    training_loop(
+        str(tmp_path),
+        device,
+        TINY_GEN_CONFIG,
+        TINY_CONFIG,
+        max_gens=1,
+        eval_config=EvalConfig(_tiny_suite(), (4,)),
+    )
+    assert devices == [device, device]
+
+
+def test_root_forwards_cuda_device_without_requiring_cuda_to_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    devices: list[str | torch.device] = []
+
+    def cpu_eval(
+        path: Path,
+        suite: Suite,
+        mcts_iterations: tuple[int, ...],
+        c_exploration: float,
+        c_ply_penalty: float,
+        device: str | torch.device = "cpu",
+    ) -> training.SuiteEval:
+        devices.append(device)
+        return evaluate_model(
+            path, suite, mcts_iterations, c_exploration, c_ply_penalty
+        )
+
+    monkeypatch.setattr(training, "evaluate_model", cpu_eval)
+    requested = torch.device("cuda:1")
+    root = TrainingGen.load_latest_with_default(
+        str(tmp_path),
+        TINY_GEN_CONFIG,
+        TINY_CONFIG,
+        EvalConfig(_tiny_suite()),
+        requested,
+    )
+    assert devices == [requested]
+    assert root.get_model(str(tmp_path)).device.type == "cpu"
+
+
+def test_get_model_loads_legacy_cuda_pickle_on_requested_device(
+    legacy_cuda_model: tuple[ConnectFourNet, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model, path = legacy_cuda_model
+    gen = TrainingGen(
+        created_at=datetime.now(), gen_n=0, **TINY_GEN_CONFIG.model_dump()
+    )
+    base_dir = str(path.parent)
+    folder = Path(gen.gen_folder(base_dir))
+    folder.mkdir()
+    path.rename(folder / "model.pkl")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    restored = gen.get_model(base_dir, "cpu")
+
+    assert _sum_abs_model_diff(restored, model) == 0.0
+    assert gen.get_model(base_dir, "meta").device.type == "meta"
 
 
 def test_failed_evaluation_publishes_no_metadata(

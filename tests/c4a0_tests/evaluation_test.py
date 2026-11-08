@@ -1,10 +1,14 @@
 import hashlib
+import io
 import pickle
 from pathlib import Path
+from typing import BinaryIO, cast
 
 import numpy as np
 import pytest
+import torch
 
+from c4a0 import evaluation
 from c4a0.evaluation import (
     SuiteEval,
     evaluate_model,
@@ -124,6 +128,45 @@ def test_evaluate_model_scores_the_pickled_bytes(tmp_path: Path) -> None:
         assert policy_eval.top1 is not None and 0.0 <= policy_eval.top1 <= 1.0
     assert sum(map(sum, result.value.confusion)) == 5
     assert SuiteEval.model_validate_json(result.model_dump_json()) == result
+
+
+def test_cpu_evaluation_matches_legacy_loading_exactly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The committed pre-head-change model fixes weights and BatchNorm buffers.
+    path = tmp_path / "model.pkl"
+    path.write_bytes(
+        (Path(__file__).parent / "fixtures" / "legacy_model.pkl").read_bytes()
+    )
+    suite = Suite(labels=make_labels(PONS_ROWS), name="test/tiny", sha256="abc")
+    result = evaluate_model(path, suite, (2, 8), 2.0, 0.01, device="cpu")
+
+    def legacy_load(
+        source: str | Path | BinaryIO, device: str | torch.device
+    ) -> ConnectFourNet:
+        assert isinstance(source, io.BytesIO)
+        assert device == "cpu"
+        return cast(ConnectFourNet, pickle.load(source))
+
+    monkeypatch.setattr(evaluation, "load_model", legacy_load)
+    assert result == evaluate_model(path, suite, (2, 8), 2.0, 0.01)
+
+
+def test_evaluation_scores_legacy_cuda_bytes_on_cpu(
+    legacy_cuda_model: tuple[ConnectFourNet, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    model, path = legacy_cuda_model
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    suite = Suite(labels=make_labels(PONS_ROWS), name="test/tiny", sha256="abc")
+    result = evaluate_model(path, suite, (4,), 2.0, 0.01)
+    assert result.model_sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
+
+    cpu_path = path.with_name("cpu-model.pkl")
+    cpu_path.write_bytes(pickle.dumps(model))
+    cpu_result = evaluate_model(cpu_path, suite, (4,), 2.0, 0.01)
+    assert result.model_dump(exclude={"model_sha256"}) == cpu_result.model_dump(
+        exclude={"model_sha256"}
+    )
 
 
 def test_non_finite_value_is_rejected_not_scored_as_draw() -> None:

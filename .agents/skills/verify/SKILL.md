@@ -248,6 +248,7 @@ the architecture's raw top-1 is not a bound on MCTS play.
   (`mcts_policies`) propagates the exception instead.
 - Run validation tasks sequentially: overlapping `check` and `train:smoke` builds can race
   while maturin stages the extension. `train --device cpu` selects Lightning's CPU
-  accelerator through `lightning_accelerator`; the root generation is scored on CPU.
+  accelerator through `lightning_accelerator`; root and child generations are scored on
+  the requested training device, reloading the saved CPU model pickle first.
 - `py-spy` cannot attach in this container or on alapin (ptrace restricted, no sudo).
   Long runs therefore must log progress themselves; `ceiling` logs one line per epoch.

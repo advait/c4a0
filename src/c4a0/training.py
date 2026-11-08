@@ -30,6 +30,7 @@ from c4a0.utils import (
     BestModelCheckpoint,
     GenerationTrainer,
     lightning_accelerator,
+    load_model,
     tensor_batches,
 )
 from c4a0_rust import PlayGamesResult
@@ -117,6 +118,8 @@ class TrainingGen(GenConfig):
         model: ConnectFourNet,
         eval_config: EvalConfig,
         metrics: GenerationMetrics | None = None,
+        *,
+        device: str | torch.device = "cpu",
     ) -> None:
         """Saves games and model, scores the model as reloaded from model.pkl, then writes
         metadata.json last. If scoring fails, no metadata is written and loaders skip the
@@ -131,7 +134,7 @@ class TrainingGen(GenConfig):
 
             model_path = Path(gen_dir) / "model.pkl"
             with open(model_path, "wb") as f:
-                pickle.dump(model, f)
+                pickle.dump(copy.deepcopy(model).cpu(), f)
 
         with metrics.phase("evaluation") if metrics else nullcontext():
             suite_eval = evaluate_model(
@@ -140,6 +143,7 @@ class TrainingGen(GenConfig):
                 eval_config.mcts_iterations,
                 self.c_exploration,
                 self.c_ply_penalty,
+                device=device,
             )
         self.evals[suite_eval.suite] = suite_eval
         logger.info(
@@ -202,6 +206,7 @@ class TrainingGen(GenConfig):
         config: GenConfig,
         model_config: ModelConfig,
         eval_config: EvalConfig,
+        device: str | torch.device = "cpu",
     ) -> TrainingGen:
         try:
             return TrainingGen.load_latest(base_dir)
@@ -213,7 +218,7 @@ class TrainingGen(GenConfig):
                 **config.model_dump(),
             )
             model = ConnectFourNet(model_config)
-            gen.publish(base_dir, None, model, eval_config)
+            gen.publish(base_dir, None, model, eval_config, device=device)
             return gen
 
     def get_games(self, base_dir: str) -> PlayGamesResult | None:
@@ -221,12 +226,12 @@ class TrainingGen(GenConfig):
         with open(os.path.join(gen_folder, "games.pkl"), "rb") as f:
             return pickle.load(f)
 
-    def get_model(self, base_dir: str) -> ConnectFourNet:
+    def get_model(
+        self, base_dir: str, device: str | torch.device = "cpu"
+    ) -> ConnectFourNet:
         """Gets the model for this generation."""
         gen_folder = self.gen_folder(base_dir)
-        with open(os.path.join(gen_folder, "model.pkl"), "rb") as f:
-            model = pickle.load(f)
-            return model
+        return load_model(Path(gen_folder) / "model.pkl", device)
 
 
 def replay_training_games(
@@ -271,7 +276,7 @@ def train_single_gen(
 
     with metrics.phase("setup") if metrics else nullcontext():
         # Self play
-        model = parent.get_model(base_dir)
+        model = parent.get_model(base_dir, device)
         if getattr(model, "head", "fc") != config.head or (
             config.head == "conv"
             and model.hparams["value_hidden"] != config.value_hidden
@@ -280,7 +285,6 @@ def train_single_gen(
                 "Head options differ from the saved model. Use its --head and "
                 "--value-hidden settings to resume, or a new --base-dir to change heads."
             )
-        model.to(device)
         # game_id seeds random starts, move sampling and root noise in Rust. Ids unique
         # across generations give each generation fresh random streams.
         first_id = gen_n * config.n_self_play_games
@@ -379,7 +383,7 @@ def train_single_gen(
         parent=parent.created_at,
         val_loss=val_loss,
     )
-    gen.publish(base_dir, games, best_model, eval_config, metrics)
+    gen.publish(base_dir, games, best_model, eval_config, metrics, device=device)
     return gen
 
 
@@ -410,6 +414,7 @@ def training_loop(
         config=config,
         model_config=model_config,
         eval_config=eval_config,
+        device=device,
     )
 
     while True:
