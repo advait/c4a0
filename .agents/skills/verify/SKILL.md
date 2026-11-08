@@ -39,6 +39,23 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   Legacy metadata tests include retired fields. `main_test.py` checks winning CLI
   defaults, control forwarding, device selection, baseline play without training data,
   and the error for a missing trained model.
+- `generation_golden_test.py` pins two generations to master `57d3a2a`: game CBOR,
+  augmented dataset bytes, every training and validation batch loss, validation scores,
+  and every published model tensor. It uses seed 1337, one torch thread, singleton NN
+  batches and serial games **in the test only**. Master returns games in worker completion
+  order, which otherwise changes replay splits even with fixed random seeds. Both omitted
+  and explicitly disabled BF16, compile and fixed-step controls must match the fixture.
+  Do not regenerate the fixture from optimized code. The baseline was captured by loading
+  master `nn.py` and `training.py` before running the same harness, and checked six times.
+- Bulk sample tests compare every float byte, including signed zero, to the legacy split
+  and per-sample conversion. Replay concatenation must preserve CBOR order. Callback tests
+  cover changing batch sizes on tiny and default 4x64 nets, including singleton batches,
+  and compare to the original `no_grad` forward. Device tests
+  check dataset storage is reused by loaders. CUDA cases skip in this container.
+- Fixed-step tests run real fits at 1, 5 and 11 steps, check final published tensors and
+  final validation loss, and prove minibatch sampling uses replacement. BF16 has a real
+  CPU fit. Compile tests exercise dynamic Dynamo batches with the eager backend, plus
+  immediate and lazy backend failures; they do not measure Inductor performance.
 - Raw-network dev eval of the historical 1x32 model (2447 positions, suite load through `SuiteEval`)
   took a median 0.15 s (0.148 to 0.166 s, 3 runs, load average 5, 16 torch threads); the
   forward pass is about 0.08 s of it. MCTS-64 on the dev suite took 1.7 s (one run).
@@ -53,6 +70,24 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   patience 1, and MCTS-4 evaluation. It exercises the winning self-play controls.
   For replay across generations, repeat its tiny command with `--max-gens 2`.
   Generation two saves only its new games. This proves plumbing, not convergence.
+- For phase timing after the smoke run, copy its artifacts and append one measured
+  generation. `--phase training` reuses the newest games, includes each older ancestor
+  once, and still evaluates and publishes:
+
+  ```sh
+  run_copy=$(mktemp -d /tmp/c4a0-bench.XXXXXX)
+  cp -a training/ci-smoke/. "$run_copy/"
+  timeout 900 uv run --locked python scripts/bench_generation.py "$run_copy" --device cpu --torch-threads 1 --eval-mcts-iterations 4 --phase training
+  ```
+
+  The final stdout line is JSON with synchronized phase times, epochs and optimizer
+  steps. `total_seconds` excludes imports and initial device startup. Compare equal
+  work counts from identical snapshots. Use `--phase all` for self-play too.
+- `timeout 300 uv run --locked python scripts/bench_samples.py --samples 700000 --runs 5
+  --torch-threads 1` alternates the master conversion with Rust bulk arrays and hashes
+  all tensor bytes. On 2026-11-08, 699,448 augmented samples took medians 6.16 s and
+  0.040 s, respectively, across five runs per arm. Tiny CPU end-to-end timings overlap;
+  they establish no generation speedup. Details are in `docs/data/generation-speed-cpu.json`.
 - `mise run train -- --max-gens 1 --n-self-play-games 8 --n-mcts-iterations 8
   --base-dir /tmp/c4a0-check --device cpu --n-residual-blocks 1 --conv-filter-size 8`
   exercises the user task with a small CPU run and the default eval budgets 64/256.
@@ -98,6 +133,33 @@ Apply the **benchmark-checklist** skill and **principle-explain-the-number** bef
 a convergence delta.
 
 ## Lane 4: the GPU machine (alapin)
+
+When the coordinator owns GPU measurements, provide commands and do not run remote jobs.
+The generation benchmark and five-run alternating baseline procedure are in
+`docs/development.md` under **Benchmarking**. Use built checkouts at `b5eca94` (instrumented
+master behavior) and the candidate, one job at a time, with fresh copies of the same run.
+Time both `--phase all` and `--phase training`. CUDA synchronization brackets every phase.
+Inspect epochs, optimizer steps, validation loss and all errors before reporting throughput.
+
+First run the CUDA parity cases (they skip on CPU):
+
+```sh
+timeout 300 uv run --locked pytest -q tests/c4a0_tests/nn_test.py tests/c4a0_tests/training_test.py -k 'inference_callback or datasets_live'
+```
+
+The maintainer's default-generation baseline is self-play 30.1 s (three identical runs),
+training 61.9-88.5 s as early stopping varies, and total 98-125 s including startup and eval.
+The default-on optimizations have CPU equality evidence, not GPU speedup evidence. Device
+datasets use 372 bytes per augmented sample; account for model and activation memory too.
+
+`--bf16`, `--compile`, and `--train-steps N` are results-changing, default-off controls,
+recorded in metadata. Test them separately on copied runs. BF16 affects self-play and
+training/validation, while published-model evaluation stays FP32. Compile applies only
+to self-play; cold compilation counts in its timer and unsupported backends warn and
+fall back to eager. Fixed steps sample with replacement, ignore epoch caps and patience,
+validate at the end and publish the final model. CPU tests do not prove convergence.
+Judge these experiments by strict fastest-win/slowest-loss agreement at MCTS-256 on dev,
+with a target of at least 99%, using the variance requirements in lane 3.
 
 `alapin` (RTX 3090, 32 cores) runs the heavy lanes, driven from this container with
 `scripts/alapin` (see the **workspace** skill). Measured on 2026-11-06, 5 runs, medians:

@@ -174,17 +174,33 @@ def test_policy_loss_is_batchmean_kl_of_target_to_prediction() -> None:
         ),
     ],
 )
-def test_inference_callback_matches_legacy_across_batch_sizes(device: str) -> None:
+@pytest.mark.parametrize("wide", [False, True])
+def test_inference_callback_matches_legacy_across_batch_sizes(
+    device: str, wide: bool
+) -> None:
     import numpy as np
 
     import c4a0_rust
     from c4a0.nn import NumpyEvaluator
     from c4a0_tests.training_test import TINY_CONFIG
 
-    model = ConnectFourNet(TINY_CONFIG).to(device).eval()
+    config = (
+        TINY_CONFIG.model_copy(
+            update={
+                "n_residual_blocks": 4,
+                "conv_filter_size": 64,
+                "n_policy_layers": 4,
+                "n_value_layers": 2,
+            }
+        )
+        if wide
+        else TINY_CONFIG
+    )
+    model = ConnectFourNet(config).to(device).eval()
     evaluator = NumpyEvaluator(model)
     for size in [1, 4, 32, 2, 17, 1]:
-        positions = c4a0_rust.encode_positions(["123", "33", "1234", ""] * size)
+        moves = (["123", "33", "1234", ""] * ((size + 3) // 4))[:size]
+        positions = c4a0_rust.encode_positions(moves)
         with torch.no_grad():
             expected = tuple(
                 np.ascontiguousarray(t.cpu().numpy())

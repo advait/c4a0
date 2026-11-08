@@ -62,9 +62,88 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `--value-target-q-weight` | 1.0 | Value target = `(1 - w) * game result + w * root search value`. |
 | `--replay-gens` | 8 | Train on the games of this many recent generations. |
 | `--train-max-epochs`, `--train-patience` | 20, 3 | Per-generation training length and early-stopping patience. |
+| `--bf16` | off | BF16 autocast for self-play inference and Lightning training, including validation. Parameters stay FP32. Published-model dev evaluation stays FP32. |
+| `--compile` | off | `torch.compile` of the self-play forward with dynamic batches. Falls back to eager on setup or execution failure, with a warning. Compilation stays outside the saved model. |
+| `--train-steps N` | unset | Exactly N optimizer steps with full minibatches sampled with replacement from the augmented training split. Validates at the end and publishes the final model. Ignores epoch caps and patience. N must be positive. |
 | `--n-residual-blocks`, `--conv-filter-size` | 4, 64 | Network size. |
 | `--eval-mcts-iterations` | 64 256 | MCTS budgets scored on the dev suite each generation. |
 | `--device` | auto | `cuda`, then `mps`, then `cpu`. Lightning trains on the same device. |
+
+## Benchmarking
+
+Build with `mise run build`. `scripts/bench_generation.py` appends exactly one generation to
++a copy of a completed run, inheriting its configuration. `--phase all` measures normal
++self-play. `--phase training` reuses the latest games and trains from the latest model,
++with older ancestors included once. Both modes evaluate and publish; use copies only.
++
++The last stdout line is JSON, with synchronized CUDA wall times for replay loading, sample
++conversion and device transfer, self-play, training, evaluation and publishing. It includes
++epochs, optimizer steps, config and validation loss. `total_seconds` excludes Python imports
++and initial device startup. Use an external process timer when startup matters.
++
++Use separate built checkouts at `b5eca94` (timing only, master
+training behavior) and this branch. Set the three input paths below. This runs five
+alternating measurements per arm and phase, sequentially. Use a snapshot with all three
+experimental controls off:
+
+```sh
+RUN=/path/to/completed-run-snapshot
+BASELINE=/path/to/baseline-checkout
+FAST=/path/to/perf-checkout
+OUT=$(mktemp -d /tmp/c4a0-generation-bench.XXXXXX)
+for i in 1 2 3 4 5; do
+  for arm in baseline fast; do
+    case "$arm" in
+      baseline) checkout="$BASELINE" ;;
+      fast) checkout="$FAST" ;;
+    esac
+    for phase in all training; do
+      destination="$OUT/$arm-$phase-$i"
+      cp -a "$RUN" "$destination"
+      (cd "$checkout" && timeout 900 uv run --locked python scripts/bench_generation.py "$destination" --device cuda --phase "$phase" --eval-mcts-iterations 64 256) > "$OUT/$arm-$phase-$i.log" 2>&1
+    done
+  done
+done
+```
+
+Compare medians and ranges, epochs and optimizer steps. Do not compare different amounts of
+training as a throughput change. Compilation's first-call cost is included in self-play.
+Test each results-changing option separately on fresh copies, then measure convergence:
+
+```sh
+cd "$FAST"
+cp -a "$RUN" "$OUT/bf16"
+timeout 900 uv run --locked python scripts/bench_generation.py "$OUT/bf16" --device cuda --bf16
+cp -a "$RUN" "$OUT/compile"
+timeout 900 uv run --locked python scripts/bench_generation.py "$OUT/compile" --device cuda --compile
+cp -a "$RUN" "$OUT/steps"
+timeout 900 uv run --locked python scripts/bench_generation.py "$OUT/steps" --device cuda --train-steps 1000
+```
+
+The options change results and have no demonstrated convergence benefit. The target is
+strict solver agreement at MCTS-256 of at least 99% on dev, including the fastest win and
+slowest loss.
+
+On CPU, reproduce the sample-conversion comparison with:
+
+```sh
+timeout 300 uv run --locked python scripts/bench_samples.py --samples 700000 --runs 5 --torch-threads 1
+```
+
+For 699,448 augmented samples, the legacy build took a median 6.16 s and the bulk build
+0.040 s over five alternating runs. All dataset bytes matched. This isolates conversion,
+not a full generation. Tiny CPU generations took medians 0.207 s before and 0.191 s after,
+excluding imports, with overlapping ranges. No end-to-end speedup is established by that
+small workload. [The CPU measurements](data/generation-speed-cpu.json) record every run,
+configuration and measurement boundary. Default-size GPU timings remain unmeasured here.
+
+Training tensors occupy 372 bytes per augmented sample on the training device, in addition
+to the model, optimizer and activations. Large replay windows can exhaust device memory.
+Run CUDA parity tests before interpreting GPU benchmarks:
+
+```sh
+timeout 300 uv run --locked pytest -q tests/c4a0_tests/nn_test.py tests/c4a0_tests/training_test.py -k 'inference_callback or datasets_live'
+```
 
 ## Generation artifacts
 

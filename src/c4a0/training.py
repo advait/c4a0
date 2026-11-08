@@ -297,7 +297,8 @@ def train_single_gen(
 
     # Training
     logger.info("Beginning training")
-    model = copy.deepcopy(model)
+    with metrics.phase("training") if metrics else nullcontext():
+        model = copy.deepcopy(model)
     with metrics.phase("replay_load") if metrics else nullcontext():
         replay_parent = parent
         if reuse_games:
@@ -319,30 +320,34 @@ def train_single_gen(
         data_module = SampleDataModule(
             train, test, config.training_batch_size, device, config.train_steps
         )
-    best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
-    trainer = GenerationTrainer(
-        max_epochs=1 if config.train_steps is not None else config.train_max_epochs,
-        max_steps=config.train_steps if config.train_steps is not None else -1,
-        accelerator=lightning_accelerator(device),
-        devices=[
-            device.index if device.index is not None else torch.cuda.current_device()
-        ]
-        if device.type == "cuda"
-        else 1,
-        callbacks=[]
-        if config.train_steps is not None
-        else [
-            best_model_cb,
-            EarlyStopping(
-                monitor="val_loss", patience=config.train_patience, mode="min"
-            ),
-        ],
-        num_sanity_val_steps=0,
-        precision="bf16-mixed" if config.bf16 else "32-true",
-    )
-    trainer.gen_n = gen_n
-    model.train()  # Switch batch normalization to train mode for training bn params
     with metrics.phase("training") if metrics else nullcontext():
+        best_model_cb = BestModelCheckpoint[ConnectFourNet](
+            monitor="val_loss", mode="min"
+        )
+        trainer = GenerationTrainer(
+            max_epochs=1 if config.train_steps is not None else config.train_max_epochs,
+            max_steps=config.train_steps if config.train_steps is not None else -1,
+            accelerator=lightning_accelerator(device),
+            devices=[
+                device.index
+                if device.index is not None
+                else torch.cuda.current_device()
+            ]
+            if device.type == "cuda"
+            else 1,
+            callbacks=[]
+            if config.train_steps is not None
+            else [
+                best_model_cb,
+                EarlyStopping(
+                    monitor="val_loss", patience=config.train_patience, mode="min"
+                ),
+            ],
+            num_sanity_val_steps=0,
+            precision="bf16-mixed" if config.bf16 else "32-true",
+        )
+        trainer.gen_n = gen_n
+        model.train()  # Switch batch normalization to train mode for training bn params
         trainer.fit(model, data_module)
     if metrics:
         metrics.epochs = trainer.current_epoch
