@@ -1,12 +1,132 @@
 import copy
+import hashlib
+import json
+import pickle
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 import torch
 
-from c4a0.nn import ConnectFourNet, ModelConfig
+from c4a0.nn import ConnectFourNet, Head, ModelConfig, NumpyEvaluator
 from c4a0.training import parse_lr_schedule
 from c4a0_rust import BUF_N_CHANNELS, N_COLS, N_ROWS
+
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+@pytest.mark.parametrize("explicit_fc", [False, True])
+def test_fc_initialization_matches_pre_head_option_bytes(explicit_fc: bool) -> None:
+    # Captured from 1bccc92 before editing nn.py with one torch thread, including
+    # BatchNorm buffers from the dummy trunk pass. Never regenerate from new code.
+    config = ModelConfig(
+        n_residual_blocks=4,
+        conv_filter_size=64,
+        n_policy_layers=4,
+        n_value_layers=2,
+        lr_schedule={0: 0.001},
+        l2_reg=0.0,
+    )
+    if explicit_fc:
+        config = config.model_copy(update={"head": "fc", "value_hidden": 17})
+    threads = torch.get_num_threads()
+    try:
+        torch.set_num_threads(1)
+        with torch.random.fork_rng():
+            torch.manual_seed(1337)
+            model = ConnectFourNet(config)
+    finally:
+        torch.set_num_threads(threads)
+    actual = {
+        name: {
+            "shape": list(value.shape),
+            "sha256": hashlib.sha256(value.detach().numpy().tobytes()).hexdigest(),
+        }
+        for name, value in model.state_dict().items()
+    }
+    assert actual == json.loads((FIXTURES / "fc_4x64_seed1337.json").read_text())
+
+
+@pytest.mark.parametrize("head", ["fc", "conv"])
+@pytest.mark.parametrize("batch_size", [1, 5])
+def test_heads_preserve_forward_and_numpy_contract(head: Head, batch_size: int) -> None:
+    config = ModelConfig(
+        head=head,
+        n_residual_blocks=1,
+        conv_filter_size=8,
+        n_policy_layers=2,
+        n_value_layers=2,
+        value_hidden=17,
+        lr_schedule={0: 0.001},
+        l2_reg=0.0,
+    )
+    model = ConnectFourNet(config)
+    pos = torch.rand(batch_size, 2, N_ROWS, N_COLS)
+    # Conv heads must also train with singleton batches: their BN is spatial.
+    if batch_size > 1 or head == "conv":
+        policy, qp, qn = model(pos)
+        (policy.sum() + qp.sum() + qn.sum()).backward()
+        assert all(p.grad is not None for p in model.parameters())
+        copy.deepcopy(model)  # BestModelCheckpoint's publication path.
+    model.eval()
+    with torch.no_grad():
+        outputs = model(pos)
+    policy, qp, qn = outputs
+    assert policy.shape == (batch_size, N_COLS)
+    assert qp.shape == qn.shape == (batch_size,)
+    assert all(torch.isfinite(t).all() for t in outputs)
+    assert (policy <= 0).all()
+    torch.testing.assert_close(policy.exp().sum(dim=1), torch.ones(batch_size))
+    assert ((qp >= -1) & (qp <= 1)).all()
+    assert ((qn >= -1) & (qn <= 1)).all()
+    restored = pickle.loads(pickle.dumps(model))
+    for actual, expected in zip(
+        NumpyEvaluator(restored)(pos.numpy()), outputs, strict=True
+    ):
+        assert actual.shape == tuple(expected.shape)
+        assert actual.tobytes() == expected.numpy().tobytes()
+
+
+def test_conv_4x64_has_309470_parameters_and_ignores_fc_depth() -> None:
+    config = ModelConfig(
+        head="conv",
+        n_residual_blocks=4,
+        conv_filter_size=64,
+        n_policy_layers=4,
+        n_value_layers=2,
+        lr_schedule={0: 0.001},
+        l2_reg=0.0,
+    )
+    torch.manual_seed(1337)
+    model = ConnectFourNet(config)
+    assert sum(p.numel() for p in model.parameters()) == 309470
+    assert sum(p.numel() for p in model.parameters()) < 1_000_000
+    torch.manual_seed(1337)
+    ignored_depths = ConnectFourNet(
+        config.model_copy(update={"n_policy_layers": 99, "n_value_layers": 0})
+    )
+    assert model.state_dict().keys() == ignored_depths.state_dict().keys()
+    for name, value in model.state_dict().items():
+        assert torch.equal(value, ignored_depths.state_dict()[name])
+
+
+def test_legacy_model_pickle_without_head_still_predicts_identically() -> None:
+    # This pickle was saved by 1bccc92, rather than stripping fields off a new model.
+    with (FIXTURES / "legacy_model.pkl").open("rb") as f:
+        legacy = pickle.load(f)
+    assert not hasattr(legacy, "head")
+    assert "head" not in legacy.hparams
+    with torch.random.fork_rng():
+        torch.manual_seed(1337)
+        current = make_model().eval()
+    positions = torch.zeros(3, 2, N_ROWS, N_COLS).numpy()
+    for actual, expected in zip(
+        NumpyEvaluator(legacy)(positions), current.forward_numpy(positions), strict=True
+    ):
+        assert actual.tobytes() == expected.tobytes()
+    config = ModelConfig.model_validate(dict(legacy.hparams))
+    assert config.head == "fc"
+    assert config.value_hidden == 256
 
 
 def make_model() -> ConnectFourNet:

@@ -1,5 +1,5 @@
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 import pytorch_lightning as pl
@@ -8,7 +8,7 @@ import torch.nn as nn
 from einops import rearrange
 from loguru import logger
 from numpy.typing import NDArray
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from torch.optim.adam import Adam
 
 from c4a0.utils import GenerationTrainer
@@ -17,9 +17,17 @@ from c4a0_rust import N_COLS, N_ROWS
 if TYPE_CHECKING:
     from c4a0.training import GenConfig
 
+Head = Literal["fc", "conv"]
+
 
 class ModelConfig(BaseModel):
     """Configuration for ConnectFourNet."""
+
+    head: Head = "fc"
+    """Policy and value head architecture."""
+
+    value_hidden: int = Field(default=256, ge=1)
+    """Hidden value layer width, used only by convolutional heads."""
 
     n_residual_blocks: int
     """The number of residual blocks."""
@@ -28,10 +36,10 @@ class ModelConfig(BaseModel):
     """The number of filters for the conv layers in the residual blocks."""
 
     n_policy_layers: int
-    """Number of fully connected layers in the policy head."""
+    """Number of fully connected layers in the policy head; ignored for conv heads."""
 
     n_value_layers: int
-    """Number of fully connected layers in the value head."""
+    """Number of fully connected layers in the value head; ignored for conv heads."""
 
     lr_schedule: dict[int, float]
     """
@@ -56,7 +64,7 @@ class ConnectFourNet(pl.LightningModule):
     The outputs of MCTS are used to train the next network.
 
     The network consists of a sequence of ResidualBlocks (CNN + CNN + BatchNormalization + Relu)
-    followed by separate fully connected policy and value heads.
+    followed by separate policy and value heads (fully connected or convolutional).
     """
 
     EPS = 1e-8  # Epsilon small constant to avoid log(0)
@@ -65,6 +73,7 @@ class ConnectFourNet(pl.LightningModule):
         super().__init__()
         self.lr_schedule = config.lr_schedule
         self.l2_reg = config.l2_reg
+        self.head = config.head
 
         self.conv = nn.Sequential(
             nn.Conv2d(2, config.conv_filter_size, kernel_size=3, padding=1),
@@ -74,6 +83,33 @@ class ConnectFourNet(pl.LightningModule):
             ],
         )
 
+        if config.head == "conv":
+            self.conv_policy = nn.Sequential(
+                nn.Conv2d(config.conv_filter_size, 2, kernel_size=1),
+                nn.BatchNorm2d(2),
+                nn.ReLU(),
+                nn.Flatten(),
+                nn.Linear(2 * N_ROWS * N_COLS, N_COLS),
+                nn.LogSoftmax(dim=1),
+            )
+            self.conv_value = nn.Sequential(
+                nn.Conv2d(config.conv_filter_size, 1, kernel_size=1),
+                nn.BatchNorm2d(1),
+                nn.ReLU(),
+                nn.Flatten(),
+                nn.Linear(N_ROWS * N_COLS, config.value_hidden),
+                nn.ReLU(),
+                nn.Linear(config.value_hidden, 2),
+                nn.Tanh(),
+            )
+        else:
+            self._init_fc_heads(config)
+
+        self.save_hyperparameters(config.model_dump())
+
+    def _init_fc_heads(self, config: ModelConfig) -> None:
+        # Preserve module names, initialization order and the dummy trunk pass for FC
+        # models: existing pickles and fixed-seed experiments depend on all three.
         fc_size = self._calculate_conv_output_size()
 
         # Policy head
@@ -104,15 +140,18 @@ class ConnectFourNet(pl.LightningModule):
             nn.Tanh(),
         )
 
-        self.save_hyperparameters(config.model_dump())
-
     def forward(
         self, x: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         x = self.conv(x)
-        x = rearrange(x, "b c h w -> b (c h w)")
-        policy_logprobs = self.fc_policy(x)
-        q_values = self.fc_value(x)  # b 2
+        # Pickles saved before head selection have no `head` attribute.
+        if getattr(self, "head", "fc") == "conv":
+            policy_logprobs = self.conv_policy(x)
+            q_values = self.conv_value(x)
+        else:
+            x = rearrange(x, "b c h w -> b (c h w)")
+            policy_logprobs = self.fc_policy(x)
+            q_values = self.fc_value(x)  # b 2
         q_penalty, q_no_penalty = q_values.split(1, dim=1)  # both: b 1
         q_penalty = q_penalty.squeeze(1)  # b
         q_no_penalty = q_no_penalty.squeeze(1)  # b

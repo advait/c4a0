@@ -214,6 +214,8 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     assert gen.replay_gens == 1
     assert gen.train_max_epochs == 100
     assert gen.train_patience == 10
+    assert gen.head == "fc"
+    assert gen.value_hidden == 256
     assert gen.config.n_self_play_games == 1700
     # Saving a legacy generation backfills config defaults and keeps its old values.
     legacy = json.loads((FIXTURES / "legacy_metadata.json").read_text())
@@ -229,6 +231,42 @@ def test_generation_config_is_frozen() -> None:
     )
     with pytest.raises(ValidationError, match="frozen"):
         config.__setattr__("n_mcts_iterations", 8)
+
+
+@pytest.mark.parametrize("head", ["other"])
+def test_head_config_rejects_unknown_architecture(head: str) -> None:
+    for config in (TINY_CONFIG, TINY_GEN_CONFIG):
+        with pytest.raises(ValidationError):
+            type(config).model_validate({**config.model_dump(), "head": head})
+
+
+@pytest.mark.parametrize("width", [0, -1])
+def test_head_config_requires_positive_value_width(width: int) -> None:
+    for config in (TINY_CONFIG, TINY_GEN_CONFIG):
+        with pytest.raises(ValidationError):
+            type(config).model_validate({**config.model_dump(), "value_hidden": width})
+
+
+@pytest.mark.parametrize("change", [{"head": "fc"}, {"value_hidden": 17}])
+def test_resume_rejects_head_changes_before_self_play(
+    tmp_path: Path, change: dict[str, object]
+) -> None:
+    config = TINY_GEN_CONFIG.model_copy(update={"head": "conv"})
+    evaluation = EvalConfig(_tiny_suite())
+    parent = TrainingGen.load_latest_with_default(
+        str(tmp_path),
+        config,
+        TINY_CONFIG.model_copy(update={"head": "conv"}),
+        evaluation,
+    )
+    with pytest.raises(ValueError, match="Head options differ from the saved model"):
+        training.train_single_gen(
+            str(tmp_path),
+            torch.device("cpu"),
+            parent,
+            config.model_copy(update=change),
+            evaluation,
+        )
 
 
 def test_random_starts_run_one_generation_and_reach_metadata(tmp_path: Path) -> None:
