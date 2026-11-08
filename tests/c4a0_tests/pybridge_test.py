@@ -249,3 +249,44 @@ def test_value_target_blending_preserves_moves_and_terminal_values() -> None:
                     == actual.samples[-1].to_numpy()[i].tobytes()
                 )
     assert changed
+
+
+@pytest.mark.parametrize("fraction", [0.0, 0.5, 0.8, 1.0])
+def test_bulk_samples_equal_legacy_conversion_byte_for_byte(fraction: float) -> None:
+    games = c4a0_rust.play_games(
+        [c4a0_rust.GameMetadata(i, 0, 0) for i in range(8)],
+        8,
+        4,
+        2.0,
+        0.01,
+        _uniform_eval,
+        value_target_q_weight=0.6,
+        random_start_frac=0.5,
+    )
+    for arrays, legacy in zip(
+        games.split_train_test_numpy(fraction, 1337),
+        games.split_train_test(fraction, 1337),
+        strict=True,
+    ):
+        augmented = legacy + [s.flip_h() for s in legacy]
+        if not augmented:
+            assert [a.shape for a in arrays] == [(0, 2, 6, 7), (0, 7), (0,), (0,)]
+            continue
+        columns = zip(*(s.to_numpy() for s in augmented), strict=True)
+        for array, column in zip(arrays, columns, strict=True):
+            expected = np.stack(column)
+            assert array.dtype == np.float32
+            assert array.shape == expected.shape
+            assert array.tobytes() == expected.tobytes()  # Includes signed zero.
+    assert len(games) == 8
+    combined = c4a0_rust.PlayGamesResult.concat([games, games])
+    legacy_combined = games + games
+    assert combined.__getstate__() == legacy_combined.__getstate__()
+
+
+def test_bulk_empty_and_invalid_split() -> None:
+    games = c4a0_rust.PlayGamesResult()
+    assert games.split_train_test_numpy(0.8, 1337)[0][0].shape == (0, 2, 6, 7)
+    for fraction in [-0.1, 1.1, float("nan")]:
+        with pytest.raises(ValueError, match="train_frac"):
+            games.split_train_test_numpy(fraction, 1337)

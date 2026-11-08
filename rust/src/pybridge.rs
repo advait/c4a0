@@ -1,6 +1,7 @@
 use numpy::{
-    ndarray::{Array2, Array4},
-    IntoPyArray, PyArray2, PyArray4, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods,
+    ndarray::{Array1, Array2, Array4},
+    IntoPyArray, PyArray1, PyArray2, PyArray4, PyReadonlyArray1, PyReadonlyArray2,
+    PyUntypedArrayMethods,
 };
 use pyo3::{
     exceptions::{PyRuntimeError, PyValueError},
@@ -82,6 +83,54 @@ pub struct PlayGamesResult {
     pub results: Vec<GameResult>,
 }
 
+type SampleArrays<'py> = (
+    Bound<'py, PyArray4<f32>>,
+    Bound<'py, PyArray2<f32>>,
+    Bound<'py, PyArray1<f32>>,
+    Bound<'py, PyArray1<f32>>,
+);
+
+/// Original samples followed by their mirrors, exactly as the Python augmentation did.
+fn sample_arrays<'py>(py: Python<'py>, games: &[&GameResult]) -> SampleArrays<'py> {
+    let n = games.iter().map(|g| g.samples.len()).sum::<usize>() * 2;
+    let mut positions = vec![0.0; n * Pos::BUF_LEN];
+    let mut policies = Vec::with_capacity(n * Pos::N_COLS);
+    let mut q_penalty = Vec::with_capacity(n);
+    let mut q_no_penalty = Vec::with_capacity(n);
+    let mut row = 0;
+    for mirror in [false, true] {
+        for sample in games.iter().flat_map(|g| &g.samples) {
+            let flipped;
+            let sample = if mirror {
+                flipped = sample.flip_h();
+                &flipped
+            } else {
+                sample
+            };
+            sample
+                .pos
+                .write_numpy_buffer(&mut positions[row * Pos::BUF_LEN..(row + 1) * Pos::BUF_LEN]);
+            policies.extend_from_slice(&sample.policy);
+            q_penalty.push(sample.q_penalty);
+            q_no_penalty.push(sample.q_no_penalty);
+            row += 1;
+        }
+    }
+    (
+        Array4::from_shape_vec(
+            (n, Pos::BUF_N_CHANNELS, Pos::N_ROWS, Pos::N_COLS),
+            positions,
+        )
+        .expect("sample position shape")
+        .into_pyarray(py),
+        Array2::from_shape_vec((n, Pos::N_COLS), policies)
+            .expect("sample policy shape")
+            .into_pyarray(py),
+        Array1::from_vec(q_penalty).into_pyarray(py),
+        Array1::from_vec(q_no_penalty).into_pyarray(py),
+    )
+}
+
 #[pymethods]
 impl PlayGamesResult {
     /// Empty constructor is required for unpickling.
@@ -112,7 +161,7 @@ impl PlayGamesResult {
     }
 
     /// Combine two PlayGamesResult objects.
-    fn __add__(&mut self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
+    fn __add__(&self, other: &Bound<'_, PyAny>) -> PyResult<Self> {
         let other = other.extract::<PlayGamesResult>()?;
         Ok(PlayGamesResult {
             results: self
@@ -122,6 +171,21 @@ impl PlayGamesResult {
                 .cloned()
                 .collect(),
         })
+    }
+
+    fn __len__(&self) -> usize {
+        self.results.len()
+    }
+
+    /// Clone the replay window once rather than cloning its growing prefix G-1 times.
+    #[staticmethod]
+    fn concat(games: Vec<PyRef<'_, PlayGamesResult>>) -> Self {
+        Self {
+            results: games
+                .iter()
+                .flat_map(|g| g.results.iter().cloned())
+                .collect(),
+        }
     }
 
     /// Splits the results into training and test datasets.
@@ -137,6 +201,23 @@ impl PlayGamesResult {
             train.iter().flat_map(|r| r.samples.clone()).collect(),
             test.iter().flat_map(|r| r.samples.clone()).collect(),
         ))
+    }
+
+    /// Same split and sample order, without cloning games or crossing Python per sample.
+    fn split_train_test_numpy<'py>(
+        &self,
+        py: Python<'py>,
+        train_frac: f32,
+        seed: u64,
+    ) -> PyResult<(SampleArrays<'py>, SampleArrays<'py>)> {
+        if !train_frac.is_finite() || !(0.0..=1.0).contains(&train_frac) {
+            return Err(PyValueError::new_err("train_frac must be in [0, 1]"));
+        }
+        let mut games: Vec<_> = self.results.iter().collect();
+        games.shuffle(&mut StdRng::seed_from_u64(seed));
+        let n_train = (games.len() as f32 * train_frac).round() as usize;
+        let (train, test) = games.split_at(n_train);
+        Ok((sample_arrays(py, train), sample_arrays(py, test)))
     }
 
     /// Returns the number of unique positions in the results.

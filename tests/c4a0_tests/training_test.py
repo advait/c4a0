@@ -1,7 +1,6 @@
 import json
 import pickle
 import shutil
-from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Never
@@ -23,7 +22,6 @@ from c4a0.training import (
     EvalConfig,
     GenConfig,
     SampleDataModule,
-    SampleTensor,
     TrainingGen,
     parse_lr_schedule,
     replay_training_games,
@@ -80,11 +78,8 @@ def _tiny_loop(
     )
 
 
-def _manual_loss(model: ConnectFourNet, samples: Sequence[SampleTensor]) -> float:
-    pos = torch.stack([sample[0] for sample in samples])
-    policy_target = torch.stack([sample[1] for sample in samples])
-    q_penalty_target = torch.stack([sample[2] for sample in samples])
-    q_no_penalty_target = torch.stack([sample[3] for sample in samples])
+def _manual_loss(model: ConnectFourNet, samples: tuple[torch.Tensor, ...]) -> float:
+    pos, policy_target, q_penalty_target, q_no_penalty_target = samples
     model.eval()
     with torch.no_grad():
         policy_logprob, q_penalty_pred, q_no_penalty_pred = model(pos)
@@ -147,8 +142,8 @@ def test_training_loop_saves_trained_best_model_and_matching_metadata(
     )  # Save only new games, never duplicate replay in games.pkl.
     games = replay_training_games(str(tmp_path), parent, games, gen.replay_gens)
     assert len(games.results) == 8
-    train, validation = games.split_train_test(0.8, 1337)
-    data_module = SampleDataModule(list(train), list(validation), 10_000)
+    train, validation = games.split_train_test_numpy(0.8, 1337)
+    data_module = SampleDataModule(train, validation, 10_000)
 
     assert gen.val_loss == pytest.approx(
         _manual_loss(saved_model, data_module.validation_data),

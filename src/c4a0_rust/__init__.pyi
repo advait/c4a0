@@ -34,14 +34,26 @@ class GameResult:
 
     def player0_score(self) -> float: ...
 
+SampleArrays = tuple[
+    NDArray[np.float32], NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]
+]
+
 class PlayGamesResult:
     results: list[GameResult]
 
     def __init__(self) -> None: ...
+    def __len__(self) -> int: ...
+    @staticmethod
+    def concat(games: Sequence[PlayGamesResult]) -> PlayGamesResult: ...
     def __add__(self, other: PlayGamesResult) -> PlayGamesResult: ...
     def split_train_test(
         self, train_frac: float, seed: int
     ) -> tuple[list[Sample], list[Sample]]: ...
+    def split_train_test_numpy(
+        self, train_frac: float, seed: int
+    ) -> tuple[SampleArrays, SampleArrays]:
+        """Stacked arrays, original samples followed by mirrors, with the legacy split order."""
+        ...
     def unique_positions(self) -> int: ...
 
 EvalPosCb = Callable[

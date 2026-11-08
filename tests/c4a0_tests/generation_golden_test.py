@@ -57,7 +57,7 @@ def capture_generations(
         games = gen.get_games(str(tmp_path))
         samples: list[list[str]] = []
         if games is not None:
-            train, val = games.split_train_test(0.8, 1337)
+            train, val = games.split_train_test_numpy(0.8, 1337)
             dm = SampleDataModule(train, val, 64)
             for loader in (dm.train_dataloader(), dm.val_dataloader()):
                 # Hash the unshuffled, augmented dataset rather than random batches.

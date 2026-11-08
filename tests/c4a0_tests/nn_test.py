@@ -159,3 +159,25 @@ def test_policy_loss_is_batchmean_kl_of_target_to_prediction() -> None:
             + torch.nn.functional.mse_loss(qn, q_no_penalty)
         )
     assert torch.allclose(loss, expected, atol=1e-6)
+
+
+def test_inference_callback_matches_legacy_across_batch_sizes() -> None:
+    import numpy as np
+
+    import c4a0_rust
+    from c4a0.nn import NumpyEvaluator
+    from c4a0_tests.training_test import TINY_CONFIG
+
+    model = ConnectFourNet(TINY_CONFIG).eval()
+    evaluator = NumpyEvaluator(model)
+    for size in [1, 4, 32, 2, 17, 1]:
+        positions = c4a0_rust.encode_positions(["123", "33", "1234", ""] * size)
+        with torch.no_grad():
+            expected = tuple(
+                np.ascontiguousarray(t.cpu().numpy())
+                for t in model(torch.from_numpy(positions))
+            )
+        for output in (model.forward_numpy(positions), evaluator(positions)):
+            for actual, legacy in zip(output, expected, strict=True):
+                assert actual.shape == legacy.shape
+                assert actual.tobytes() == legacy.tobytes()

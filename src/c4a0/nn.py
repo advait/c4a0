@@ -123,11 +123,11 @@ class ConnectFourNet(pl.LightningModule):
         """
         self.eval()
         pos = torch.from_numpy(x).to(self.device)
-        with torch.no_grad():
+        with torch.inference_mode():
             policy, q_penalty, q_no_penalty = self.forward(pos)
-        policy_np = np.ascontiguousarray(policy.cpu().numpy())
-        q_penalty_np = np.ascontiguousarray(q_penalty.cpu().numpy())
-        q_no_penalty_np = np.ascontiguousarray(q_no_penalty.cpu().numpy())
+        policy_np = policy.cpu().numpy()
+        q_penalty_np = q_penalty.cpu().numpy()
+        q_no_penalty_np = q_no_penalty.cpu().numpy()
         return policy_np, q_penalty_np, q_no_penalty_np
 
     def _calculate_conv_output_size(self) -> int:
@@ -190,6 +190,44 @@ class ConnectFourNet(pl.LightningModule):
         self.log(f"{log_prefix}_q_no_penalty_mse", q_no_penalty_loss)
         self.log(f"{log_prefix}_value_mse", value_loss)
         return loss
+
+
+class NumpyEvaluator:
+    """One self-play run's inference state, outside the pickled/trained network.
+
+    Rust invokes callbacks serially on its NN thread. Blocking output transfer completes
+    the input copy before that thread can overwrite the pinned buffer on the next call.
+    """
+
+    def __init__(self, model: ConnectFourNet) -> None:
+        self.model = model.eval()
+        self.host: torch.Tensor | None = None
+        self.positions: torch.Tensor | None = None
+
+    @torch.inference_mode()
+    def __call__(
+        self, x: NDArray[np.float32]
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]:
+        pos = torch.from_numpy(x)
+        if self.model.device.type == "cuda":
+            if self.host is None or self.host.shape[0] < len(x):
+                self.host = torch.empty(x.shape, dtype=torch.float32, pin_memory=True)
+                self.positions = torch.empty_like(self.host, device=self.model.device)
+            assert self.positions is not None
+            self.host[: len(x)].copy_(pos)
+            pos = self.positions[: len(x)]
+            pos.copy_(self.host[: len(x)], non_blocking=True)
+        else:
+            pos = pos.to(self.model.device)
+        policy, q_penalty, q_no_penalty = self.model.forward(pos)
+        if pos.device.type == "cuda":
+            # One device-to-host copy and synchronization for all three outputs.
+            outputs = torch.cat(
+                (policy, q_penalty[:, None], q_no_penalty[:, None]), dim=1
+            )
+            array = outputs.cpu().numpy()
+            return array[:, :N_COLS], array[:, N_COLS], array[:, N_COLS + 1]
+        return policy.cpu().numpy(), q_penalty.cpu().numpy(), q_no_penalty.cpu().numpy()
 
 
 class ResidualBlock(pl.LightningModule):

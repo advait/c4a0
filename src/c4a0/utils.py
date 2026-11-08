@@ -108,7 +108,10 @@ class BestModelCheckpoint(Callback, Generic[M]):
 
 
 def tensor_batches(
-    tensors: tuple[torch.Tensor, ...], batch_size: int, shuffle: bool, device: str
+    tensors: tuple[torch.Tensor, ...],
+    batch_size: int,
+    shuffle: bool,
+    device: str | torch.device,
 ) -> DataLoader[tuple[torch.Tensor, ...]]:
     """Whole-batch indexing into tensors kept on `device`. The default per-sample collate pins one
     CPU core and starves the GPU (about 33% utilization for the default net, and about 5 of

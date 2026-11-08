@@ -2,6 +2,8 @@
 Generation-based network training, alternating between self-play and training.
 """
 
+from __future__ import annotations
+
 import copy
 import os
 import pickle
@@ -10,7 +12,7 @@ from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import NewType
+from typing import TYPE_CHECKING
 
 import pytorch_lightning as pl
 import torch
@@ -23,14 +25,17 @@ import c4a0_rust
 from c4a0.benchmark import GenerationMetrics
 from c4a0.evaluation import SuiteEval, evaluate_model
 from c4a0.labels import Split, Suite, load_suite
-from c4a0.nn import ConnectFourNet, ModelConfig
+from c4a0.nn import ConnectFourNet, ModelConfig, NumpyEvaluator
 from c4a0.utils import (
     BestModelCheckpoint,
     GenerationTrainer,
     lightning_accelerator,
     tensor_batches,
 )
-from c4a0_rust import BUF_N_CHANNELS, N_COLS, N_ROWS, PlayGamesResult, Sample
+from c4a0_rust import PlayGamesResult
+
+if TYPE_CHECKING:
+    from c4a0_rust import SampleArrays
 
 
 @dataclass(frozen=True)
@@ -154,7 +159,7 @@ class TrainingGen(GenConfig):
         os.replace(tmp_path, metadata_path)
 
     @staticmethod
-    def load(base_dir: str, created_at: datetime) -> "TrainingGen":
+    def load(base_dir: str, created_at: datetime) -> TrainingGen:
         gen_folder = TrainingGen._gen_folder(created_at, base_dir)
         with open(os.path.join(gen_folder, "metadata.json")) as f:
             return TrainingGen.model_validate_json(f.read())
@@ -172,14 +177,14 @@ class TrainingGen(GenConfig):
         )
 
     @staticmethod
-    def load_all(base_dir: str) -> list["TrainingGen"]:
+    def load_all(base_dir: str) -> list[TrainingGen]:
         return [
             TrainingGen.load(base_dir, t)
             for t in TrainingGen._published_timestamps(base_dir)
         ]
 
     @staticmethod
-    def load_latest(base_dir: str) -> "TrainingGen":
+    def load_latest(base_dir: str) -> TrainingGen:
         timestamps = TrainingGen._published_timestamps(base_dir)
         if not timestamps:
             raise FileNotFoundError("No existing generations")
@@ -191,7 +196,7 @@ class TrainingGen(GenConfig):
         config: GenConfig,
         model_config: ModelConfig,
         eval_config: EvalConfig,
-    ) -> "TrainingGen":
+    ) -> TrainingGen:
         try:
             return TrainingGen.load_latest(base_dir)
         except FileNotFoundError:
@@ -225,16 +230,16 @@ def replay_training_games(
     chain so an unrelated generation in the same directory cannot enter the window."""
     if replay_gens < 1:
         raise ValueError("replay_gens must be at least 1")
-    combined = current
+    window = [current]
     ancestor = parent
     for history_index in range(1, replay_gens):
         games = ancestor.get_games(base_dir)
         if games is not None:  # Generation zero has no self-play games.
-            combined = combined + games
+            window.append(games)
         if ancestor.parent is None or history_index == replay_gens - 1:
             break
         ancestor = TrainingGen.load(base_dir, ancestor.parent)
-    return combined
+    return current if len(window) == 1 else PlayGamesResult.concat(window)
 
 
 def train_single_gen(
@@ -271,13 +276,14 @@ def train_single_gen(
         ]
     with metrics.phase("self_play") if metrics else nullcontext():
         if not reuse_games:
+            evaluator = NumpyEvaluator(model)
             games = c4a0_rust.play_games(
                 reqs,
                 config.self_play_batch_size,
                 config.n_mcts_iterations,
                 config.c_exploration,
                 config.c_ply_penalty,
-                lambda player_id, pos: model.forward_numpy(pos),
+                lambda player_id, pos: evaluator(pos),
                 root_noise_alpha=config.root_noise_alpha,
                 root_noise_frac=config.root_noise_frac,
                 value_target_q_weight=config.value_target_q_weight,
@@ -301,17 +307,21 @@ def train_single_gen(
         )
     logger.info(
         "Training on {} games from up to {} generations",
-        len(training_games.results),
+        len(training_games),
         config.replay_gens,
     )
     with metrics.phase("sample_conversion") if metrics else nullcontext():
-        train, test = training_games.split_train_test(0.8, 1337)
-        data_module = SampleDataModule(train, test, config.training_batch_size)
+        train, test = training_games.split_train_test_numpy(0.8, 1337)
+        data_module = SampleDataModule(train, test, config.training_batch_size, device)
     best_model_cb = BestModelCheckpoint[ConnectFourNet](monitor="val_loss", mode="min")
     trainer = GenerationTrainer(
         max_epochs=config.train_max_epochs,
         accelerator=lightning_accelerator(device),
-        devices=1,
+        devices=[
+            device.index if device.index is not None else torch.cuda.current_device()
+        ]
+        if device.type == "cuda"
+        else 1,
         callbacks=[
             best_model_cb,
             EarlyStopping(
@@ -382,55 +392,31 @@ def training_loop(
             return gen
 
 
-SampleTensor = NewType(
-    "SampleTensor",
-    tuple[
-        torch.Tensor,  # Pos
-        torch.Tensor,  # Policy
-        torch.Tensor,  # Q Value with penalty
-        torch.Tensor,  # Q Value without penalty
-    ],
-)
-
-
-def _stack(samples: Sequence["SampleTensor"]) -> tuple[torch.Tensor, ...]:
-    return tuple(torch.stack(column) for column in zip(*samples, strict=True))
-
-
 class SampleDataModule(pl.LightningDataModule):
+    """Convert the four stacked arrays once, keeping datasets on the training device."""
+
     def __init__(
         self,
-        training_data: list[Sample],
-        validation_data: list[Sample],
+        training_data: SampleArrays,
+        validation_data: SampleArrays,
         batch_size: int,
+        device: str | torch.device = "cpu",
     ) -> None:
         super().__init__()
         self.batch_size = batch_size
-        training_data += [s.flip_h() for s in training_data]
-        validation_data += [s.flip_h() for s in validation_data]
-        self.training_data = [self.sample_to_tensor(s) for s in training_data]
-        self.validation_data = [self.sample_to_tensor(s) for s in validation_data]
-
-    @staticmethod
-    def sample_to_tensor(sample: Sample) -> "SampleTensor":
-        pos, policy, q_penalty, q_no_penalty = sample.to_numpy()
-        pos_t = torch.from_numpy(pos)
-        policy_t = torch.from_numpy(policy)
-        q_penalty_t = torch.from_numpy(q_penalty)
-        q_no_penalty_t = torch.from_numpy(q_no_penalty)
-        assert pos_t.shape == (BUF_N_CHANNELS, N_ROWS, N_COLS)
-        assert policy_t.shape == (N_COLS,)
-        assert q_penalty_t.shape == ()
-        assert q_no_penalty.shape == ()
-        return SampleTensor((pos_t, policy_t, q_penalty_t, q_no_penalty_t))
+        self.training_data = tuple(
+            torch.from_numpy(a).to(device) for a in training_data
+        )
+        self.validation_data = tuple(
+            torch.from_numpy(a).to(device) for a in validation_data
+        )
+        self.device = device
 
     def train_dataloader(self) -> DataLoader[tuple[torch.Tensor, ...]]:
-        return tensor_batches(_stack(self.training_data), self.batch_size, True, "cpu")
+        return tensor_batches(self.training_data, self.batch_size, True, self.device)
 
     def val_dataloader(self) -> DataLoader[tuple[torch.Tensor, ...]]:
-        return tensor_batches(
-            _stack(self.validation_data), self.batch_size, False, "cpu"
-        )
+        return tensor_batches(self.validation_data, self.batch_size, False, self.device)
 
 
 def parse_lr_schedule(floats: list[float]) -> dict[int, float]:
