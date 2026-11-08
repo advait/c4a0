@@ -76,7 +76,7 @@ run)
     limit=${ALAPIN_TIMEOUT:-6h}
     workdir=${ALAPIN_DIR:-c4a0}
     # Per-process CUDA memory cap (fraction of the GPU); concurrent runs fail alone, not the card.
-    gpu_fraction=${ALAPIN_GPU_FRACTION:-0.12}
+    gpu_fraction=${ALAPIN_GPU_FRACTION:-0.06}
     # How many GPU training processes this run starts; the budget check below needs it.
     gpu_procs=${ALAPIN_GPU_PROCS:-1}
     valid_name "$workdir"
