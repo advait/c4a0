@@ -15,7 +15,7 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `rust/src/native_solver/`, `rust/src/bin/c4native.rs` | A clean-room Rust solver with its own opening book, a benchmark, and a diff harness against Pons. Not wired into labeling. See [native-solver.md](native-solver.md). |
 | `rust/src/pybridge.rs` | The PyO3 API. Its stubs are `src/c4a0_rust/__init__.pyi`. |
 | `rust/src/tui.rs`, `rust/src/interactive_play.rs` | The terminal UI behind `mise run play`. |
-| `src/c4a0/nn.py` | Residual, global-pooling, transformer, and hybrid networks with a shared loss. |
+| `src/c4a0/nn.py` | The residual network with AlphaZero-style policy and value heads, its loss and the inference callback. |
 | `src/c4a0/training.py` | `GenConfig`, `TrainingGen` metadata, the generation loop, replay. |
 | `src/c4a0/evaluation.py` | Suite scoring: strict and keeps-the-result, raw network and MCTS, by ply bucket. |
 | `src/c4a0/labels.py` | Solver labels and the committed suites in `src/c4a0/suite/v1/`. |
@@ -34,7 +34,7 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `train`, `play`, `eval`, `report`, `plot` | Usage tasks. Extra arguments go after `--`. |
 | `check` | Ruff lint and format check, ty, Rust tests, Python tests. Run it before every commit. |
 | `ci` | `check` plus `train:smoke`. CI runs this on every push. |
-| `train:smoke` | Two tiny CPU runs, one per head architecture, through self-play, training, saving and evaluation. |
+| `train:smoke` | One tiny CPU run through self-play, annealed training, saving and evaluation. |
 | `suite:build` | Rebuilds the committed suites. Needs the solver in `solver/`. |
 | `solver:native:build`, `solver:native:book` | Build the native solver and its ply-10 opening book in `native-solver/` (gitignored). |
 | `solver:diff` | Compares the native solver against Pons and adjudicates every disagreement. Set `C4A0_SOLVER` and `C4A0_BOOK` to the Pons binary and book. |
@@ -49,133 +49,69 @@ This page describes the code layout, tasks, tooling and training options. For in
 
 ## Training options
 
-`train` accepts these options. Every option is a `GenConfig` field and is recorded in each generation's `metadata.json`. The defaults are the best configuration found. A new option is a `GenConfig` field plus a CLI option, and nothing else threads it.
+`train` accepts these options. Self-play and training controls are `GenConfig` fields, recorded flat in each generation's `metadata.json`; network shape and `--mirror-inference` live in `ModelConfig` and the pickled model. The defaults are the best configuration measured (see [experiments](experiments.md)). A new training knob is a `GenConfig` field plus a CLI option, and nothing else threads it.
 
 | Option | Default | Effect |
 |---|---|---|
 | `--n-self-play-games` | 2048 | Games per generation. All play at once, so this also sets the network batch size. |
-| `--n-mcts-iterations` | 256 | Search iterations per self-play move. |
+| `--n-mcts-iterations` | 256 | Search iterations per self-play move. 1,024 and 2,048 trained no better. |
 | `--c-exploration` | 2.0 | PUCT exploration constant. |
 | `--c-ply-penalty` | 0.01 | Value penalty per ply, which makes faster wins worth more. |
 | `--root-noise-alpha`, `--root-noise-frac` | 1.0, 0.25 | Dirichlet noise mixed into the root prior, in self-play only. |
 | `--random-start-frac`, `--random-start-max-ply` | 0.5, 12 | Share of games that start from a random opening, and that opening's maximum length. |
 | `--value-target-q-weight` | 1.0 | Value target = `(1 - w) * game result + w * root search value`. |
 | `--replay-gens` | 8 | Train on the games of this many recent generations. |
-| `--train-max-epochs`, `--train-patience` | 20, 3 | Per-generation training length and early-stopping patience. |
+| `--train-anneal-epochs` | 8 | Train exactly this many epochs per generation while a cosine schedule takes the rate to 1% of `--lr-schedule`'s; the lowest-validation-loss epoch is published. 0 trains at a constant rate with early stopping. |
+| `--train-max-epochs`, `--train-patience` | 20, 3 | Epoch cap and early-stopping patience, used only with `--train-anneal-epochs 0`. |
+| `--n-residual-blocks`, `--conv-filter-size` | 8, 64 | Residual trunk size. 8x128 was no better. |
+| `--value-hidden` | 256 | Hidden width of the value head. Must match the saved model when resuming. |
+| `--leaf-minimax-depth` | 0 | Exact alpha-beta to this depth on each MCTS leaf before the network sees it, in self-play and the generation's dev eval. Costs about 1.8x time per generation for a noise-level training gain, so it is off for training; its large gain is at evaluation (see below). |
+| `--mirror-inference` | off | Average every network call with its left-right mirror, in self-play and evaluation. Doubles inference cost; worth 0.4 to 0.6 points strict at evaluation. |
 | `--bf16` | off | BF16 autocast for self-play inference and Lightning training, including validation. Parameters stay FP32. Published-model dev evaluation stays FP32. |
 | `--compile` | off | `torch.compile` of the self-play forward with dynamic batches. Falls back to eager on setup or execution failure, with a warning. Compilation stays outside the saved model. |
-| `--train-steps N` | unset | Exactly N optimizer steps with full minibatches sampled with replacement from the augmented training split. Validates at the end and publishes the final model. Ignores epoch caps and patience. N must be positive. |
-| `--arch` | `resnet` | Trunk: `resnet`, `resnet_gpool`, `transformer`, or `hybrid`. |
-| `--n-residual-blocks`, `--conv-filter-size` | 4, 64 | Conv trunk size for ResNet variants and hybrid. Ignored by the pure transformer. |
-| `--n-layers`, `--d-model`, `--n-heads` | 6, 128, 4 | Transformer depth, token width, and attention heads for transformer and hybrid. Width must be divisible by the head count. |
-| `--head` | `fc` | Spatial heads for ResNet variants: fully connected (`fc`) or AlphaZero-style 1×1 convolution (`conv`). Token models ignore this option. |
-| `--value-hidden` | 256 | Hidden value width for conv heads and token models. Must be positive. Ignored by ResNet variants with FC heads. |
-| `--n-policy-layers`, `--n-value-layers` | 4, 2 | FC head depths for ResNet variants. Conv heads and token models ignore both. |
+| `--train-steps N` | unset | Exactly N optimizer steps with full minibatches sampled with replacement from the augmented training split. Validates at the end and publishes the final model. Ignores epoch caps, patience and annealing. N must be positive. |
 | `--eval-mcts-iterations` | 64 256 | MCTS budgets scored on the dev suite each generation. |
 | `--device` | auto | `cuda`, then `mps`, then `cpu`. Lightning trains on the same device. |
 
-`ceiling` accepts the same architecture and head options. Its `report.json` records the
-full model configuration under `net` and the parameter count under `parameter_count`.
-`train` records `arch`, `n_layers`, `d_model`, `n_heads`, `head`, and `value_hidden` as flat
-generation metadata fields. Old configurations and metadata default to `resnet`, `fc`,
-and a value width of 256. Old `model.pkl` files retain their fully connected heads.
-The default ResNet preserves the previous fixed-seed tensor bytes, including BatchNorm buffers.
+The network is a residual trunk (a 3x3 convolution, then residual blocks) with AlphaZero-style
+heads. The policy head has two 1x1-convolution channels, batch normalization, ReLU, flattening,
+and a linear layer that produces seven log probabilities. The value head has one channel,
+batch normalization, ReLU, flattening, and two linear layers with ReLU between them; tanh
+produces `q_penalty` and `q_no_penalty`. `--value-hidden` sets the width between the value
+layers. Legal-move masking stays in search and evaluation. An 8x64 network has 605k parameters.
 
-The convolutional policy head has two channels, batch normalization, ReLU, flattening,
-and a linear layer that produces seven log probabilities. The convolutional value head
-has one channel, batch normalization, ReLU, flattening, and two linear layers with ReLU
-between them. Tanh produces the same `q_penalty` and `q_no_penalty` outputs as the FC head.
-`--value-hidden` sets the width between those value layers. Legal-move masking stays in
-the existing search and evaluation code.
+Fully connected heads, the binned value head and the global-pooling, transformer and hybrid
+trunks were removed after they measured no better (see [experiments](experiments.md)).
+Metadata that still records their fields loads, because unknown fields are ignored. Model
+pickles with fully connected heads no longer load; conv-head pickles from before the removal
+load and predict unchanged.
 
-Architecture options must match the saved model when resuming a run. For token models,
-this includes transformer depth, width, attention heads, and value width. Spatial heads
-must also match for ResNet variants. A different architecture requires a fresh `--base-dir`.
-The saved model retains its conv trunk dimensions on resume.
+Leaf minimax and mirror averaging are evaluation levers more than training ones. The depth is
+recorded in each generation's metadata and `eval` rescoring reuses it; mirror averaging is a
+`ModelConfig` field saved in the pickle. Neither has an `eval` or `play` override yet: to score
+an existing model with them, call `evaluate_model(..., leaf_minimax_depth=D)` on a copy whose
+`mirror_inference` attribute is set.
 
-### Architecture variants
-
-All architectures return seven log policy probabilities and two tanh values, with the same
-numpy callback shapes and loss. Legal-move masking remains in search and evaluation.
-
-- `resnet` keeps the existing initial 3×3 convolution and residual blocks unchanged.
-- `resnet_gpool` replaces each residual block with a global-pooling block. After the first
-  3×3 convolution, each channel's mean and maximum over all 42 cells are concatenated.
-  A linear layer maps these `2C` features to `C` biases. The biases are broadcast over
-  the board and added to the first convolution's output before the second convolution.
-  BatchNorm and ReLU follow that convolution, then the residual input is added.
-  Both existing head choices apply.
-- `transformer` embeds the two input channels at each cell with a linear layer. Learned
-  row and column embeddings are added to the 42 row-major tokens. Each encoder layer uses
-  pre-norm self-attention, GELU, a feed-forward width of `4 * d_model`, and zero dropout.
-  Layers initialize independently, and a final LayerNorm follows the stack.
-- `hybrid` runs the existing initial 3×3 convolution and `n_residual_blocks` residual blocks
-  before projecting each cell's `conv_filter_size` features into tokens. Its positional
-  embeddings and transformer stack match `transformer`. Set `--n-residual-blocks 2` for
-  a short stem. The default follows the command's conv settings.
-
-Token models always use token heads and ignore `--head`, `--n-policy-layers`, and
-`--n-value-layers`. The policy head averages tokens across rows, then applies one shared
-linear projection to each column and a log softmax over the seven scores. The value head
-averages all 42 tokens, then applies `Linear(d_model, value_hidden)`, GELU,
-`Linear(value_hidden, 2)`, and tanh.
-
-Parameter counts with the default head depths, token sizes, and `value_hidden=256`:
-
-| Architecture and heads | `train` conv defaults, 4×64 | `ceiling` conv defaults, 1×32 |
-|---|---:|---:|
-| `resnet`, FC | 29,254,985 | 7,272,745 |
-| `resnet`, conv | 309,470 | 31,390 |
-| `resnet_gpool`, FC | 29,288,009 | 7,274,825 |
-| `resnet_gpool`, conv | 342,494 | 33,470 |
-| `transformer`, token | 1,225,603 | 1,225,603 |
-| `hybrid`, token | 1,530,691 | 1,248,611 |
-
-`timeout 300 uv run --locked pytest -q -s tests/c4a0_tests/architecture_test.py -k parameter_counts`
-prints the counts at `train` sizes. Every ceiling report records its actual count.
-
-The CPU supervised smoke runs each new architecture on the same 256 committed dev rows,
-repackaged as train labels. It uses 2 epochs, batch size 64, seed 1337, a 2×8 conv stem,
-2 transformer layers of width 16 with 4 heads, value width 17, and MCTS-4 evaluation.
-The output directory must be new:
-
-```sh
-timeout 900 uv run --locked python scripts/smoke_architectures.py training/arch-smoke
-```
-
-Each architecture saves `model.pkl`, `report.json`, and a log. `manifest.json` records source
-row indices and hashes and marks the run as smoke-only. Training overlaps dev in this smoke,
-so its scores establish plumbing and cannot measure generalization. The automated CLI test
-also checks optimizer updates, CPU pickles, model hashes, and report settings.
-
-For a supervised comparison, use genuine train-split labels, identical labels and optimizer
-settings, and at least three seeds per architecture. Set conv dimensions explicitly because
-`ceiling` retains its historical 1×32 default while `train` defaults to 4×64. For example:
-
-```sh
-uv run --locked python -m c4a0.main ceiling training/train-labels.tsv training/ceiling-hybrid-seed0 \
-  --arch hybrid --n-residual-blocks 2 --conv-filter-size 64 \
-  --n-layers 6 --d-model 128 --n-heads 4 --value-hidden 256 \
-  --seed 0 --mcts-iterations 256
-```
-
-Component tests and CPU smoke runs establish compatibility and training behavior. No
-convergence benefit is established. Judge solver-best move selection by strict agreement
-at MCTS-256 on dev, with the target of at least 99%. Keep test positions for the final check.
+`ceiling` trains the same network on solver labels. Its defaults match `train`: 8x64 and
+`--anneal-epochs 40` (0 early-stops on dev loss with `--max-epochs` and `--patience`). Its
+`report.json` records the model configuration under `net` and the parameter count under
+`parameter_count`. Use genuine train-split labels and at least three seeds per arm. Judge
+solver-best move selection by strict agreement at MCTS-256 on dev; keep the test split for
+the final check.
 
 ## Benchmarking
 
 Build with `mise run build`. `scripts/bench_generation.py` appends exactly one generation to
-+a copy of a completed run, inheriting its configuration. `--phase all` measures normal
-+self-play. `--phase training` reuses the latest games and trains from the latest model,
-+with older ancestors included once. Both modes evaluate and publish; use copies only.
-+
-+The last stdout line is JSON, with synchronized CUDA wall times for replay loading, sample
-+conversion and device transfer, self-play, training, evaluation and publishing. It includes
-+epochs, optimizer steps, config and validation loss. `total_seconds` excludes Python imports
-+and initial device startup. Use an external process timer when startup matters.
-+
-+Use separate built checkouts at `b5eca94` (timing only, master
+a copy of a completed run, inheriting its configuration. `--phase all` measures normal
+self-play. `--phase training` reuses the latest games and trains from the latest model,
+with older ancestors included once. Both modes evaluate and publish; use copies only.
+
+The last stdout line is JSON, with synchronized CUDA wall times for replay loading, sample
+conversion and device transfer, self-play, training, evaluation and publishing. It includes
+epochs, optimizer steps, config and validation loss. `total_seconds` excludes Python imports
+and initial device startup. Use an external process timer when startup matters.
+
+Use separate built checkouts at `b5eca94` (timing only, master
 training behavior) and this branch. Set the three input paths below. This runs five
 alternating measurements per arm and phase, sequentially. Use a snapshot with all three
 experimental controls off:
@@ -231,8 +167,9 @@ excluding imports, with overlapping ranges. No end-to-end speedup is established
 small workload. [The CPU measurements](data/generation-speed-cpu.json) record every run,
 configuration and measurement boundary. Default-size GPU timings remain unmeasured here.
 
-Training tensors occupy 372 bytes per augmented sample on the training device, in addition
-to the model, optimizer and activations. Large replay windows can exhaust device memory.
+Training tensors occupy 372 bytes per augmented sample. Replay and label data stay in host
+memory and Lightning copies each batch to the device, so the replay window does not grow GPU
+memory; `C4A0_CUDA_MEMORY_FRACTION` caps each process's CUDA memory.
 Run CUDA parity tests before interpreting GPU benchmarks:
 
 ```sh

@@ -15,7 +15,18 @@ Rust runs the game, Monte Carlo Tree Search (MCTS) and multi-threaded self-play.
   <img alt="Two line charts of dev-suite accuracy over self-play generations. Top: with the original search, MCTS-64 accuracy falls from 77% to 57% over 20 generations, while PUCT holds 81% and adding root noise, replay and more games reaches 88%. Bottom: the share of MCTS-256 moves that keep the game result climbs to 96.5% over 60 generations for the 1x32 network. The final defaults (4x64 network, random starts) reach the 98% target at generation 41, and adding MCTS-Solver is ahead of them at every generation through 20." src="images/training-progress-light.svg">
 </picture>
 
-Every generation's saved model is scored on a fixed, solver-labeled suite of positions it never trains on. The headline metric asks whether the move MCTS chooses keeps the game result: a won position stays won and a drawn one stays drawn. The target is 98%.
+Every generation's saved model is scored on a fixed, solver-labeled suite of positions it never trains on. Two metrics matter. **Keeps the result** asks whether the move MCTS chooses keeps the game result: a won position stays won and a drawn one stays drawn. **Strict** asks whether it is a move the solver ranks best, the fastest win or the slowest loss.
+
+The best self-play-only agent is a conv 8x64 network after 40 generations of cosine-annealed self-play training, scored with mirror averaging and leaf minimax at depth 10:
+
+| Split | Strict, MCTS-256 | Strict, MCTS-2048 | Keeps the result, MCTS-256 | Keeps the result, MCTS-2048 |
+|---|---|---|---|---|
+| dev | 96.99% | 97.44% | 98.97% | 99.41% |
+| test | 96.84% | 97.15% | **99.27%** | 99.17% |
+
+It keeps the result on 99% of the held-out test positions. Strict optimal-move accuracy is about 97%, limited by opening positions: most remaining misses are at plies 0 to 11. No solver labels are used in training; the solver only labels the evaluation suites.
+
+The history below led there. The first target was 98% keeps the result:
 
 | Configuration | Generations | MCTS-256 move keeps the result | MCTS-64 picks the solver's best move |
 |---|---|---|---|
@@ -24,9 +35,9 @@ Every generation's saved model is scored on a fixed, solver-labeled suite of pos
 | + root noise, replay 4, 2,048 games | 20 | not measured | 88% |
 | + replay 8, 60 generations | 60 | 96.5% | 89% |
 | + 4x64 network, search-value targets, random starts | 41 | **98.0%** | 93% |
-| + MCTS-Solver (the current defaults) | 20 | 97.4% (96.5% without it at generation 20) | 94% |
+| + MCTS-Solver | 20 | 97.4% (96.5% without it at generation 20) | 94% |
 
-Each row is the mean of two independent runs. The best generation (run 2, generation 41) keeps the result on 98.1% of the 1,484 counted dev positions and on **98.7% of the 1,513 held-out test positions**, which no experiment decision ever looked at. The full record of what was tried, what helped, what hurt and what is still open is in [what we learned trying to make self-play converge](docs/experiments.md).
+Each row is the mean of two independent runs. Since then conv heads, an 8x64 trunk and cosine-annealed training produced the agent above. The best generation (run 2, generation 41) keeps the result on 98.1% of the 1,484 counted dev positions and on **98.7% of the 1,513 held-out test positions**, which no experiment decision ever looked at. The full record of what was tried, what helped, what hurt and what is still open is in [what we learned trying to make self-play converge](docs/experiments.md).
 
 ## Install
 
@@ -60,7 +71,7 @@ mise run play
 
 ## Train
 
-To train with the best configuration found so far:
+To train with the best configuration found so far (an 8x64 residual network with conv heads, 2,048 games of MCTS-256 self-play per generation, and 8 cosine-annealed training epochs per generation):
 
 ```sh
 mise run train
@@ -80,7 +91,9 @@ To check that everything works end to end on a CPU, run the tiny smoke configura
 mise run train:smoke
 ```
 
-Run `uv run python src/c4a0/main.py train --help` for every option and its default.
+Two options help most at evaluation and cost the most in training, so they are off by default: `--mirror-inference` averages every network call with its left-right mirror (2x inference, +0.4 to 0.6 points strict), and `--leaf-minimax-depth D` runs an exact depth-D search on each MCTS leaf before the network sees it (about 1.8x time per generation). Both apply to that run's self-play and evaluation. `--train-anneal-epochs 0` restores constant-rate training with early stopping.
+
+Run `uv run python src/c4a0/main.py train --help` for every option and its default; [docs/development.md](docs/development.md#training-options) explains each one.
 
 ## Measure progress
 
@@ -108,17 +121,17 @@ mise run plot
 
 ### Game and search
 
-`rust/src/c4r.rs` holds the bitboard position and every Connect Four rule. `rust/src/mcts.rs` runs PUCT search: each child is scored by its mean value plus `c * prior * sqrt(N_parent) / (1 + n)`, with root Dirichlet noise mixed in during self-play only. It also proves outcomes from the rules alone (MCTS-Solver): a node with a move that reaches a proven loss for the opponent is a proven win, a node whose moves are all proven takes their exact best value, and search never spends iterations below a proven node. No external solver is involved. The search also proves outcomes from the rules, in the style of MCTS-Solver. A finished position is proven, a position with a move into a proven loss for the opponent is a proven win, and a position whose moves are all proven takes the best of them. Search never descends below a proven node. A proven root stops searching, puts all its policy mass on the proven-best moves, and reports its exact value. `rust/src/self_play.rs` plays thousands of games in parallel. It batches positions from every game into one network call, caches evaluations within a generation, and samples moves from the visit counts.
+`rust/src/c4r.rs` holds the bitboard position and every Connect Four rule. `rust/src/mcts.rs` runs PUCT search: each child is scored by its mean value plus `c * prior * sqrt(N_parent) / (1 + n)`, with root Dirichlet noise mixed in during self-play only. It also proves outcomes from the rules alone, in the style of MCTS-Solver, with no external solver involved. A finished position is proven, a position with a move into a proven loss for the opponent is a proven win, and a position whose moves are all proven takes the best of them. Search never descends below a proven node. A proven root stops searching, puts all its policy mass on the proven-best moves, and reports its exact value. `rust/src/self_play.rs` plays thousands of games in parallel. It batches positions from every game into one network call, caches evaluations within a generation, and samples moves from the visit counts.
 
 ### Network and training loop
 
-`src/c4a0/nn.py` defines a residual CNN with a policy head and two value heads. `src/c4a0/training.py` runs the generation loop:
+`src/c4a0/nn.py` defines a residual CNN with AlphaZero-style heads: a policy head and two value heads, each a 1x1 convolution followed by small linear layers. `src/c4a0/training.py` runs the generation loop:
 
 1. Play self-play games with the current network.
-2. Train a copy of the network on the last 8 generations' games. The policy target is the MCTS visit distribution and the value target is the search's own root value.
+2. Train a copy of the network on the last 8 generations' games for 8 epochs while the learning rate anneals to 1%. The policy target is the MCTS visit distribution and the value target is the search's own root value.
 3. Save the child and score it on the dev suite before publishing its metadata.
 
-Half of the self-play games start from a random opening of up to 12 moves, so the network sees more than the lines it already likes. Every setting is a field of `GenConfig` and a `train` option.
+Half of the self-play games start from a random opening of up to 12 moves, so the network sees more than the lines it already likes. Every setting is a `train` option; self-play and training controls are recorded in each generation's metadata.
 
 ### Evaluation
 
