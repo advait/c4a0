@@ -821,3 +821,30 @@ def test_annealed_generation_trains_fixed_epochs_with_decaying_rate(
     # TINY_CONFIG's rate is 1e-3; three cosine epochs end at its 1% floor.
     assert rates == [pytest.approx(1e-5)]
     assert TrainingGen.load(str(tmp_path), gen.created_at).train_anneal_epochs == 3
+
+
+def test_resume_refuses_model_options_that_differ_from_the_saved_model(
+    tmp_path: Path,
+) -> None:
+    _tiny_loop(tmp_path, EvalConfig(_tiny_suite()))
+    mirrored = TINY_CONFIG.model_copy(update={"mirror_inference": True})
+    with pytest.raises(
+        ValueError, match="--mirror-inference: saved False, requested True"
+    ):
+        training.training_loop(
+            str(tmp_path),
+            torch.device("cpu"),
+            TINY_GEN_CONFIG,
+            mirrored,
+            max_gens=2,
+            eval_config=EvalConfig(_tiny_suite()),
+        )
+
+
+def test_resume_accepts_fields_the_saved_model_predates() -> None:
+    saved = TINY_CONFIG.model_dump(exclude={"mirror_inference"})
+    training.check_resumed_model(saved, TINY_CONFIG)
+    with pytest.raises(ValueError, match="--conv-filter-size"):
+        training.check_resumed_model(
+            {**saved, "conv_filter_size": TINY_CONFIG.conv_filter_size + 1}, TINY_CONFIG
+        )

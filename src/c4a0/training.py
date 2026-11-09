@@ -7,7 +7,7 @@ from __future__ import annotations
 import copy
 import os
 import pickle
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import nullcontext
 from dataclasses import dataclass
 from datetime import datetime
@@ -402,6 +402,24 @@ def train_single_gen(
     return gen
 
 
+def check_resumed_model(saved: Mapping[str, object], requested: ModelConfig) -> None:
+    """Training continues from the saved model, so model options that differ from it would be
+    silently ignored; refuse instead. Fields the saved model predates take their defaults."""
+    differing = []
+    for name, field in ModelConfig.model_fields.items():
+        want = getattr(requested, name)
+        have = saved.get(name, field.default)
+        if have != want:
+            differing.append(
+                f"--{name.replace('_', '-')}: saved {have}, requested {want}"
+            )
+    if differing:
+        raise ValueError(
+            "Model options differ from the saved model; match them to resume, or use a new "
+            "--base-dir: " + "; ".join(differing)
+        )
+
+
 def training_loop(
     base_dir: str,
     device: torch.device,
@@ -432,6 +450,7 @@ def training_loop(
         eval_config=eval_config,
         device=device,
     )
+    check_resumed_model(gen.get_model(base_dir).hparams, model_config)
 
     while True:
         gen = train_single_gen(

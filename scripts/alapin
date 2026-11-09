@@ -83,47 +83,66 @@ run)
     case $limit in ''|*[!0-9smhd.]*|0|0s|0m|0h|0d) echo 'ALAPIN_TIMEOUT must be a positive timeout duration' >&2; exit 2;; esac
     args=''
     for arg do args="$args $(quote "$arg")"; done
-    remote "sh -s -- $(quote "$gpu_fraction") $(quote "$gpu_procs")" <<'BUDGET' || exit 1
-# GPU budget: each process uses its cap (fraction x card) plus ~0.4 GB of CUDA context, and the
-# desktop keeps a 6 GB reserve. Refuse a run that would not fit beside the live ones.
-set -eu
-python3 - "$1" "$2" <<'PY'
-import os, subprocess, sys
-fraction, procs = float(sys.argv[1]), int(sys.argv[2])
-total = float(subprocess.check_output(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"]).split()[0]) / 1024
-def live_usage():
-    # Every Python process under ~/agent-work holding GPU memory, charged at the larger of its
-    # cap (from its environment) and what nvidia-smi says it uses now. Uncapped scripts count too.
-    smi = subprocess.check_output(["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"]).decode()
-    for line in smi.splitlines():
-        pid, used = (x.strip() for x in line.split(","))
-        try:
-            cmd = open(f"/proc/{pid}/cmdline", "rb").read().decode(errors="replace")
-            env = open(f"/proc/{pid}/environ", "rb").read().decode(errors="replace").split("\0")
-        except OSError:
-            continue
-        if "agent-work" not in cmd:
-            continue
-        caps = [float(e.split("=", 1)[1]) for e in env if e.startswith("C4A0_CUDA_MEMORY_FRACTION=")]
-        cap_gb = caps[0] * total + 0.4 if caps else 0.0
-        yield max(cap_gb, float(used) / 1024)
-live = list(live_usage())
-per = fraction * total + 0.4
-budget = total - 6.0
-need = sum(live) + procs * per
-print(f"gpu budget: {len(live)} live ({sum(live):.1f} GB) + {procs} new x {per:.1f} GB = {need:.1f} GB of {budget:.1f} GB", file=sys.stderr)
-if need > budget:
-    print(f"refusing: {int((budget - sum(live)) // per)} more processes fit at fraction {fraction}", file=sys.stderr)
-    sys.exit(1)
-PY
-BUDGET
-    remote "sh -s -- $(quote "$name") $(quote "$limit") $(quote "$workdir") $(quote "$gpu_fraction") $args" <<'REMOTE'
+    remote "sh -s -- $(quote "$name") $(quote "$limit") $(quote "$workdir") $(quote "$gpu_fraction") $(quote "$gpu_procs") $args" <<'REMOTE'
 set -eu
 . "$HOME/agent-work/env.sh"
-name=$1; limit=$2; workdir=$3; gpu_fraction=$4; shift 4
+name=$1; limit=$2; workdir=$3; gpu_fraction=$4; gpu_procs=$5; shift 5
 [ -d "$HOME/agent-work/$workdir/.git" ] || [ -f "$HOME/agent-work/$workdir/.git" ] || { echo "no checkout at ~/agent-work/$workdir" >&2; exit 1; }
 timeout "$limit" true
 [ ! -d "$HOME/agent-work/setup/sync.lock" ] || { echo 'sync is active' >&2; exit 1; }
+# One launch at a time: the budget below counts runs by their run directories, so a run that
+# has not reached the GPU yet still holds its reservation once its directory exists.
+lock="$HOME/agent-work/setup/launch.lock"
+mkdir -p "$HOME/agent-work/setup"
+mkdir "$lock" 2>/dev/null || { echo 'another launch is active' >&2; exit 1; }
+trap 'rmdir "$lock"' EXIT
+# GPU budget: each run reserves (fraction x card + ~0.4 GB CUDA context) per process and is
+# charged the larger of that and what its processes use now; other agent processes on the GPU
+# are charged their usage. The desktop keeps a 6 GB reserve.
+python3 - "$gpu_fraction" "$gpu_procs" <<'PY'
+import glob, os, subprocess, sys
+fraction, procs = float(sys.argv[1]), int(sys.argv[2])
+total = float(subprocess.check_output(["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"]).split()[0]) / 1024
+def read(path, default):
+    try:
+        return open(path).read().strip()
+    except OSError:
+        return default
+used_by_run: dict[str, float] = {}
+other = 0.0
+smi = subprocess.check_output(["nvidia-smi", "--query-compute-apps=pid,used_memory", "--format=csv,noheader,nounits"]).decode()
+for line in smi.splitlines():
+    pid, used = (x.strip() for x in line.split(","))
+    try:
+        cmd = open(f"/proc/{pid}/cmdline", "rb").read().decode(errors="replace")
+        env = dict(e.split("=", 1) for e in open(f"/proc/{pid}/environ", "rb").read().decode(errors="replace").split("\0") if "=" in e)
+    except OSError:
+        continue
+    if "agent-work" not in cmd:
+        continue
+    if "RUN_DIR" in env:
+        run = os.path.realpath(env["RUN_DIR"])
+        cap = float(env.get("C4A0_CUDA_MEMORY_FRACTION", 0)) * total + 0.4
+        used_by_run[run] = used_by_run.get(run, 0.0) + max(cap, float(used) / 1024)
+    else:
+        other += float(used) / 1024
+live = []
+for d in glob.glob(os.path.expanduser("~/agent-work/runs/*/")):
+    d = os.path.realpath(d)
+    pid = read(f"{d}/pid", "")
+    if not pid or os.path.exists(f"{d}/exit_code") or not os.path.exists(f"/proc/{pid}"):
+        continue
+    reserved = int(read(f"{d}/gpu_procs", "1")) * (float(read(f"{d}/gpu_fraction", "0.06")) * total + 0.4)
+    live.append(max(reserved, used_by_run.get(d, 0.0)))
+per = fraction * total + 0.4
+budget = total - 6.0
+held = sum(live) + other
+need = held + procs * per
+print(f"gpu budget: {len(live)} live runs ({held:.1f} GB) + {procs} new x {per:.1f} GB = {need:.1f} GB of {budget:.1f} GB", file=sys.stderr)
+if need > budget:
+    print(f"refusing: {int((budget - held) // per)} more processes fit at fraction {fraction}", file=sys.stderr)
+    sys.exit(1)
+PY
 run_dir="$HOME/agent-work/runs/$name"
 mkdir "$run_dir" || { echo 'run name already exists; choose a new name' >&2; exit 1; }
 quote() { printf "'"; printf '%s' "$1" | sed "s/'/'\\\\''/g"; printf "'"; }
@@ -153,6 +172,7 @@ RUNNER
 printf '%s\n' "$limit" > "$run_dir/timeout"
 printf '%s\n' "$workdir" > "$run_dir/workdir"
 printf '%s\n' "$gpu_fraction" > "$run_dir/gpu_fraction"
+printf '%s\n' "$gpu_procs" > "$run_dir/gpu_procs"
 setsid nohup sh "$run_dir/runner.sh" > "$run_dir/log" 2>&1 < /dev/null &
 printf '%s\n' "$!" > "$run_dir/pid"
 printf 'started %s pid=%s outputs=%s\n' "$name" "$!" "$run_dir"
