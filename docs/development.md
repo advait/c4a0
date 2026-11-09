@@ -24,6 +24,7 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `scripts/converge_report.py` | Score curves per run, read from each generation's `metadata.json`. |
 | `scripts/plot_progress.py` | The README progress graph, from `docs/data/training-progress.json`. |
 | `scripts/plot_architecture.py` | The README network diagram, with parameter counts from the default network. |
+| `scripts/render_hero.py` | The README hero GIF: MCTS on one dev position with the final model, every number verified (`mise run hero`). |
 | `scripts/alapin` | Runs jobs on a remote GPU machine: `sync`, `run`, `status`, `stop`, `fetch`. |
 
 ## Tasks

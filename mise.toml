@@ -117,6 +117,11 @@ run = [
   "uv run --locked python scripts/plot_architecture.py",
 ]
 
+[tasks.hero]
+description = "Regenerate the README hero GIF (images/hero.gif) from models/c4a0-final.pkl and the real search"
+depends = ["install"]
+run = "uv run --locked python scripts/render_hero.py"
+
 [tasks."train:smoke"]
 description = "Run a fast CPU end-to-end smoke training job"
 depends = ["build"]
