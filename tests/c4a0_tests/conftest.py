@@ -24,8 +24,6 @@ def legacy_cuda_model(
         ModelConfig(
             n_residual_blocks=1,
             conv_filter_size=8,
-            n_policy_layers=1,
-            n_value_layers=1,
             lr_schedule={0: 1e-3},
             l2_reg=0.0,
         )

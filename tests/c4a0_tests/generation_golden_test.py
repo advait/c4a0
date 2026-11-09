@@ -1,4 +1,6 @@
-"""CPU golden captured from master 57d3a2a, before generation optimizations."""
+"""CPU golden for two generations with conv heads, captured from 515664f before FC heads were
+removed. That code matched master 57d3a2a's FC golden byte for byte after the generation
+optimizations; master had no conv heads, so this fixture pins the pre-removal conv code."""
 
 import hashlib
 import json
@@ -39,7 +41,7 @@ def capture_generations(
     torch.manual_seed(1337)
     torch.set_num_threads(1)
     torch.use_deterministic_algorithms(True)
-    # Master returns games in worker completion order, so its split is otherwise
+    # Workers return games in completion order, so the split is otherwise
     # scheduling-dependent even at batch size one. Serialize games only in this test.
     native_play = c4a0_rust.play_games
 
@@ -129,7 +131,7 @@ def capture_generations(
 
 
 @pytest.mark.parametrize("explicit_off", [False, True])
-def test_two_generation_master_golden(
+def test_two_generation_golden(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, explicit_off: bool
 ) -> None:
     assert capture_generations(tmp_path, monkeypatch, explicit_off) == json.loads(

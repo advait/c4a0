@@ -37,14 +37,11 @@ def _plain(output: str) -> str:
                 "bf16": False,
                 "compile": False,
                 "train_steps": None,
-                "head": "fc",
                 "value_hidden": 256,
             },
         ),
         (
             [
-                "--head",
-                "conv",
                 "--value-hidden",
                 "17",
                 "--bf16",
@@ -83,7 +80,6 @@ def _plain(output: str) -> str:
                 "bf16": True,
                 "compile": True,
                 "train_steps": 5,
-                "head": "conv",
                 "value_hidden": 17,
             },
         ),
@@ -107,14 +103,11 @@ def test_train_cli_forwards_experiment_flags(
         assert config.model_dump()[key] == value
     net = captured["model_config"]
     assert isinstance(net, main.ModelConfig)
-    assert net.head == config.head
     assert net.value_hidden == config.value_hidden
 
 
 @pytest.mark.parametrize("command", ["train", "ceiling"])
-@pytest.mark.parametrize(
-    "flags", [["--head", "other"], ["--value-hidden", "0"], ["--value-hidden", "-1"]]
-)
+@pytest.mark.parametrize("flags", [["--value-hidden", "0"], ["--value-hidden", "-1"]])
 def test_head_options_reject_invalid_values(command: str, flags: list[str]) -> None:
     args = ["labels.npz", "output"] if command == "ceiling" else []
     result = CliRunner().invoke(main.app, [command, *args, *flags])
@@ -122,9 +115,8 @@ def test_head_options_reject_invalid_values(command: str, flags: list[str]) -> N
     assert flags[0] in _plain(result.output)
 
 
-@pytest.mark.parametrize("head", ["fc", "conv"])
 def test_ceiling_head_options_reach_model_pickle_and_report(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, head: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     import json
     import pickle
@@ -156,7 +148,6 @@ def test_ceiling_head_options_reach_model_pickle_and_report(
         anneal_epochs: int | None,
     ) -> tuple[ConnectFourNet, int]:
         assert anneal_epochs is None
-        assert model.head == head
         assert model.hparams["value_hidden"] == 17
         return model.eval(), 0
 
@@ -168,27 +159,19 @@ def test_ceiling_head_options_reach_model_pickle_and_report(
             "ceiling",
             str(labels),
             str(output),
-            "--head",
-            head,
             "--value-hidden",
             "17",
             "--n-residual-blocks",
             "1",
             "--conv-filter-size",
             "8",
-            "--n-policy-layers",
-            "1",
-            "--n-value-layers",
-            "1",
         ],
     )
     assert result.exit_code == 0, result.output
     report = json.loads((output / "report.json").read_text())
-    assert report["net"]["head"] == head
     assert report["net"]["value_hidden"] == 17
     with (output / "model.pkl").open("rb") as f:
         restored = pickle.load(f)
-    assert restored.head == head
     assert restored.hparams["value_hidden"] == 17
 
 

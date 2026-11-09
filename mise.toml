@@ -115,19 +115,13 @@ depends = ["install"]
 run = "uv run --locked python scripts/plot_progress.py"
 
 [tasks."train:smoke"]
-description = "Run fast CPU end-to-end smoke training jobs with FC and conv heads"
+description = "Run a fast CPU end-to-end smoke training job"
 depends = ["build"]
 run = '''
 set -eu
-for head in fc conv; do
-  smoke_dir=training/ci-smoke
-  if [ "$head" = conv ]; then
-    smoke_dir=training/ci-smoke-conv
-  fi
-  rm -rf "$smoke_dir"
-  timeout 900 uv run --locked python src/c4a0/main.py train \
-  --base-dir "$smoke_dir" \
-  --head "$head" \
+rm -rf training/ci-smoke
+timeout 900 uv run --locked python src/c4a0/main.py train \
+  --base-dir training/ci-smoke \
   --device cpu \
   --n-self-play-games 4 \
   --n-mcts-iterations 4 \
@@ -135,8 +129,6 @@ for head in fc conv; do
   --training-batch-size 16 \
   --n-residual-blocks 1 \
   --conv-filter-size 8 \
-  --n-policy-layers 1 \
-  --n-value-layers 1 \
   --lr-schedule 0 \
   --lr-schedule 0.001 \
   --l2-reg 0 \
@@ -144,7 +136,6 @@ for head in fc conv; do
   --train-patience 1 \
   --eval-mcts-iterations 4 \
   --max-gens 1
-done
 '''
 
 # Native solver (rust/src/native_solver). Pons stays the project's solver until the coordinator

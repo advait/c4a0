@@ -25,7 +25,7 @@ import c4a0_rust
 from c4a0.benchmark import GenerationMetrics
 from c4a0.evaluation import SuiteEval, evaluate_model
 from c4a0.labels import Split, Suite, load_suite
-from c4a0.nn import ConnectFourNet, Head, ModelConfig, NumpyEvaluator
+from c4a0.nn import ConnectFourNet, ModelConfig, NumpyEvaluator
 from c4a0.utils import (
     BestModelCheckpoint,
     GenerationTrainer,
@@ -63,7 +63,6 @@ class GenConfig(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    head: Head = "fc"
     value_hidden: int = Field(default=256, ge=1)
 
     # Older metadata did not record this count; use the historical CLI default.
@@ -286,13 +285,10 @@ def train_single_gen(
     with metrics.phase("setup") if metrics else nullcontext():
         # Self play
         model = parent.get_model(base_dir, device)
-        if getattr(model, "head", "fc") != config.head or (
-            config.head == "conv"
-            and model.hparams["value_hidden"] != config.value_hidden
-        ):
+        if model.hparams["value_hidden"] != config.value_hidden:
             raise ValueError(
-                "Head options differ from the saved model. Use its --head and "
-                "--value-hidden settings to resume, or a new --base-dir to change heads."
+                "--value-hidden differs from the saved model. Use its setting to resume, "
+                "or a new --base-dir to change it."
             )
         # game_id seeds random starts, move sampling and root noise in Rust. Ids unique
         # across generations give each generation fresh random streams.

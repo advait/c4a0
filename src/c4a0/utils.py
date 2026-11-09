@@ -45,6 +45,9 @@ def load_model(
             model = _CPUUnpickler(f).load()
     else:
         model = _CPUUnpickler(source).load()
+    if not hasattr(model, "conv_policy"):
+        # Fail here: an AttributeError inside the self-play callback would hang Rust workers.
+        raise ValueError("Models with fully connected heads are no longer supported")
     return cast("ConnectFourNet", model).to(device)
 
 

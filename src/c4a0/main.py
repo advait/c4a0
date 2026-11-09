@@ -31,7 +31,7 @@ from c4a0.labels import (  # noqa: E402
 from c4a0.labels import (  # noqa: E402
     label as label_positions,
 )
-from c4a0.nn import ConnectFourNet, Head, ModelConfig  # noqa: E402
+from c4a0.nn import ConnectFourNet, ModelConfig  # noqa: E402
 from c4a0.supervised import TARGET_VERSION, CeilingReport, fit_supervised  # noqa: E402
 from c4a0.tournament import ModelID, RandomPlayer, UniformPlayer  # noqa: E402
 from c4a0.training import (  # noqa: E402
@@ -69,16 +69,7 @@ def train(
     training_batch_size: int = 2000,
     n_residual_blocks: int = 4,
     conv_filter_size: int = 64,
-    n_policy_layers: int = typer.Option(
-        4, help="FC policy layers; ignored with --head conv."
-    ),
-    n_value_layers: int = typer.Option(
-        2, help="FC value layers; ignored with --head conv."
-    ),
-    head: Head = typer.Option("fc", help="Policy and value head architecture."),
-    value_hidden: int = typer.Option(
-        256, min=1, help="Value hidden width for conv heads."
-    ),
+    value_hidden: int = typer.Option(256, min=1, help="Value head hidden width."),
     lr_schedule: list[float] = typer.Option(
         default_factory=lambda: [0, 2e-3, 10, 8e-4], show_default="0 2e-3 10 8e-4"
     ),
@@ -130,19 +121,15 @@ def train(
             "must be finite and between 0 and 1", param_hint="--random-start-frac"
         )
     model_config = ModelConfig(
-        head=head,
         value_hidden=value_hidden,
         n_residual_blocks=n_residual_blocks,
         conv_filter_size=conv_filter_size,
-        n_policy_layers=n_policy_layers,
-        n_value_layers=n_value_layers,
         lr_schedule=parse_lr_schedule(lr_schedule),
         l2_reg=l2_reg,
         mirror_inference=mirror_inference,
     )
 
     config = GenConfig(
-        head=head,
         value_hidden=value_hidden,
         n_self_play_games=n_self_play_games,
         n_mcts_iterations=n_mcts_iterations,
@@ -249,16 +236,7 @@ def ceiling(
     out_dir: Path,
     n_residual_blocks: int = 1,
     conv_filter_size: int = 32,
-    n_policy_layers: int = typer.Option(
-        4, help="FC policy layers; ignored with --head conv."
-    ),
-    n_value_layers: int = typer.Option(
-        2, help="FC value layers; ignored with --head conv."
-    ),
-    head: Head = typer.Option("fc", help="Policy and value head architecture."),
-    value_hidden: int = typer.Option(
-        256, min=1, help="Value hidden width for conv heads."
-    ),
+    value_hidden: int = typer.Option(256, min=1, help="Value head hidden width."),
     lr: float = 2e-3,
     l2_reg: float = 4e-4,
     batch_size: int = 4096,
@@ -288,12 +266,9 @@ def ceiling(
     dev = load_suite(Split.DEV)
     torch.manual_seed(seed)
     config = ModelConfig(
-        head=head,
         value_hidden=value_hidden,
         n_residual_blocks=n_residual_blocks,
         conv_filter_size=conv_filter_size,
-        n_policy_layers=n_policy_layers,
-        n_value_layers=n_value_layers,
         lr_schedule={0: lr},
         l2_reg=l2_reg,
     )

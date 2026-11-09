@@ -61,8 +61,6 @@ def test_tiny_net_overfits_solver_labels() -> None:
         ModelConfig(
             n_residual_blocks=1,
             conv_filter_size=16,
-            n_policy_layers=2,
-            n_value_layers=2,
             lr_schedule={0: 3e-3},
             l2_reg=0.0,
         )
@@ -85,8 +83,6 @@ def test_annealed_fit_runs_exactly_the_requested_epochs() -> None:
         ModelConfig(
             n_residual_blocks=1,
             conv_filter_size=8,
-            n_policy_layers=1,
-            n_value_layers=1,
             lr_schedule={0: 1e-3},
             l2_reg=0.0,
         )

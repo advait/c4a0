@@ -33,8 +33,6 @@ FIXTURES = Path(__file__).resolve().parent / "fixtures"
 TINY_CONFIG = ModelConfig(
     n_residual_blocks=1,
     conv_filter_size=8,
-    n_policy_layers=1,
-    n_value_layers=1,
     lr_schedule=parse_lr_schedule([0, 1e-3]),
     l2_reg=0.0,
 )
@@ -355,7 +353,6 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     assert gen.replay_gens == 1
     assert gen.train_max_epochs == 100
     assert gen.train_patience == 10
-    assert gen.head == "fc"
     assert gen.value_hidden == 256
     assert gen.config.n_self_play_games == 1700
     # Saving a legacy generation backfills config defaults and keeps its old values.
@@ -374,13 +371,6 @@ def test_generation_config_is_frozen() -> None:
         config.__setattr__("n_mcts_iterations", 8)
 
 
-@pytest.mark.parametrize("head", ["other"])
-def test_head_config_rejects_unknown_architecture(head: str) -> None:
-    for config in (TINY_CONFIG, TINY_GEN_CONFIG):
-        with pytest.raises(ValidationError):
-            type(config).model_validate({**config.model_dump(), "head": head})
-
-
 @pytest.mark.parametrize("width", [0, -1])
 def test_head_config_requires_positive_value_width(width: int) -> None:
     for config in (TINY_CONFIG, TINY_GEN_CONFIG):
@@ -388,34 +378,28 @@ def test_head_config_requires_positive_value_width(width: int) -> None:
             type(config).model_validate({**config.model_dump(), "value_hidden": width})
 
 
-@pytest.mark.parametrize("change", [{"head": "fc"}, {"value_hidden": 17}])
-def test_resume_rejects_head_changes_before_self_play(
-    tmp_path: Path, change: dict[str, object]
+def test_resume_rejects_value_width_changes_before_self_play(
+    tmp_path: Path,
 ) -> None:
-    config = TINY_GEN_CONFIG.model_copy(update={"head": "conv"})
     evaluation = EvalConfig(_tiny_suite())
     parent = TrainingGen.load_latest_with_default(
-        str(tmp_path),
-        config,
-        TINY_CONFIG.model_copy(update={"head": "conv"}),
-        evaluation,
+        str(tmp_path), TINY_GEN_CONFIG, TINY_CONFIG, evaluation
     )
-    with pytest.raises(ValueError, match="Head options differ from the saved model"):
+    with pytest.raises(ValueError, match="--value-hidden differs from the saved model"):
         training.train_single_gen(
             str(tmp_path),
             torch.device("cpu"),
             parent,
-            config.model_copy(update=change),
+            TINY_GEN_CONFIG.model_copy(update={"value_hidden": 17}),
             evaluation,
         )
 
 
-def test_conv_self_play_training_saves_reloaded_heads_and_metadata(
+def test_self_play_training_saves_reloaded_value_width_and_metadata(
     tmp_path: Path,
 ) -> None:
     config = TINY_GEN_CONFIG.model_copy(
         update={
-            "head": "conv",
             "value_hidden": 17,
             "training_batch_size": 16,
             "train_max_epochs": 2,
@@ -427,12 +411,7 @@ def test_conv_self_play_training_saves_reloaded_heads_and_metadata(
         device=torch.device("cpu"),
         config=config,
         model_config=TINY_CONFIG.model_copy(
-            update={
-                "head": config.head,
-                "value_hidden": config.value_hidden,
-                "n_policy_layers": 99,
-                "n_value_layers": 0,
-            }
+            update={"value_hidden": config.value_hidden}
         ),
         max_gens=1,
         eval_config=EvalConfig(_tiny_suite(), (4,)),
@@ -444,10 +423,8 @@ def test_conv_self_play_training_saves_reloaded_heads_and_metadata(
         metadata = json.loads(
             (Path(published.gen_folder(str(tmp_path))) / "metadata.json").read_text()
         )
-        assert metadata["head"] == "conv"
         assert metadata["value_hidden"] == 17
         model = published.get_model(str(tmp_path))
-        assert model.head == "conv"
         assert model.hparams["value_hidden"] == 17
         assert 4 in published.evals["v1/dev-50"].mcts
     assert (
@@ -640,6 +617,11 @@ def test_legacy_metadata_ignores_retired_controls(tmp_path: Path) -> None:
         n_layers=6,
         d_model=128,
         n_heads=4,
+        head="fc",
+        n_policy_layers=4,
+        n_value_layers=2,
+        value_bins=201,
+        value_loss_weight=10.0,
     )
     retired = {
         "greedy_after_ply",
@@ -649,6 +631,11 @@ def test_legacy_metadata_ignores_retired_controls(tmp_path: Path) -> None:
         "n_layers",
         "d_model",
         "n_heads",
+        "head",
+        "n_policy_layers",
+        "n_value_layers",
+        "value_bins",
+        "value_loss_weight",
     }
     gen = TrainingGen.model_validate(metadata)
     gen.save_metadata(str(tmp_path))

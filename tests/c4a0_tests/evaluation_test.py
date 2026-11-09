@@ -106,8 +106,6 @@ def test_evaluate_model_scores_the_pickled_bytes(tmp_path: Path) -> None:
         ModelConfig(
             n_residual_blocks=1,
             conv_filter_size=8,
-            n_policy_layers=1,
-            n_value_layers=1,
             lr_schedule={0: 1e-3},
             l2_reg=0.0,
         )
@@ -140,10 +138,10 @@ def test_evaluate_model_scores_the_pickled_bytes(tmp_path: Path) -> None:
 def test_cpu_evaluation_matches_legacy_loading_exactly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The committed pre-head-change model fixes weights and BatchNorm buffers.
+    # The committed model saved before head removal fixes weights and BatchNorm buffers.
     path = tmp_path / "model.pkl"
     path.write_bytes(
-        (Path(__file__).parent / "fixtures" / "legacy_model.pkl").read_bytes()
+        (Path(__file__).parent / "fixtures" / "conv_model_515664f.pkl").read_bytes()
     )
     suite = Suite(labels=make_labels(PONS_ROWS), name="test/tiny", sha256="abc")
     result = evaluate_model(path, suite, (2, 8), 2.0, 0.01, device="cpu")
