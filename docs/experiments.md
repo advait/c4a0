@@ -10,8 +10,8 @@ The second target, optimal play, is close but not reached. The best self-play-on
 
 | Split | Strict, MCTS-256 | Strict, MCTS-2048 | Keeps the result, MCTS-256 | Keeps the result, MCTS-2048 |
 |---|---|---|---|---|
-| dev | 96.99% | 97.44% | 98.97% | 99.41% |
-| test | 96.84% | 97.15% | 99.27% | 99.17% |
+| dev | 96.99% | 97.44% | 98.58% | 99.19% |
+| test | 96.84% | 97.15% | 99.01% | 98.88% |
 
 Keeping the result reaches 99% on test. Strict optimal-move accuracy sits near 97%, limited by opening positions: 48 of the roughly 57 remaining dev misses are at plies 0 to 11. No solver labels are used in training; the solver only labels the evaluation suites.
 

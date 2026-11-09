@@ -6,7 +6,7 @@
   <img alt="Animated Connect Four position with Red to move. The network's prior puts 72% on column 4, which loses. Bars standing on each column fill as 256 MCTS iterations run; column 3, the only winning move, takes the lead at iteration 73 and ends with 83% of the visits, which a perfect solver confirms at the end." src="images/hero.gif" width="800">
 </p>
 
-**A 605K-parameter network that learns near-perfect Connect Four strictly through self-play.** No human games, no opening book, no solver in the training loop: it starts from random weights, plays itself, and learns from its own search. After 6 hours on one GPU it picks the solver-optimal move (the fastest win, or the slowest loss) in 97% of held-out positions, and keeps the game result (a won position stays won, a drawn one stays drawn) in 99.3% of them.
+**A 605K-parameter network that learns near-perfect Connect Four strictly through self-play.** No human games, no opening book, no solver in the training loop: it starts from random weights, plays itself, and learns from its own search. After 6 hours on one GPU it picks the solver-optimal move (the fastest win, or the slowest loss) in 97% of held-out positions, and keeps the game result (a won position stays won, a drawn one stays drawn) in 99% of them.
 
 The animation above is the real final network on a real position. Its first instinct, column 4 at 72%, loses. Search tests that instinct one walk down the tree at a time, takes the lead with column 3 at iteration 73, and ends with 83% of its visits on it: the only winning move. That is the whole idea of AlphaZero in one move: a network that guesses, a search that checks, and a training loop that teaches the network to guess what the search found.
 
@@ -17,14 +17,14 @@ The animation above is the real final network on a real position. Its first inst
   <img alt="Line chart over 40 self-play generations. Share of held-out positions where the move is solver-optimal: the network alone climbs from below 80% to 91.8%, the network with 256-iteration MCTS from 86.9% to 96.2%, and with a 10-ply exact leaf search added to 97.0%. A shaded area on the right axis shows self-play games played, rising to about 82,000 over 6.2 hours." src="images/training-progress-light.svg">
 </picture>
 
-Every generation is scored on about 2,000 positions it never trains on, each labeled move by move by a perfect solver. The untrained network already gets 87% with search, because search alone finds short tactics; the network alone starts at 21%. Training is what closes the long-range gap.
+Every generation is scored on about 2,000 held-out positions, each labeled move by move by a perfect solver. The network never sees those labels: self-play may wander into the same positions, but it only ever learns from its own search. The untrained network already gets 87% with search, because search alone finds short tactics; the network alone starts at 21%. Training is what closes the long-range gap.
 
 The final agent searches with mirror averaging and a 10-ply exact leaf search (both described below):
 
 | Held-out split | Picks the optimal move, MCTS-256 | MCTS-2048 | Keeps the result, MCTS-256 | MCTS-2048 |
 |---|---|---|---|---|
-| dev | 96.99% | 97.44% | 98.97% | 99.41% |
-| test | 96.84% | 97.15% | **99.27%** | 99.17% |
+| dev | 96.99% | 97.44% | 98.58% | 99.19% |
+| test | 96.84% | 97.15% | **99.01%** | 98.88% |
 
 The test split played no part in any decision. Most of the remaining misses are in the first 11 moves, where the deciding line is 30 or more plies deep. [What we learned trying to make self-play converge](docs/experiments.md) has every hypothesis tested on the way here, including the ones that failed.
 
@@ -38,7 +38,7 @@ mise install
 mise run play
 ```
 
-`play` opens a terminal UI against the final network (`models/c4a0-final.pkl`). The first run builds the Rust extension and the Python environment; there is no separate build step.
+`play` opens a terminal UI against the final network (`models/c4a0-final.pkl`), searching 1,400 MCTS iterations per move without the optional leaf search or mirror averaging used in the results table. The first run builds the Rust extension and the Python environment; there is no separate build step.
 
 ![Terminal UI](images/tui.png)
 
@@ -94,7 +94,7 @@ Without the penalty every winning move looks equally good, and search has no rea
 
 ### The judge
 
-The evaluation suites in `src/c4a0/suite/v1/` are labeled by `rust/src/native_solver/`, a clean-room Rust solver that scores every move of a position exactly (validated against [Pascal Pons's solver](https://github.com/PascalPons/connect4) on 228,041 positions; [report](docs/native-solver.md)). A position and its mirror image always land in the same split, so nothing the network trains on can leak into the score. Training never calls the solver.
+The evaluation suites in `src/c4a0/suite/v1/` are labeled by `rust/src/native_solver/`, a clean-room Rust solver that scores every move of a position exactly (validated against [Pascal Pons's solver](https://github.com/PascalPons/connect4) on 228,041 positions; [report](docs/native-solver.md)). A position and its mirror image always land in the same split, and the supervised experiments in `docs/experiments.md` train only on positions from a third, train split. Self-play training never calls the solver and never reads a label.
 
 ## Develop
 
