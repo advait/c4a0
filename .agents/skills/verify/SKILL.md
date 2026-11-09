@@ -46,35 +46,27 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   Legacy metadata tests include retired fields. `main_test.py` checks winning CLI
   defaults, control forwarding, device selection, baseline play without training data,
   and the error for a missing trained model.
-- Head tests in `nn_test.py` pin default and explicit `fc` tensor shapes and bytes to
-  `1bccc92` with seed 1337 and one torch thread. The fixture includes BatchNorm buffers.
-  Keep `fc_4x64_seed1337.json` and `legacy_model.pkl` from that pre-change code.
-  Do not regenerate them from the implementation under test. Tests also check legacy
-  metadata defaults, conv output shapes and ranges, singleton batches, gradients, numpy
-  callbacks, and pickle round trips. A 4-block 64-filter conv model has 309,470 parameters
-  with `value_hidden=256`, below 1M. FC head depth settings have no effect on conv heads.
-  CLI tests check head forwarding for `train` and `ceiling`, including ceiling reports.
-- `architecture_test.py` covers `resnet_gpool`, `transformer`, and `hybrid`: singleton and
-  multi-example forward shapes and ranges, finite gradients for every parameter, numpy
-  callbacks and pickle round trips, and loss reduction over 12 CPU steps. A distant-cell
-  check proves both mean and max pooling supply board-wide context. Token models ignore
-  spatial head choices and FC depths. Default and explicit `--arch resnet` must keep the
-  pre-change tensor-byte fixture in `nn_test.py`; never regenerate it from new code.
-  `timeout 300 uv run --locked pytest -q -s tests/c4a0_tests/architecture_test.py -k parameter_counts`
-  prints default counts. At 4×64 with conv heads: ResNet 309,470; global pooling 342,494;
-  transformer 1,225,603; hybrid 1,530,691. Token defaults are 6 layers, width 128, 4 heads,
-  and value width 256. Hybrid uses all configured conv blocks, so use 2 for a short stem.
-- `generation_golden_test.py` pins two generations to master `57d3a2a`: game CBOR,
+- `nn_test.py` pins 4x64 tensor shapes and bytes (seed 1337, one torch thread, BatchNorm
+  buffers included) to `conv_4x64_seed1337.json`, and checks that `conv_model_515664f.pkl`
+  predicts identically through the current class. Both were captured from `515664f`, the
+  last commit with FC heads, not from the code under test; never regenerate them from new
+  code. A 4x64 model has 309,470 parameters and the default 8x64 605,406. FC-head pickles
+  fail in `load_model` with a clear error. Tests also check output shapes and ranges,
+  singleton batches, gradients, numpy callbacks, pickle round trips and the
+  `--value-hidden` resume check. Retired metadata fields (architecture, head, value-bin
+  and temperature controls) load and are dropped on save.
+- `generation_golden_test.py` pins two conv-head generations to `515664f`: game CBOR,
   augmented dataset bytes, every training and validation batch loss, validation scores,
   and every published model tensor. It uses seed 1337, one torch thread, singleton NN
   batches and serial games **in the test only**. Master returns games in worker completion
   order, which otherwise changes replay splits even with fixed random seeds. Both omitted
   and explicitly disabled BF16, compile and fixed-step controls must match the fixture.
-  Do not regenerate the fixture from optimized code. The baseline was captured by loading
-  master `nn.py` and `training.py` before running the same harness, and checked six times.
+  Do not regenerate the fixture from code under test. `515664f` matched master `57d3a2a`'s
+  FC golden byte for byte; master had no conv heads, so the conv fixture was captured from
+  `515664f` before FC heads were removed.
 - Bulk sample tests compare every float byte, including signed zero, to the legacy split
   and per-sample conversion. Replay concatenation must preserve CBOR order. Callback tests
-  cover changing batch sizes on tiny and default 4x64 nets, including singleton batches,
+  cover changing batch sizes on tiny and 4x64 nets, including singleton batches,
   and compare to the original `no_grad` forward. Device tests
   check dataset storage is reused by loaders. CUDA cases skip in this container.
 - Fixed-step tests run real fits at 1, 5 and 11 steps, check final published tensors and
@@ -89,27 +81,15 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
 
 ## Lane 2: end to end (seconds to minutes)
 
-- `mise run train:smoke` runs two tiny CPU jobs, one with `--head fc` and one with
-  `--head conv`. Each runs one generation with 4 games and 4 MCTS iterations through
-  Rust self-play, the PyO3 callback, Lightning training, saving, and dev evaluation.
-  FC artifacts go to `training/ci-smoke`, conv artifacts to `training/ci-smoke-conv`.
-  The task removes both directories before their runs.
-- The smoke task explicitly uses a 1-block 8-filter CPU network, 2 epochs with
-  patience 1, and MCTS-4 evaluation. It exercises the winning self-play controls.
+- `mise run train:smoke` runs one tiny CPU job: one generation with 4 games and 4 MCTS
+  iterations through Rust self-play, the PyO3 callback, Lightning training, saving, and
+  dev evaluation, into `training/ci-smoke` (removed first).
+- The smoke task explicitly uses a 1-block 8-filter CPU network, 2 annealed epochs,
+  and MCTS-4 evaluation. It exercises the winning self-play controls.
   For replay across generations, repeat its tiny command with `--max-gens 2`.
   Generation two saves only its new games. This proves plumbing, not convergence.
-- `training_test.py` also runs a conv generation with `value_hidden=17`, ignored FC
-  head depths, and MCTS-4 evaluation. It checks optimizer updates and reloads root and
+- `training_test.py` also runs a generation with `value_hidden=17` and MCTS-4 evaluation. It checks optimizer updates and reloads root and
   child models and metadata. `main_test.py` checks the saved ceiling model and report.
-- `timeout 900 uv run --locked python scripts/smoke_architectures.py training/arch-smoke`
-  runs a real CPU `ceiling` job for each new architecture. Use a new output directory.
-  Each fits 256 committed suite rows for 2 epochs with seed 1337 and batch size 64, a 2×8
-  conv stem where applicable, 2 attention layers of width 16 with 4 heads, value width 17,
-  and MCTS-4 evaluation. `architecture_smoke_test.py` runs this in `check` and verifies
-  optimizer updates, CPU pickles, report config and parameter counts, and saved-model hashes.
-  The smoke repackages dev rows as train labels. Its manifest records source rows and hashes
-  and marks the run as smoke-only. Scores overlap training and prove no generalization.
-  Never pass these smoke labels to a convergence experiment.
 - For phase timing after the self-play smoke run, copy its artifacts and append one measured
   generation. `--phase training` reuses the newest games, includes each older ancestor
   once, and still evaluates and publishes:
@@ -138,7 +118,7 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   `mise trust && mise install && mise run play -- --model uniform` in a terminal,
   then remove that worktree. No solver or training directory is needed.
 - A historical generation with 256 games, 256 MCTS iterations and a 1-block 32-filter
-  CPU network took 276 s. It does not measure the current 4-block 64-filter default.
+  CPU network took 276 s. It does not measure the current 8-block 64-filter default.
 
 ## Lane 3: convergence (opt-in, minutes to hours)
 
@@ -160,11 +140,10 @@ Requirements before a convergence number counts:
    raw-network top-1 diagnoses the estimator. Keep the test suite for a final number, not
    for selection.
 2. **Ceiling.** `main.py label` then `main.py ceiling` (see `docs/development.md`) shows what
-   the architecture reaches with solver labels directly. Compare `--arch resnet`,
-   `resnet_gpool`, `transformer`, and `hybrid` on identical genuine train-split labels and
-   optimizer settings over at least 3 seeds. Set conv sizes explicitly: `ceiling` defaults
-   to 1×32 while `train` defaults to 4×64. Read `report.json`'s `net` and `parameter_count`
-   before comparing. Smoke labels repackaged from dev are ineligible. Building genuine train
+   the network reaches with solver labels directly. Compare arms on identical genuine
+   train-split labels and optimizer settings over at least 3 seeds. `ceiling` defaults
+   match `train` (8x64, annealed, here 40 epochs). Read `report.json`'s `net` and
+   `parameter_count` before comparing. Labels repackaged from dev are ineligible. Building genuine train
    labels needs Pascal Pons's solver in `solver/` with `7x6.book`, per the README.
 3. **Variance.** Use at least 3 seeds per arm. A single run is an anecdote. The README's
    9-generation result is one.
@@ -220,6 +199,8 @@ GPU. Keep at least 1024 games in flight. Cut MCTS iterations, not games, to shri
 Supervised ceiling on suite v1 dev (846,552 train labels, patience 10, lr 2e-3 flat): the
 historical 1x32 net reaches 91.8-91.9% raw top-1 over 3 seeds (92.1-92.4% with MCTS-64). The 4x64 net
 reaches 92.6% raw (93.5% MCTS-64), 1 seed. Plies 0-11 are the weak buckets (73-85%).
+With the same labels, 8x64 scored 95.10% MCTS-256 strict at a constant rate and 96.20%
+cosine-annealed (the `ceiling` default now); see `docs/experiments.md` hypothesis 20.
 The raw ceiling measures estimator fit. MCTS can improve on raw-network move selection;
 the architecture's raw top-1 is not a bound on MCTS play.
 
@@ -230,34 +211,26 @@ the architecture's raw top-1 is not a bound on MCTS play.
   Label old and new search results and match budgets and exploration before comparing.
 - Winning `train` defaults are 2048 games, MCTS-256, exploration 2.0, ply penalty
   0.01, root noise alpha 1.0 and fraction 0.25, replay 8, Q weight 1.0, random starts
-  0.5 through ply 20, 20 epochs with patience 3, and a 4-block 64-filter network.
+  0.5 through ply 12, 8 cosine-annealed epochs, and an 8-block 64-filter conv-head network.
   Device `auto` selects CUDA, then MPS, then CPU. Dev eval budgets are 64 and 256.
   Each control remains a CLI option. `GenConfig` retains historical fallback values
   for omitted fields in legacy metadata; explicit saved values still win.
 - Self-play temperature is fixed at 4 below ply 4, 2 below ply 8, then 1.
   Terminal policy supervision stays enabled. Metadata fields for retired controls
   are ignored when loading and omitted when saving.
-- `--train-max-epochs N` caps each generation's Lightning fit at N epochs.
-  `--train-patience P` stops after P validation checks without improved `val_loss`.
+- `--train-anneal-epochs N` (default 8) trains exactly N epochs with a cosine rate to 1%
+  and publishes the lowest-`val_loss` epoch. `--train-anneal-epochs 0` stores None and
+  trains at a constant rate: then `--train-max-epochs N` caps each generation's fit at N
+  epochs and `--train-patience P` stops after P validation checks without improved `val_loss`.
   Validation runs once per epoch. Both must be at least 1 and are recorded as flat
   metadata fields through `GenConfig`.
-- `--arch resnet|resnet_gpool|transformer|hybrid` defaults to `resnet` for new and legacy
-  configs. `train` and `ceiling` expose `--n-layers`, `--d-model`, and `--n-heads`, defaulting
-  to 6, 128, and 4. All must be positive; token width must be divisible by the head count.
-  `train` saves these as flat metadata, and `ceiling` saves them under `net` in its report.
-  Token models always use column-pooled policy and board-pooled value heads. They ignore
-  `--head` and FC head depths, but use `--value-hidden`. Hybrid reuses the configured conv
-  dimensions. A resumed run rejects an architecture change or changed token settings.
-  Use a new `--base-dir` for a different model. These are experimental options with no
-  measured convergence benefit.
-- For ResNet variants, `--head fc|conv` defaults to `fc` for new and legacy configs. Conv heads
-  use `--value-hidden N` (default 256, positive) and ignore `--n-policy-layers` and
-  `--n-value-layers`. Both `train` and `ceiling` expose these options. `train` records
-  them in flat metadata; `ceiling` records them under `net` in `report.json`.
-  A resumed run must use the saved model's head architecture and, for conv, value width.
-  Use a fresh `--base-dir` to change either. These options change results. Component
-  tests and smoke runs establish no convergence benefit; compare architectures using
-  lane 3 at a fixed MCTS-256 budget on dev.
+- `--value-hidden N` (default 256, positive) sets the value head width. It is recorded
+  in flat metadata (`train`) and under `net` in `report.json` (`ceiling`). A resumed run
+  must use the saved model's value width; use a fresh `--base-dir` to change it or the
+  trunk size.
+- `--mirror-inference` (a `ModelConfig` field, saved in the pickle) and
+  `--leaf-minimax-depth` (flat metadata) apply to self-play and the run's evals. Both
+  are off by default for training cost; neither has an `eval` or `play` override.
 - `--random-start-frac F` starts a fraction of self-play games from random openings.
   F must be finite and in [0, 1]. `--random-start-max-ply K` must be at least 1 and
   defaults to 20 for `train` (legacy metadata falls back to 12). Rust caps K at 41,
