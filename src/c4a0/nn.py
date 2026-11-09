@@ -1,6 +1,6 @@
 import math
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Literal, Self, cast
+from typing import TYPE_CHECKING, Literal, cast
 
 import numpy as np
 import pytorch_lightning as pl
@@ -9,7 +9,7 @@ import torch.nn as nn
 from einops import rearrange
 from loguru import logger
 from numpy.typing import NDArray
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 from pytorch_lightning.utilities.types import OptimizerLRSchedulerConfig
 from torch.optim.adam import Adam
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -56,21 +56,6 @@ class ModelConfig(BaseModel):
     mirror_inference: bool = False
     """Average every inference call with its left-right mirror (Connect Four is symmetric)."""
 
-    value_bins: int = Field(default=0, ge=0)
-    """Conv heads only: predict q_penalty as a distribution over this many evenly spaced bins on
-    [-1, 1], trained with two-hot cross-entropy (MuZero). 0 keeps the tanh scalar and MSE."""
-
-    value_loss_weight: float = Field(default=1.0, gt=0)
-    """Weight on the q_penalty loss relative to the policy loss."""
-
-    @model_validator(mode="after")
-    def validate_value_bins(self) -> Self:
-        if self.value_bins and self.head != "conv":
-            raise ValueError("value_bins needs conv heads")
-        if self.value_bins == 1:
-            raise ValueError("value_bins must be 0 or at least 2")
-        return self
-
 
 class ConnectFourNet(pl.LightningModule):
     """
@@ -95,8 +80,6 @@ class ConnectFourNet(pl.LightningModule):
         self.lr_schedule = config.lr_schedule
         self.l2_reg = config.l2_reg
         self.mirror_inference = config.mirror_inference
-        self.value_bins = config.value_bins
-        self.value_loss_weight = config.value_loss_weight
         self.head = config.head
 
         self.conv = nn.Sequential(
@@ -123,17 +106,9 @@ class ConnectFourNet(pl.LightningModule):
                 nn.Flatten(),
                 nn.Linear(N_ROWS * N_COLS, config.value_hidden),
                 nn.ReLU(),
-                *(
-                    # Bin logits for q_penalty, then a raw q_no_penalty (tanh in forward).
-                    [nn.Linear(config.value_hidden, config.value_bins + 1)]
-                    if config.value_bins
-                    else [nn.Linear(config.value_hidden, 2), nn.Tanh()]
-                ),
+                nn.Linear(config.value_hidden, 2),
+                nn.Tanh(),
             )
-            if config.value_bins:
-                self.register_buffer(
-                    "value_centers", torch.linspace(-1.0, 1.0, config.value_bins)
-                )
         else:
             self._init_fc_heads(config)
 
@@ -175,24 +150,11 @@ class ConnectFourNet(pl.LightningModule):
     def forward(
         self, x: torch.Tensor
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        policy_logprobs, q_penalty, q_no_penalty, _ = self.forward_with_bins(x)
-        return policy_logprobs, q_penalty, q_no_penalty
-
-    def forward_with_bins(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
-        """`forward` plus the q_penalty bin logits when `value_bins` is set (else None); the
-        q_penalty it returns is then the distribution's mean."""
         x = self.conv(x)
         # Pickles saved before head selection have no `head` attribute.
         if getattr(self, "head", "fc") == "conv":
             policy_logprobs = self.conv_policy(x)
             q_values = self.conv_value(x)
-            # Pickles saved before value bins have no `value_bins` attribute.
-            if getattr(self, "value_bins", 0):
-                logits, q_no_penalty = q_values[:, :-1], q_values[:, -1].tanh()
-                q_penalty = logits.softmax(dim=1) @ self.value_centers
-                return policy_logprobs, q_penalty, q_no_penalty, logits
         else:
             x = rearrange(x, "b c h w -> b (c h w)")
             policy_logprobs = self.fc_policy(x)
@@ -200,7 +162,7 @@ class ConnectFourNet(pl.LightningModule):
         q_penalty, q_no_penalty = q_values.split(1, dim=1)  # both: b 1
         q_penalty = q_penalty.squeeze(1)  # b
         q_no_penalty = q_no_penalty.squeeze(1)  # b
-        return policy_logprobs, q_penalty, q_no_penalty, None
+        return policy_logprobs, q_penalty, q_no_penalty
 
     def infer(
         self, pos: torch.Tensor
@@ -277,9 +239,7 @@ class ConnectFourNet(pl.LightningModule):
     def step(self, batch: Sequence[torch.Tensor], log_prefix: str) -> torch.Tensor:
         # Forward pass
         pos, policy_target, q_penalty_target, q_no_penalty_target = batch
-        policy_logprob, q_penalty_pred, q_no_penalty_pred, q_logits = (
-            self.forward_with_bins(pos)
-        )
+        policy_logprob, q_penalty_pred, q_no_penalty_pred = self.forward(pos)
         policy_logprob_targets = torch.log(policy_target + self.EPS)
 
         # Losses. Computed functionally: torchmetrics modules cache their last result with its
@@ -291,21 +251,10 @@ class ConnectFourNet(pl.LightningModule):
             log_target=True,
         )
         q_penalty_loss = nn.functional.mse_loss(q_penalty_pred, q_penalty_target)
-        # A one-ply-faster win moves q_penalty by only 0.01, so its MSE is ~1e-4 next to a
-        # policy KL of ~0.2. Two-hot cross-entropy over 0.01-wide bins makes distance a class.
-        q_fit_loss = (
-            q_penalty_loss
-            if q_logits is None
-            else two_hot_cross_entropy(q_logits, q_penalty_target)
-        )
         q_no_penalty_loss = nn.functional.mse_loss(
             q_no_penalty_pred, q_no_penalty_target
         )
-        loss = (
-            policy_loss
-            + getattr(self, "value_loss_weight", 1.0) * q_fit_loss
-            + q_no_penalty_loss
-        )
+        loss = policy_loss + q_penalty_loss + q_no_penalty_loss
 
         value_loss = q_penalty_loss + q_no_penalty_loss
 
@@ -315,19 +264,6 @@ class ConnectFourNet(pl.LightningModule):
         self.log(f"{log_prefix}_q_no_penalty_mse", q_no_penalty_loss)
         self.log(f"{log_prefix}_value_mse", value_loss)
         return loss
-
-
-def two_hot_cross_entropy(logits: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    """Cross-entropy against the two-hot encoding of `target` on evenly spaced bins over [-1, 1]:
-    mass splits between the two nearest bins so the encoding's mean is exactly `target`."""
-    n_bins = logits.shape[1]
-    position = (target.clamp(-1.0, 1.0) + 1.0) / 2.0 * (n_bins - 1)
-    low = position.floor().clamp(max=n_bins - 2)
-    high_weight = position - low
-    probs = torch.zeros_like(logits)
-    probs.scatter_(1, low.long().unsqueeze(1), (1.0 - high_weight).unsqueeze(1))
-    probs.scatter_add_(1, low.long().unsqueeze(1) + 1, high_weight.unsqueeze(1))
-    return -(probs * logits.log_softmax(dim=1)).sum(dim=1).mean()
 
 
 class NumpyEvaluator:
