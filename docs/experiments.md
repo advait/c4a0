@@ -4,7 +4,16 @@ This page records every hypothesis tested while driving c4a0's self-play toward 
 
 ## Result
 
-The target, MCTS-256 moves keeping the game result on at least 98% of dev positions, was reached by the final defaults before MCTS-Solver was added: run 2 scored 98.11% at generation 41 (98.0% averaged over its last 10 generations). That generation's model scored **98.68% on the 1,513 held-out test positions**, and generations 38 to 41 all scored between 98.41 and 98.68% on test. The test split played no part in any decision before this check. MCTS-Solver, added afterwards, was ahead of those defaults at every matched generation it ran.
+The first target, MCTS-256 moves keeping the game result on at least 98% of dev positions, was reached by the final defaults before MCTS-Solver was added: run 2 scored 98.11% at generation 41 (98.0% averaged over its last 10 generations). That generation's model scored **98.68% on the 1,513 held-out test positions**, and generations 38 to 41 all scored between 98.41 and 98.68% on test. The test split played no part in any decision before this check. MCTS-Solver, added afterwards, was ahead of those defaults at every matched generation it ran.
+
+The second target, optimal play, is close but not reached. The best self-play-only agent (conv 8x64, cosine-annealed self-play, 40 generations, scored with mirror averaging and leaf minimax depth 10) scores:
+
+| Split | Strict, MCTS-256 | Strict, MCTS-2048 | Keeps the result, MCTS-256 | Keeps the result, MCTS-2048 |
+|---|---|---|---|---|
+| dev | 96.99% | 97.44% | 98.97% | 99.41% |
+| test | 96.84% | 97.15% | 99.27% | 99.17% |
+
+Keeping the result reaches 99% on test. Strict optimal-move accuracy sits near 97%, limited by opening positions: 48 of the roughly 57 remaining dev misses are at plies 0 to 11. No solver labels are used in training; the solver only labels the evaluation suites.
 
 ## How the experiments were judged
 
@@ -52,13 +61,28 @@ After keeping the result reached 98%, the goal became optimal play: MCTS-256 mus
 | 12 | Strict misses pick the wrong win or loss distance because the distance signal (0.02 value per move) is inside the value head's noise. | Ply penalty 0.02 and 0.023, and a multiplicative discount `+-gamma^ply` with gamma 0.97 (`--ply-discount`). | All three trailed the control on strict at generations 10 to 19 (control 94.21 and 94.00%; penalty 0.02 93.22 and 93.08%; discount 93.27 and 93.40%; penalty 0.023 92.95 and 92.78%). | Refuted. Penalty stays 0.01. |
 | 13 | Search noise between near-equal moves causes the misses. | Root visit counts on the 96 misses of the 98% model. | The solver-best move got 0.08 to 0.35 times the visits of the chosen move, and the network prior favoured the wrong move 2 to 5 times. Only 7 to 18% of misses were near-ties. | Refuted. The network misranks moves and 256 iterations cannot overturn it. |
 | 14 | The network spends its capacity in the wrong place. | Parameter count of the 4x64 network. | 99% of 29.3M parameters sat in fully connected heads (2688x2688 layers); the convolutional trunk had 297k. | Led to hypothesis 15. |
-| 15 | AlphaZero-style heads (1x1 convolution, then a small linear layer) lose nothing and train much faster. | `--head conv`: 0.31M parameters at 4x64. | Conv 4x64 plateaued at 95.4% strict, the same as FC heads (95.1 to 95.4%), and ran about twice as many generations per hour. | Kept for speed. Does not break the plateau. |
+| 15 | AlphaZero-style heads (1x1 convolution, then a small linear layer) lose nothing and train much faster. | `--head conv`: 0.31M parameters at 4x64. | Conv 4x64 plateaued at 95.4% strict, the same as FC heads (95.1 to 95.4%), and ran about twice as many generations per hour. | Kept for speed; the only head now. FC heads and `--head` were removed. |
 | 16 | Self-play rarely reaches the middle-game positions where misses cluster. | Random starts for 80% of games instead of 50%. | Matched the control in every window (generations 30 to 39 strict: 94.97 and 95.23% against 95.03 and 95.28%; keeps the result 97.6 to 97.8% against 97.8%). | Rejected. Coverage is not the limit. |
-| 17 | A deeper conv trunk ranks opening moves better. | Conv 8x64. | Both runs ahead of both controls by about 0.2 points at generations 10 to 19 (94.16 and 94.20% against 93.89 and 94.11%) and 20 to 29 (95.22 and 95.17% against 94.85 and 95.01%). | Small gain, kept tentatively; testing 12x64 and 1,024 self-play iterations next. |
-| 18 | Whole-board context may generalize better than local convolutions. | Added `resnet_gpool`, transformer, and hybrid options. CPU CLI smoke: each fits 256 repackaged dev labels for 2 epochs, then reloads and evaluates the saved model at MCTS-4. | All three pass fitting, optimizer-update, pickle, report, and callback checks. These rows overlap dev, so scores provide no generalization evidence. | Options available for a fair ceiling comparison on genuine train labels over at least 3 seeds. No convergence benefit measured. |
-| 19 | Misses sit on forced lines the network misjudges; PUCT averages them instead of resolving them, and MCTS-Solver only proves near terminals. | `--leaf-minimax-depth D` (Baier and Winands' MCTS-minimax hybrid): an exact depth-D alpha-beta search over the rules on each leaf before the network evaluates it; a proof marks the node proven for MCTS-Solver. Applies to self-play and to the generation's dev eval. | Implemented with exactness tests against brute force and the dev suite's Pons scores. Single-threaded cost on 1,152 dev rows at plies 12 to 29, mean per call (unproven calls): depth 4 0.1 us (0.4), 6 0.6 (1.9), 8 2.5 (8.4), 10 10 (36), 12 41 us (166). The 1x8 network from one 8-game CPU generation (trained at depth 6) on dev at MCTS-64, strict and keeps the result: depth 0 86.3 and 90.6%, 4 88.3 and 91.2%, 8 89.1 and 91.3%, 12 89.3 and 91.6% (eval 0.3 s at depth 0, 10 s at 12). Deterministic, so one run each; a weak estimator, not a convergence result. | Default 0 (off). Next: dev eval of an existing model at depths 0, 6 and 10, then a self-play arm. |
+| 17 | A deeper conv trunk ranks opening moves better. | Conv 8x64. | Both runs ahead of both controls by about 0.2 points at generations 10 to 19 (94.16 and 94.20% against 93.89 and 94.11%) and 20 to 29 (95.22 and 95.17% against 94.85 and 95.01%). | Small gain. Kept; 8x64 is the default. |
+| 18 | Whole-board context may generalize better than local convolutions. | Global-pooling residual blocks (`resnet_gpool`), a 42-token transformer, and a conv-stem hybrid, on the supervised ceiling. | Global pooling 8x64 scored 95.08% strict, the same as the plain ResNet (95.08%). The transformer never trained to a result: 0.71 validation loss against 0.31 for conv at matched epochs. | Refuted. All three architectures were removed. |
+| 19 | Misses sit on forced lines the network misjudges; PUCT averages them instead of resolving them, and MCTS-Solver only proves near terminals. | `--leaf-minimax-depth D` (Baier and Winands' MCTS-minimax hybrid): an exact depth-D alpha-beta search over the rules on each leaf before the network evaluates it; a proof marks the node proven for MCTS-Solver. Applies to self-play and to the generation's dev eval. | Implemented with exactness tests against brute force and the dev suite's Pons scores. Single-threaded cost on 1,152 dev rows at plies 12 to 29, mean per call (unproven calls): depth 4 0.1 us (0.4), 6 0.6 (1.9), 8 2.5 (8.4), 10 10 (36), 12 41 us (166). The 1x8 network from one 8-game CPU generation (trained at depth 6) on dev at MCTS-64, strict and keeps the result: depth 0 86.3 and 90.6%, 4 88.3 and 91.2%, 8 89.1 and 91.3%, 12 89.3 and 91.6% (eval 0.3 s at depth 0, 10 s at 12). Deterministic, so one run each; a weak estimator, not a convergence result. | See hypothesis 26 for the measured effect. Default 0 (off). |
 
-The plateau sits near 95.2% strict and 97.8% keeps the result.
+Through hypothesis 19 the plateau sat near 95.2% strict and 97.8% keeps the result. Hypothesis 20 broke it.
+
+| # | Hypothesis | Change tested | Result | Decision |
+|---|---|---|---|---|
+| 20 | The plateau is optimization noise: at a constant rate dev loss swings about 0.05 between epochs, so the published model is a noisy sample. | Cosine-anneal the rate to 1% over a fixed number of epochs (`--train-anneal-epochs`, ceiling `--anneal-epochs`), no early stopping. | Supervised 8x64 on 846k labels: MCTS-256 strict 95.10% to 96.20%. Self-play, generations 30 to 37: 95.91 and 96.10% against 95.19 and 95.18% for the constant-rate control. | Kept. Default for `train` (8 epochs) and `ceiling` (40). |
+| 21 | More search at evaluation fixes the remaining misses. | Evaluate one model at MCTS-256 up to 8,192. | Flat at about 96.5 to 97% strict across the whole range. | Refuted. Search budget is not the limit. |
+| 22 | The network is out of capacity. | 8x128 instead of 8x64, at a constant rate and annealed. | No gain in either setting. | Refuted. 8x64 stays. |
+| 23 | More data generalizes better. | Four times the training data, annealed. | +0.1 points, inside the noise. | Refuted. |
+| 24 | Connect Four is left-right symmetric, so averaging the network with its mirror cancels some of its error. | `--mirror-inference`: average every call with the mirrored board. | +0.4 to 0.6 points strict at evaluation. Doubles inference cost. | Kept as an option, off by default; use it at evaluation. |
+| 25 | The value head cannot resolve a 0.01 distance step under MSE, so it misranks wins by length. | Two-hot binned value head (201 and 51 bins) and the q_penalty loss weighted 10x. | 201 bins 95.81%, 51 bins 95.70%, MSE x10 95.54%, against a same-CLI control of 95.69% (noise about 0.5). | Refuted. The code was removed. |
+| 26 | Exact search on each leaf fixes the forced lines the network misjudges (hypothesis 19). | Leaf minimax at evaluation on the best supervised model; and in self-play training. | Evaluation: 96.33% to 96.85% strict at depth 12; plies 18 and up reach about 100%, the openings are unchanged. Training with it: +0.7 points early, +0.1 late, for about 1.8x time per generation. | Kept as an evaluation lever. Off for training by default. |
+| 27 | Self-play targets need a deeper search. | 1,024 and 2,048 self-play MCTS iterations instead of 256. | No gain. | Refuted. 256 stays. |
+| 28 | Two independently trained networks average out each other's errors. | Ensemble of two nets at evaluation. | Within noise. | Refuted. |
+| 29 | Deep-search targets on openings teach the network what self-play cannot. | Distil deep MCTS policies and root values on unlabeled train-split openings into the network (`mcts_search`, `sample_split_positions`). | 97.04 and 97.34% strict against a 97.06% baseline. | Refuted. The code was removed. |
+
+**Where the misses are.** 48 of the roughly 57 remaining dev misses of the best agent are at plies 0 to 11, and many of them change the game result. Late positions are essentially solved by leaf minimax. The opening is decided too far ahead for search, and neither capacity, data, deeper self-play search nor distillation moved it.
 
 ### Running many experiments on one GPU
 
@@ -76,11 +100,10 @@ These were real defects, each fixed with a test that fails before the fix:
 
 ## What is still open
 
-The final configuration is the default for `mise run train`. These are the most promising next steps, in rough order:
+The final configuration is the default for `mise run train`. These are the most promising next steps:
 
-1. **Draws.** Drawn positions miss about 13% of the time, against 2.6% for won positions. A value head trained mostly on decisive games may not separate "drawn" from "slightly winning".
-2. **Plies 6 to 17.** Most remaining misses are here. Random starts helped a little. A curriculum that weights starts toward these plies, or longer starts, is untested.
-3. **MCTS-Solver past generation 20.** It led the control through generation 20 and is now the default, but nobody has run it to 60 generations.
-4. **Larger networks over longer runs.** The 4x64 network was still climbing when measured. An 8x128 run started too late to report here.
-5. **Faster generations.** Self-play is limited by Python dispatch and CPU-side MCTS (GPU about 20% busy). `torch.compile` gave 8 to 38% on the forward pass in a micro-benchmark and is not wired in.
-6. **Drop Pons.** The Rust solver in `rust/src/native_solver/` is verified but runs at about 0.66x Pons's throughput and is not wired into labeling.
+1. **Openings.** Most remaining misses are at plies 0 to 11 and change the result. Search depth, capacity, data and opening distillation did not move them. An opening curriculum or a value target that sees further ahead is untested.
+2. **Draws.** Drawn positions missed far more often than won positions in the earlier runs. A value head trained mostly on decisive games may not separate "drawn" from "slightly winning".
+3. **Evaluation overrides.** Leaf minimax and mirror averaging help most at evaluation, but `eval` and `play` only reuse what the run recorded. A CLI override, recorded in `SuiteEval`, would make them first-class.
+4. **Faster generations.** Self-play is limited by Python dispatch and CPU-side MCTS (GPU about 20% busy). `--compile` gave nothing end to end.
+5. **Drop Pons.** The Rust solver in `rust/src/native_solver/` is verified but runs at about 0.66x Pons's throughput and is not wired into labeling.
