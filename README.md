@@ -2,158 +2,106 @@
 
 ![CI](https://github.com/advait/c4a0/actions/workflows/ci.yaml/badge.svg?ts=2)
 
-An AlphaZero-style Connect Four engine that learns entirely from self-play, measured move by move against a perfect solver.
+<p align="center">
+  <img alt="Animated Connect Four position with Red to move. The network's prior puts 72% on column 4, which loses. Bars standing on each column fill as 256 MCTS iterations run; column 3, the only winning move, takes the lead at iteration 73 and ends with 83% of the visits, which a perfect solver confirms at the end." src="images/hero.gif" width="800">
+</p>
 
-Rust runs the game, Monte Carlo Tree Search (MCTS) and multi-threaded self-play. A PyTorch network, called from Rust through [PyO3](https://pyo3.rs), estimates move priors and position values for the search.
+**A 605K-parameter network that learns near-perfect Connect Four strictly through self-play.** No human games, no opening book, no solver in the training loop: it starts from random weights, plays itself, and learns from its own search. After 6 hours on one GPU it picks the solver-optimal move (the fastest win, or the slowest loss) in 97% of held-out positions, and keeps the game result (a won position stays won, a drawn one stays drawn) in 99.3% of them.
 
-![Terminal UI](images/tui.png)
+The animation above is the real final network on a real position. Its first instinct, column 4 at 72%, loses. Search tests that instinct one walk down the tree at a time, takes the lead with column 3 at iteration 73, and ends with 83% of its visits on it: the only winning move. That is the whole idea of AlphaZero in one move: a network that guesses, a search that checks, and a training loop that teaches the network to guess what the search found.
 
-## Training progress
+## Results
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="images/training-progress-dark.svg">
-  <img alt="Two line charts of dev-suite accuracy over self-play generations. Top: with the original search, MCTS-64 accuracy falls from 77% to 57% over 20 generations, while PUCT holds 81% and adding root noise, replay and more games reaches 88%. Bottom: the share of MCTS-256 moves that keep the game result climbs to 96.5% over 60 generations for the 1x32 network. The final defaults (4x64 network, random starts) reach the 98% target at generation 41, and adding MCTS-Solver is ahead of them at every generation through 20." src="images/training-progress-light.svg">
+  <img alt="Line chart over 40 self-play generations. Share of held-out positions where the move is solver-optimal: the network alone climbs from below 80% to 91.8%, the network with 256-iteration MCTS from 86.9% to 96.2%, and with a 10-ply exact leaf search added to 97.0%. A shaded area on the right axis shows self-play games played, rising to about 82,000 over 6.2 hours." src="images/training-progress-light.svg">
 </picture>
 
-Every generation's saved model is scored on a fixed, solver-labeled suite of positions it never trains on. Two metrics matter. **Keeps the result** asks whether the move MCTS chooses keeps the game result: a won position stays won and a drawn one stays drawn. **Strict** asks whether it is a move the solver ranks best, the fastest win or the slowest loss.
+Every generation is scored on about 2,000 positions it never trains on, each labeled move by move by a perfect solver. The untrained network already gets 87% with search, because search alone finds short tactics; the network alone starts at 21%. Training is what closes the long-range gap.
 
-The best self-play-only agent is a conv 8x64 network after 40 generations of cosine-annealed self-play training, scored with mirror averaging and leaf minimax at depth 10:
+The final agent searches with mirror averaging and a 10-ply exact leaf search (both described below):
 
-| Split | Strict, MCTS-256 | Strict, MCTS-2048 | Keeps the result, MCTS-256 | Keeps the result, MCTS-2048 |
+| Held-out split | Picks the optimal move, MCTS-256 | MCTS-2048 | Keeps the result, MCTS-256 | MCTS-2048 |
 |---|---|---|---|---|
 | dev | 96.99% | 97.44% | 98.97% | 99.41% |
 | test | 96.84% | 97.15% | **99.27%** | 99.17% |
 
-It keeps the result on 99% of the held-out test positions. Strict optimal-move accuracy is about 97%, limited by opening positions: most remaining misses are at plies 0 to 11. No solver labels are used in training; the solver only labels the evaluation suites.
+The test split played no part in any decision. Most of the remaining misses are in the first 11 moves, where the deciding line is 30 or more plies deep. [What we learned trying to make self-play converge](docs/experiments.md) has every hypothesis tested on the way here, including the ones that failed.
 
-The history below led there. The first target was 98% keeps the result:
+## Try it
 
-| Configuration | Generations | MCTS-256 move keeps the result | MCTS-64 picks the solver's best move |
-|---|---|---|---|
-| Original search, 1x32 network | 20 | not measured | 57% (and falling) |
-| PUCT search | 20 | not measured | 81% |
-| + root noise, replay 4, 2,048 games | 20 | not measured | 88% |
-| + replay 8, 60 generations | 60 | 96.5% | 89% |
-| + 4x64 network, search-value targets, random starts | 41 | **98.0%** | 93% |
-| + MCTS-Solver | 20 | 97.4% (96.5% without it at generation 20) | 94% |
-
-Each row is the mean of two independent runs. Since then conv heads, an 8x64 trunk and cosine-annealed training produced the agent above. The best generation (run 2, generation 41) keeps the result on 98.1% of the 1,484 counted dev positions and on **98.7% of the 1,513 held-out test positions**, which no experiment decision ever looked at. The full record of what was tried, what helped, what hurt and what is still open is in [what we learned trying to make self-play converge](docs/experiments.md).
-
-## Install
-
-You need two things on the machine:
-
-- [mise](https://mise.jdx.dev/getting-started.html), which installs Rust, uv and Python 3.11 for the project.
-- A C toolchain (`cc`), which the Rust build links with. On Debian or Ubuntu, run `sudo apt install build-essential`.
-
-Then, from the repository root:
+Install [mise](https://mise.jdx.dev/getting-started.html), which brings Rust, uv and Python 3.11 for the project, and a C linker (`cc`; on Debian or Ubuntu, `sudo apt install build-essential`). Then, from the repository root:
 
 ```sh
 mise trust
 mise install
-```
-
-Every task below builds the Rust extension and the Python environment the first time it runs, so there is no separate build step. On Linux the locked PyTorch build includes CUDA, and training uses an NVIDIA GPU when one is present.
-
-## Play
-
-To play in the terminal against plain MCTS, with no trained network:
-
-```sh
-mise run play -- --model uniform
-```
-
-To play against your latest trained generation:
-
-```sh
 mise run play
 ```
 
-## Train
+`play` opens a terminal UI against the final network (`models/c4a0-final.pkl`). The first run builds the Rust extension and the Python environment; there is no separate build step.
 
-To train with the best configuration found so far (an 8x64 residual network with conv heads, 2,048 games of MCTS-256 self-play per generation, and 8 cosine-annealed training epochs per generation):
+![Terminal UI](images/tui.png)
 
-```sh
-mise run train
-```
-
-Generations are written to `training/`, one directory per generation, each with `model.pkl`, `games.pkl` and `metadata.json`. Rerunning the command resumes from the latest generation. A GPU is strongly recommended: one generation takes several minutes on an RTX 3090 and much longer on a CPU.
-
-Any `train` option can be passed after `--`. For example, to stop after 10 generations:
+To train your own from scratch (a GPU is strongly recommended; on Linux the locked PyTorch build includes CUDA):
 
 ```sh
-mise run train -- --max-gens 10
+mise run train                      # resumes from training/ if it exists
+mise run play -- --model latest     # play your newest generation
+mise run report -- training         # score curve per generation
 ```
 
-To check that everything works end to end on a CPU, run the tiny smoke configuration. It takes a few seconds once the project is built:
-
-```sh
-mise run train:smoke
-```
-
-Two options help most at evaluation and cost the most in training, so they are off by default: `--mirror-inference` averages every network call with its left-right mirror (2x inference, +0.4 to 0.6 points strict), and `--leaf-minimax-depth D` runs an exact depth-D search on each MCTS leaf before the network sees it (about 1.8x time per generation). Both apply to that run's self-play and evaluation. `--train-anneal-epochs 0` restores constant-rate training with early stopping.
-
-Run `uv run python src/c4a0/main.py train --help` for every option and its default; [docs/development.md](docs/development.md#training-options) explains each one.
-
-## Measure progress
-
-To print the score curve of a training run:
-
-```sh
-mise run report -- training
-```
-
-The report shows, per generation, the share of MCTS-256 moves that keep the game result, the strict best-move share, and the opening plies where most errors remain. Point it at a directory of several runs (for example `runs/`, with one base directory per run) to compare arms side by side.
-
-To rescore saved generations, for example after adding an MCTS budget:
-
-```sh
-mise run eval -- --base-dir training --mcts-iterations 1024
-```
-
-To redraw the progress graph above from `docs/data/training-progress.json`:
-
-```sh
-mise run plot
-```
+`mise run train:smoke` checks the whole loop on a CPU in seconds.
 
 ## How it works
 
-### Game and search
+Rust owns the game, the search and multi-threaded self-play. A PyTorch network, called from Rust through [PyO3](https://pyo3.rs), supplies the search's move priors and position values. Each generation:
 
-`rust/src/c4r.rs` holds the bitboard position and every Connect Four rule. `rust/src/mcts.rs` runs PUCT search: each child is scored by its mean value plus `c * prior * sqrt(N_parent) / (1 + n)`, with root Dirichlet noise mixed in during self-play only. It also proves outcomes from the rules alone, in the style of MCTS-Solver, with no external solver involved. A finished position is proven, a position with a move into a proven loss for the opponent is a proven win, and a position whose moves are all proven takes the best of them. Search never descends below a proven node. A proven root stops searching, puts all its policy mass on the proven-best moves, and reports its exact value. `rust/src/self_play.rs` plays thousands of games in parallel. It batches positions from every game into one network call, caches evaluations within a generation, and samples moves from the visit counts.
+1. **Self-play.** 2,048 games, 256 MCTS iterations per move. Half start from a random opening of up to 12 moves so the network sees more than the lines it already likes. Rust batches positions from every game into one network call.
+2. **Train.** A copy of the network learns from the last 8 generations' games for 8 epochs while its learning rate anneals to 1%. The policy target is the search's visit distribution and the value target is the search's own root value.
+3. **Score and publish.** The new network is scored on the held-out dev suite, then becomes the next generation's player.
 
-### Network and training loop
+### The network
 
-`src/c4a0/nn.py` defines a residual CNN with AlphaZero-style heads: a policy head and two value heads, each a 1x1 convolution followed by small linear layers. `src/c4a0/training.py` runs the generation loop:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/architecture-dark.svg">
+  <img alt="Network diagram. A 2-plane 6 by 7 board feeds a 3 by 3 convolution stem with 64 filters, then 8 residual blocks of two 3 by 3 convolutions, BatchNorm and ReLU with a skip connection, 591,872 parameters. The trunk splits into a policy head (1 by 1 convolution to 2 channels, BatchNorm, ReLU, linear 84 to 7, log-softmax; 729 parameters) and a value head (1 by 1 convolution to 1 channel, BatchNorm, ReLU, linear 42 to 256, ReLU, linear 256 to 2, tanh; 11,589 parameters). 605,406 parameters in total." src="images/architecture-light.svg">
+</picture>
 
-1. Play self-play games with the current network.
-2. Train a copy of the network on the last 8 generations' games for 8 epochs while the learning rate anneals to 1%. The policy target is the MCTS visit distribution and the value target is the search's own root value.
-3. Save the child and score it on the dev suite before publishing its metadata.
+- **Input, 2×6×7.** Two planes: the stones of the player to move, and the opponent's. The board is always shown from the mover's side, so one set of weights plays both colors.
+- **Stem, 3×3 convolution to 64 channels.** Lifts each cell into a 64-number feature vector that already knows its immediate neighbors.
+- **Residual blocks, ×8.** Each block applies two 3×3 convolutions, BatchNorm and ReLU, and adds the result back onto its input. Every block widens what a cell can see by two cells in each direction, so from the third block on every cell's features depend on the whole board. The skip connections keep an 8-block stack trainable. The trunk holds 98% of the parameters.
+- **Policy head.** A 1×1 convolution squeezes the trunk to 2 channels, then a linear layer maps those 84 numbers to 7 column logits. The softmax of those logits is the prior: where search looks first.
+- **Value head.** A 1×1 convolution squeezes the trunk to 1 channel, then two linear layers (42 → 256 → 2) and a tanh produce two values in [-1, 1].
 
-Half of the self-play games start from a random opening of up to 12 moves, so the network sees more than the lines it already likes. Every setting is a `train` option; self-play and training controls are recorded in each generation's metadata.
+`scripts/plot_architecture.py` draws the diagram from the code, so its parameter counts cannot drift.
 
-### Evaluation
+### The value function
 
-`src/c4a0/suite/v1/` holds a committed dev and test suite of about 2,400 positions each. Positions are sampled by random walks across plies 2 to 41, and every move is labeled by [Pascal Pons's solver](https://github.com/PascalPons/connect4). A position and its mirror image always land in the same split. `src/c4a0/evaluation.py` scores the raw network and MCTS at fixed budgets, by ply bucket, and stores the result in each generation's metadata, so evaluation needs no solver at run time.
+The value head predicts two numbers for the player to move, because the network has two jobs.
 
-## Rebuild the suite or label positions
+- **`q_no_penalty`: who is winning.** The expected result with no regard for when it happens: +1 for a win, 0 for a draw, −1 for a loss. It answers the plain question and is what the value accuracy in each generation's report is measured on.
+- **`q_penalty`: how good the win is.** The same result, shrunk by 0.01 for every ply the game lasts: a win that ends at ply 15 is worth 0.85, one that ends at ply 41 only 0.59, and losses mirror this (−0.85 for a quick loss, −0.59 for a long one). Search steers by this value, so among winning moves it prefers the fastest win, and when every move loses it fights for the longest game.
 
-Training and evaluation do not need the solver. You only need it to rebuild the committed suite or to label positions for the supervised ceiling (`main.py label` and `main.py ceiling`). Build it in `solver/`:
+Without the penalty every winning move looks equally good, and search has no reason to finish a won game. With only the penalty, a far-off certain win and a close uncertain position can look alike. Keeping both separates "is it won?" from "how soon?". Both are trained on the search's root values, and once the search proves a position (below) those targets are exact.
 
-```sh
-git clone https://github.com/PascalPons/connect4.git solver
-make -C solver
-curl -L -o solver/7x6.book https://github.com/PascalPons/connect4/releases/download/book/7x6.book
-mise run suite:build
-```
+### Search
 
-A clean-room Rust solver lives in `rust/src/native_solver/`. It agrees with Pons on every one of 228,041 compared positions, checked by brute force on late positions, and is not wired into labeling yet. `mise run solver:diff` reruns the comparison against Pons, and [docs/native-solver.md](docs/native-solver.md) has the full report.
+`rust/src/mcts.rs` runs PUCT search: each child is scored by its mean `q_penalty` plus `c × prior × √N_parent / (1 + n)`, with Dirichlet noise at the root during self-play only. Three things make it sharper than plain MCTS:
+
+- **MCTS-Solver.** A finished game is proven; a position with a move into a proven loss for the opponent is a proven win; a position whose moves are all proven takes the best of them. Proven nodes back up exact values, and a proven root plays its proven-best moves. This uses only the rules.
+- **Leaf search (optional, `--leaf-minimax-depth`).** Before a leaf goes to the network, an exact alpha-beta search to a fixed depth proves any forced win or loss inside that horizon, with its exact distance. At depth 10 every position from ply 18 on is essentially perfect.
+- **Mirror averaging (optional, `--mirror-inference`).** Connect Four is left-right symmetric, so each network call can be averaged with its mirror image.
+
+### The judge
+
+The evaluation suites in `src/c4a0/suite/v1/` are labeled by `rust/src/native_solver/`, a clean-room Rust solver that scores every move of a position exactly (validated against [Pascal Pons's solver](https://github.com/PascalPons/connect4) on 228,041 positions; [report](docs/native-solver.md)). A position and its mirror image always land in the same split, so nothing the network trains on can leak into the score. Training never calls the solver.
 
 ## Develop
 
 ```sh
-mise run check
+mise run check   # Ruff, ty, Rust tests, Python tests
+mise run plot    # redraw the README figures
+mise run hero    # re-render the hero animation from the final model
 ```
 
-`check` runs Ruff (lint and format), ty, the Rust tests and the Python tests. CI runs `mise run ci`, which adds the smoke training run. See [docs/development.md](docs/development.md) for the tooling details.
+CI runs `mise run ci`, which adds a smoke training run. [docs/development.md](docs/development.md) covers the tooling, every training option, and the remaining tasks.

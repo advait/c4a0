@@ -15,6 +15,21 @@ The second target, optimal play, is close but not reached. The best self-play-on
 
 Keeping the result reaches 99% on test. Strict optimal-move accuracy sits near 97%, limited by opening positions: 48 of the roughly 57 remaining dev misses are at plies 0 to 11. No solver labels are used in training; the solver only labels the evaluation suites.
 
+### The path there
+
+This table used to open the README. Each row is the mean of two independent runs:
+
+| Configuration | Generations | MCTS-256 move keeps the result | MCTS-64 picks the solver's best move |
+|---|---|---|---|
+| Original search, 1x32 network | 20 | not measured | 57% (and falling) |
+| PUCT search | 20 | not measured | 81% |
+| + root noise, replay 4, 2,048 games | 20 | not measured | 88% |
+| + replay 8, 60 generations | 60 | 96.5% | 89% |
+| + 4x64 network, search-value targets, random starts | 41 | **98.0%** | 93% |
+| + MCTS-Solver | 20 | 97.4% (96.5% without it at generation 20) | 94% |
+
+Conv heads, an 8x64 trunk and cosine-annealed training then produced the agent above.
+
 ## How the experiments were judged
 
 The target is MCTS move selection, not the raw network. The network is only the estimator that guides search.

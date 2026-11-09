@@ -95,7 +95,7 @@ depends = ["build"]
 run = "uv run --locked python src/c4a0/main.py train"
 
 [tasks.play]
-description = "Play the latest trained model in the TUI (or pass --model uniform|random)"
+description = "Play the shipped final model in the TUI (or pass --model latest|uniform|random|<path>)"
 depends = ["build"]
 run = "uv run --locked python src/c4a0/main.py play"
 
