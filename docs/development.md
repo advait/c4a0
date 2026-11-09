@@ -11,8 +11,7 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `rust/src/self_play.rs` | Multi-threaded self-play, batched network calls, the per-run evaluation cache, random starts. |
 | `rust/src/analysis.rs` | Single-threaded, batched MCTS over caller-supplied positions, used by evaluation. |
 | `rust/src/labels.rs` | Mirror-canonical position keys, the dev/test/train split, the position sampler. |
-| `rust/src/solver.rs` | Strict stdin/stdout protocol for Pascal Pons's solver. |
-| `rust/src/native_solver/`, `rust/src/bin/c4native.rs` | A clean-room Rust solver with its own opening book, a benchmark, and a diff harness against Pons. Not wired into labeling. See [native-solver.md](native-solver.md). |
+| `rust/src/native_solver/`, `rust/src/bin/c4native.rs` | The clean-room solver that labels every position, its self-generated opening book, and a benchmark. See [native-solver.md](native-solver.md). |
 | `rust/src/pybridge.rs` | The PyO3 API. Its stubs are `src/c4a0_rust/__init__.pyi`. |
 | `rust/src/tui.rs`, `rust/src/interactive_play.rs` | The terminal UI behind `mise run play`. |
 | `src/c4a0/nn.py` | The residual network with AlphaZero-style policy and value heads, its loss and the inference callback. |
@@ -35,9 +34,8 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `check` | Ruff lint and format check, ty, Rust tests, Python tests. Run it before every commit. |
 | `ci` | `check` plus `train:smoke`. CI runs this on every push. |
 | `train:smoke` | One tiny CPU run through self-play, annealed training, saving and evaluation. |
-| `suite:build` | Rebuilds the committed suites. Needs the solver in `solver/`. |
-| `solver:native:build`, `solver:native:book` | Build the native solver and its ply-10 opening book in `native-solver/` (gitignored). |
-| `solver:diff` | Compares the native solver against Pons and adjudicates every disagreement. Set `C4A0_SOLVER` and `C4A0_BOOK` to the Pons binary and book. |
+| `suite:build` | Rebuilds the committed suites byte for byte. Needs no setup or book. |
+| `solver:build`, `solver:book` | Build the solver CLI and its ply-10 opening book in `native-solver/` (gitignored, about 22 min once). `main.py label` needs the book. |
 | `install`, `build` | `uv sync --locked`, then `maturin develop --release`. |
 
 ## Tooling
@@ -92,7 +90,8 @@ recorded in each generation's metadata and `eval` rescoring reuses it; mirror av
 an existing model with them, call `evaluate_model(..., leaf_minimax_depth=D)` on a copy whose
 `mirror_inference` attribute is set.
 
-`ceiling` trains the same network on solver labels. Its defaults match `train`: 8x64 and
+`label` samples train-split positions and labels them with the solver; build the book first
+with `mise run solver:book`. `ceiling` trains the same network on solver labels. Its defaults match `train`: 8x64 and
 `--anneal-epochs 40` (0 early-stops on dev loss with `--max-epochs` and `--patience`). Its
 `report.json` records the model configuration under `net` and the parameter count under
 `parameter_count`. Use genuine train-split labels and at least three seeds per arm. Judge

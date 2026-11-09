@@ -8,6 +8,7 @@ import pytest
 from c4a0.evaluation import tally_policy, top1_credit
 from c4a0.labels import (
     BUCKET_NAMES,
+    DEFAULT_BOOK,
     SUITE_V1,
     Split,
     format_labels,
@@ -16,8 +17,7 @@ from c4a0.labels import (
     suite_path,
 )
 
-SOLVER = Path(__file__).resolve().parents[2] / "solver" / "c4solver"
-BOOK = SOLVER.with_name("7x6.book")
+BOOK = Path(__file__).resolve().parents[2] / DEFAULT_BOOK
 SPLITS = [Split.DEV, Split.TEST]
 
 
@@ -64,8 +64,12 @@ def test_dev_and_test_share_no_move_strings() -> None:
     assert not dev & test
 
 
-@pytest.mark.skipif(not SOLVER.is_file(), reason="solver not built in solver/")
+# Without the book a split takes about 3.5 min on 32 cores; `mise run suite:build` then
+# `git diff --exit-code src/c4a0/suite` checks the same thing bookless.
+@pytest.mark.skipif(
+    not BOOK.is_file(), reason="no native solver book (mise run solver:book)"
+)
 @pytest.mark.parametrize("split", SPLITS)
 def test_suite_rebuilds_byte_for_byte(split: Split) -> None:
-    labels = label(SUITE_V1[split], str(SOLVER), str(BOOK), n_procs=16)
+    labels = label(SUITE_V1[split], BOOK)
     assert format_labels(labels) == suite_path(split).read_text()

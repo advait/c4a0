@@ -14,8 +14,8 @@ use crate::{
     analysis::search_positions,
     c4r::{Move, Pos},
     labels::{moves_string, parse_moves, sample_positions, Split},
+    native_solver::{book::Book, label::label_moves, parallel::default_threads},
     self_play::{self_play, SelfPlayOptions},
-    solver::solve_parallel,
     tui,
     types::{EvalPosResult, EvalPosT, GameMetadata, GameResult, ModelID, Sample},
 };
@@ -358,10 +358,11 @@ pub fn mcts_policies<'py>(
         .into_pyarray(py))
 }
 
-/// Samples positions in `split` ([sample_positions]) and labels them with Pons's solver
-/// ([solve_parallel]). Returns (moves, scores) rows: 0-indexed move strings and seven scores per
+/// Samples positions in `split` ([sample_positions]) and labels them with the native solver
+/// ([label_moves]) on `threads` workers (default: every core), reading the opening book at
+/// `book_path` if given. Returns (moves, scores) rows: 0-indexed move strings and seven scores per
 /// row, None for full columns.
-#[pyfunction]
+#[pyfunction(signature = (split, first_ply, last_ply, per_ply, seed, book_path=None, threads=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn label_positions(
     py: Python<'_>,
@@ -370,17 +371,23 @@ pub fn label_positions(
     last_ply: usize,
     per_ply: usize,
     seed: u64,
-    solver_path: String,
-    book_path: String,
-    n_procs: usize,
+    book_path: Option<String>,
+    threads: Option<usize>,
 ) -> PyResult<Vec<(String, Vec<Option<i8>>)>> {
     let split = Split::parse(split).map_err(PyValueError::new_err)?;
     py.detach(move || {
+        let book = book_path
+            .map(|p| {
+                Book::load(std::path::Path::new(&p))
+                    .map_err(|e| PyValueError::new_err(format!("book {}: {}", p, e)))
+            })
+            .transpose()?;
         let sampled = sample_positions(split, first_ply..=last_ply, per_ply, seed)
             .map_err(|e| PyValueError::new_err(e.to_string()))?;
         let moves: Vec<Vec<Move>> = sampled.into_iter().map(|s| s.moves).collect();
-        let scores = solve_parallel(&solver_path, &book_path, &moves, n_procs)
-            .map_err(|e| PyRuntimeError::new_err(e.to_string()))?;
+        let threads = threads.unwrap_or_else(default_threads).max(1);
+        let scores =
+            label_moves(&moves, book.as_ref(), threads).map_err(PyRuntimeError::new_err)?;
         Ok(moves
             .iter()
             .zip(scores)

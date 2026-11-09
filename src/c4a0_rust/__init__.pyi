@@ -98,11 +98,12 @@ def label_positions(
     last_ply: int,
     per_ply: int,
     seed: int,
-    solver_path: str,
-    book_path: str,
-    n_procs: int,
+    book_path: str | None = None,
+    threads: int | None = None,
 ) -> list[tuple[str, list[int | None]]]:
-    """Samples positions in `split` and labels them with Pons scores (None = full column)."""
+    """Samples positions in `split` and labels them with the native solver (None = full column).
+    `book_path` is an opening book from `mise run solver:book`; it only speeds early plies.
+    `threads` defaults to every core."""
     ...
 
 def run_tui(

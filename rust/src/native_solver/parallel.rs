@@ -9,14 +9,14 @@ use super::board::{Board, WIDTH};
 use super::book::Book;
 use super::search::Searcher;
 use super::tt::Tt;
-use crate::solver::MoveScores;
+use super::MoveScores;
 
 /// The machine's available parallelism, or 1 if unknown.
 pub fn default_threads() -> usize {
     std::thread::available_parallelism().map_or(1, |n| n.get())
 }
 
-/// Analyzes every non-terminal board like `c4solver -a`, on `threads` workers. `progress` is
+/// Scores every column of every non-terminal board, on `threads` workers. `progress` is
 /// called with the number of finished columns after each one, from worker threads.
 pub fn analyze_batch(
     boards: &[Board],
@@ -112,7 +112,7 @@ mod tests {
     use crate::native_solver::suite_rows;
 
     #[test]
-    fn batch_matches_committed_pons_scores_at_any_thread_count() {
+    fn batch_matches_committed_suite_scores_at_any_thread_count() {
         let rows: Vec<_> = suite_rows("test")
             .into_iter()
             .filter(|r| r.moves.len() >= 18)

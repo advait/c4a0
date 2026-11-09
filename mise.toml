@@ -83,7 +83,7 @@ run = [
 # Solver labels
 
 [tasks."suite:build"]
-description = "Rebuild the committed v1 dev/test solver suites (needs solver/ built per the README)"
+description = "Rebuild the committed v1 dev/test solver suites (byte-identical; no book needed)"
 depends = ["build"]
 run = "uv run --locked python src/c4a0/main.py build-suite"
 
@@ -137,17 +137,17 @@ timeout 900 uv run --locked python src/c4a0/main.py train \
   --max-gens 1
 '''
 
-# Native solver (rust/src/native_solver). Pons stays the project's solver until the coordinator
-# switches; these tasks build, book and check the native one against it.
+# Solver (rust/src/native_solver). Labeling runs in process and needs no setup; the opening book
+# only speeds large `main.py label` jobs.
 
-[tasks."solver:native:build"]
-description = "Build the native solver CLI (rust/target/release/c4native)"
+[tasks."solver:build"]
+description = "Build the solver CLI (rust/target/release/c4native)"
 dir = "{{config_root}}/rust"
 run = "cargo build --release --bin c4native"
 
-[tasks."solver:native:book"]
-description = "Generate the native solver's opening book with the native solver (ply 10: about 22 min on 32 cores; skipped if present)"
-depends = ["solver:native:build"]
+[tasks."solver:book"]
+description = "Generate the solver's opening book for `main.py label` (ply 10: about 22 min on 32 cores; skipped if present)"
+depends = ["solver:build"]
 run = '''
 ply="${C4NATIVE_BOOK_PLY:-10}"
 book="native-solver/book-ply$ply.bin"
@@ -156,16 +156,4 @@ mkdir -p native-solver
 timeout 7200 nice -n 10 rust/target/release/c4native book --ply "$ply" --tt-mb "${C4NATIVE_BOOK_TT_MB:-8192}" --out "$book.tmp"
 mv "$book.tmp" "$book"
 sha256sum "$book"
-'''
-
-[tasks."solver:diff"]
-description = "Diff the native solver against Pons on seeded samples and the committed suites, adjudicate every disagreement, write native-solver/diff-seed<S>/ (needs Pons per the README)"
-depends = ["solver:native:book"]
-run = '''
-timeout 7200 rust/target/release/c4native diff \
-  --pons "${C4A0_SOLVER:-solver/c4solver}" --pons-book "${C4A0_BOOK:-solver/7x6.book}" \
-  --book "native-solver/book-ply${C4NATIVE_BOOK_PLY:-10}.bin" \
-  --per-ply "${DIFF_PER_PLY:-1000}" --seed "${DIFF_SEED:-1}" --tt-mb "${DIFF_TT_MB:-2048}" \
-  --suite src/c4a0/suite/v1/dev.tsv --suite src/c4a0/suite/v1/test.tsv \
-  --out "native-solver/diff-seed${DIFF_SEED:-1}"
 '''

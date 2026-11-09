@@ -1,17 +1,26 @@
-//! A clean-room Connect Four solver, written without reference to Pascal Pons's source, to check
-//! and eventually replace the external solver in [crate::solver]. Scores follow the Pons `-a`
-//! convention so the two compare directly: per column, from the side to move, a win with the
-//! winner's k-th stone scores 22 - k for the winner (so faster wins are larger), a draw scores 0,
-//! and a full column is None.
+//! The project's Connect Four solver: it labels every suite and training position
+//! ([label::label_moves]). Written clean-room, without reference to Pascal Pons's source, it was
+//! validated against Pons's `c4solver -a` as a black-box oracle on 228,041 positions with zero
+//! disagreements before it replaced Pons (docs/native-solver.md). Scores keep that convention, so
+//! stored labels are unchanged: per column, from the side to move, a win with the winner's k-th
+//! stone scores 22 - k for the winner (so faster wins are larger), a draw scores 0, and a full
+//! column is None.
 //!
 //! [board::Board] is the search position, [brute] the exhaustive cross-check over [crate::c4r::Pos].
+
+use crate::c4r::Pos;
+
+/// Scores for playing each column, from the mover's view: positive wins (larger is faster), zero
+/// draws, negative loses. None marks a full column.
+pub type MoveScores = [Option<i8>; Pos::N_COLS];
 
 pub mod bench;
 pub mod board;
 pub mod book;
 pub mod brute;
-pub mod diff;
+pub mod label;
 pub mod parallel;
+pub mod sample;
 pub mod search;
 pub mod tt;
 
@@ -22,8 +31,8 @@ pub use tests::{live_pos, suite_rows};
 mod tests {
     use proptest::prelude::*;
 
+    use super::MoveScores;
     use crate::c4r::{Move, Pos};
-    use crate::solver::MoveScores;
 
     prop_compose! {
         /// A non-terminal position with up to `max_ply` stones: plays each listed column if it is
@@ -51,7 +60,7 @@ mod tests {
         pub scores: MoveScores,
     }
 
-    /// Rows of a committed suite (`dev` or `test`): 0-indexed moves and Pons scores.
+    /// Rows of a committed suite (`dev` or `test`): 0-indexed moves and their stored scores.
     pub fn suite_rows(split: &str) -> Vec<SuiteRow> {
         let path = format!(
             "{}/../src/c4a0/suite/v1/{}.tsv",

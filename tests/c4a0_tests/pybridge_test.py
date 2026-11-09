@@ -9,9 +9,6 @@ from numpy.typing import NDArray
 import c4a0_rust
 from c4a0_rust import N_COLS
 
-SOLVER = Path(__file__).resolve().parents[2] / "solver" / "c4solver"
-BOOK = SOLVER.with_name("7x6.book")
-
 
 def _uniform_eval(
     _model_id: int, pos: NDArray[np.float32]
@@ -167,18 +164,23 @@ def test_mcts_policies_rejects_wrong_callback_shapes() -> None:
         c4a0_rust.mcts_policies(["3"], 8, 4.0, 0.01, short_eval)
 
 
-@pytest.mark.skipif(not SOLVER.is_file(), reason="solver not built in solver/")
 def test_label_positions_rows_are_in_split_and_solved() -> None:
-    rows = c4a0_rust.label_positions("dev", 10, 12, 4, 7, str(SOLVER), str(BOOK), 2)
-    assert [len(m) for m, _ in rows] == [10] * 4 + [11] * 4 + [12] * 4
+    rows = c4a0_rust.label_positions("dev", 24, 26, 4, 7)
+    assert [len(m) for m, _ in rows] == [24] * 4 + [25] * 4 + [26] * 4
     for _moves, scores in rows:
         assert len(scores) == N_COLS
         assert any(s is not None for s in scores)
+    assert c4a0_rust.label_positions("dev", 24, 26, 4, 7, threads=1) == rows
 
 
-def test_label_positions_rejects_unknown_split() -> None:
+def test_label_positions_rejects_unknown_split_and_bad_book(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
-        c4a0_rust.label_positions("val", 0, 1, 1, 0, "x", "y", 1)
+        c4a0_rust.label_positions("val", 0, 1, 1, 0)
+    with pytest.raises(ValueError, match="missing.bin"):
+        c4a0_rust.label_positions("dev", 30, 30, 1, 0, str(tmp_path / "missing.bin"))
+    (tmp_path / "bad.bin").write_bytes(b"not a book")
+    with pytest.raises(ValueError, match="not a native solver book"):
+        c4a0_rust.label_positions("dev", 30, 30, 1, 0, str(tmp_path / "bad.bin"))
 
 
 def test_nan_value_from_callback_raises_instead_of_panicking() -> None:

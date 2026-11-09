@@ -8,7 +8,6 @@ mod minimax;
 pub mod native_solver;
 mod pybridge;
 mod self_play;
-pub mod solver;
 mod tui;
 mod types;
 mod utils;

@@ -12,7 +12,7 @@ from c4a0_tests.labels_test import make_labels
 @pytest.mark.parametrize(
     "moves, score, ply, want",
     [
-        # Empty board, Pons best 1: the first player wins with their last stone, ply 41.
+        # Empty board, best 1: the first player wins with their last stone, ply 41.
         ("", 1, 0, 41),
         # "010101", best 18: the mover completes four in column 0 now.
         ("010101", 18, 6, 7),
@@ -28,7 +28,7 @@ from c4a0_tests.labels_test import make_labels
         ("1020406", -17, 7, 9),
     ],
 )
-def test_terminal_ply_matches_golden_pons_rows(
+def test_terminal_ply_matches_golden_solver_rows(
     moves: str, score: int, ply: int, want: int
 ) -> None:
     assert len(moves) == ply

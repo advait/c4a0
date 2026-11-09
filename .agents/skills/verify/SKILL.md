@@ -30,7 +30,7 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
 - Leaf minimax (`--leaf-minimax-depth`, `rust/src/minimax.rs`, default 0 = off) is an exact
   depth-limited alpha-beta over the rules, never a solver or book. `minimax.rs` checks every
   proof and every "unknown" against brute force on late random positions at every depth, and
-  against the dev suite's Pons scores at depths 1-8. `mcts.rs` checks proven roots at once with
+  against the dev suite's solver scores at depths 1-8. `mcts.rs` checks proven roots at once with
   exact distances, proofs one ply past the root's horizon via child searches, games from proven
   roots ending at the proven ply, and depth 0 matching plain search. Per-call cost:
   `cargo test --release minimax_cost -- --ignored --nocapture` in `rust/`.
@@ -76,8 +76,12 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
 - Raw-network dev eval of the historical 1x32 model (2447 positions, suite load through `SuiteEval`)
   took a median 0.15 s (0.148 to 0.166 s, 3 runs, load average 5, 16 torch threads); the
   forward pass is about 0.08 s of it. MCTS-64 on the dev suite took 1.7 s (one run).
-- Solver-gated tests (golden rows, suite rebuild) run when `solver/c4solver` and
-  `solver/7x6.book` exist and skip otherwise.
+- The solver (`rust/src/native_solver/`) is checked in `cargo test` against brute force on late
+  positions and against the committed suites from ply 20 on. Book-gated tests (the ply 0-1
+  `OPENINGS` rows, byte-for-byte suite rebuilds) run when `native-solver/book-ply10.bin` exists
+  (`mise run solver:book`, about 22 min once) and skip otherwise. Without the book,
+  `mise run suite:build` then `git diff --exit-code src/c4a0/suite` checks the rebuild in
+  about 8 min on 32 cores (both splits, measured once).
 
 ## Lane 2: end to end (seconds to minutes)
 
@@ -144,7 +148,8 @@ Requirements before a convergence number counts:
    train-split labels and optimizer settings over at least 3 seeds. `ceiling` defaults
    match `train` (8x64, annealed, here 40 epochs). Read `report.json`'s `net` and
    `parameter_count` before comparing. Labels repackaged from dev are ineligible. Building genuine train
-   labels needs Pascal Pons's solver in `solver/` with `7x6.book`, per the README.
+   labels needs the solver's opening book (`mise run solver:book`), which `label` reads from
+   `native-solver/book-ply10.bin`.
 3. **Variance.** Use at least 3 seeds per arm. A single run is an anecdote. The README's
    9-generation result is one.
 4. **Scale.** On CPU, self-play scales roughly with games × MCTS iterations (inferred from

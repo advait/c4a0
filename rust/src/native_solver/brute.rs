@@ -4,10 +4,10 @@
 
 use std::collections::HashMap;
 
+use super::MoveScores;
 use crate::c4r::{CellValue, Pos, TerminalState};
-use crate::solver::MoveScores;
 
-/// Exact scores of every column of the non-terminal `pos`, in the Pons convention: a win with
+/// Exact scores of every column of the non-terminal `pos` ([MoveScores]): a win with
 /// the winner's k-th stone scores 22 - k for the winner, a draw 0, and a full column None.
 pub fn analyze(pos: &Pos) -> MoveScores {
     assert!(pos.is_terminal_state().is_none(), "terminal position");
@@ -85,9 +85,9 @@ mod tests {
         assert_eq!(analyze(&pos), [None, None, None, None, None, None, Some(0)]);
     }
 
-    /// The committed suites hold Pons scores; brute force must reproduce every late row.
+    /// Brute force must reproduce every late row of the committed suite.
     #[test]
-    fn matches_committed_pons_scores_on_late_suite_rows() {
+    fn matches_committed_suite_scores_on_late_suite_rows() {
         let rows: Vec<_> = suite_rows("dev")
             .into_iter()
             .filter(|r| r.moves.len() >= 37)

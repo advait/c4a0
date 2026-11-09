@@ -89,7 +89,8 @@ class SuiteEval(BaseModel):
 
 
 # Plies 0 and 1 have 5 mirror classes, all in the train split, so no held-out suite can contain
-# them. They are checked here separately. Scores are `c4solver -a` output for "" and "1".."7".
+# them. They are checked here separately. Scores are the solver's for "" and "1".."7" (recorded
+# from Pons's `c4solver -a`; the native solver reproduces them, see evaluation_test.py).
 OPENINGS = Labels(
     recipe=Recipe(version=1, split=Split.TRAIN, seed=0, per_ply=0, plies=(0, 1)),
     moves=tuple(Moves(m) for m in ("", "0", "1", "2", "3", "4", "5", "6")),
