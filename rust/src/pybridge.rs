@@ -11,7 +11,7 @@ use pyo3::{
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    analysis::search_positions,
+    analysis::{search_positions, search_roots},
     c4r::{Move, Pos},
     labels::{moves_string, parse_moves, sample_positions, Split},
     self_play::{self_play, SelfPlayOptions},
@@ -356,6 +356,68 @@ pub fn mcts_policies<'py>(
     Ok(Array2::from_shape_vec((policies.len(), Pos::N_COLS), flat)
         .expect("policy buffer shape")
         .into_pyarray(py))
+}
+
+/// [mcts_policies], also returning each root's (q_penalty, q_no_penalty), shapes (N,) each: a
+/// deeper search's value targets for distilling it into the network.
+#[pyfunction(signature = (moves, n_mcts_iterations, c_exploration, c_ply_penalty, py_eval_pos_cb, leaf_minimax_depth=0))]
+#[allow(clippy::type_complexity)]
+pub fn mcts_search<'py>(
+    py: Python<'py>,
+    moves: Vec<String>,
+    n_mcts_iterations: usize,
+    c_exploration: f32,
+    c_ply_penalty: f32,
+    py_eval_pos_cb: &Bound<'py, PyAny>,
+    leaf_minimax_depth: usize,
+) -> PyResult<(
+    Bound<'py, PyArray2<f32>>,
+    Bound<'py, PyArray1<f32>>,
+    Bound<'py, PyArray1<f32>>,
+)> {
+    let roots = parse_all(&moves)?;
+    if let Some(i) = roots.iter().position(|p| p.is_terminal_state().is_some()) {
+        return Err(PyValueError::new_err(format!(
+            "{:?}: cannot search a finished game",
+            moves[i]
+        )));
+    }
+    if n_mcts_iterations < 2 {
+        return Err(PyValueError::new_err(
+            "n_mcts_iterations must be at least 2",
+        ));
+    }
+    let searched = search_roots(
+        |batch| call_eval_cb(py, py_eval_pos_cb, 0, &batch),
+        &roots,
+        n_mcts_iterations,
+        c_exploration,
+        c_ply_penalty,
+        leaf_minimax_depth,
+    )?;
+    let flat: Vec<f32> = searched.iter().flat_map(|r| r.policy).collect();
+    let policies = Array2::from_shape_vec((searched.len(), Pos::N_COLS), flat)
+        .expect("policy buffer shape")
+        .into_pyarray(py);
+    let q_penalty = Array1::from_iter(searched.iter().map(|r| r.q_penalty)).into_pyarray(py);
+    let q_no_penalty = Array1::from_iter(searched.iter().map(|r| r.q_no_penalty)).into_pyarray(py);
+    Ok((policies, q_penalty, q_no_penalty))
+}
+
+/// Samples positions in `split` ([sample_positions]) without labeling them: 0-indexed move
+/// strings, up to `per_ply` per ply in `first_ply..=last_ply`.
+#[pyfunction]
+pub fn sample_split_positions(
+    split: &str,
+    first_ply: usize,
+    last_ply: usize,
+    per_ply: usize,
+    seed: u64,
+) -> PyResult<Vec<String>> {
+    let split = Split::parse(split).map_err(PyValueError::new_err)?;
+    let sampled = sample_positions(split, first_ply..=last_ply, per_ply, seed)
+        .map_err(|e| PyValueError::new_err(e.to_string()))?;
+    Ok(sampled.iter().map(|s| moves_string(&s.moves)).collect())
 }
 
 /// Samples positions in `split` ([sample_positions]) and labels them with Pons's solver

@@ -7,6 +7,7 @@ import pytest
 from numpy.typing import NDArray
 
 import c4a0_rust
+from c4a0.labels import Split, load_suite
 from c4a0_rust import N_COLS
 
 SOLVER = Path(__file__).resolve().parents[2] / "solver" / "c4solver"
@@ -338,3 +339,32 @@ def test_bulk_empty_and_invalid_split() -> None:
     for fraction in [-0.1, 1.1, float("nan")]:
         with pytest.raises(ValueError, match="train_frac"):
             games.split_train_test_numpy(fraction, 1337)
+
+
+def test_mcts_search_matches_mcts_policies_and_returns_exact_proven_q() -> None:
+    roots = ["", "33", "2453645131230"]
+    policies, q_penalty, q_no_penalty = c4a0_rust.mcts_search(
+        roots, 64, 2.0, 0.01, _uniform_eval, leaf_minimax_depth=5
+    )
+    np.testing.assert_array_equal(
+        policies,
+        c4a0_rust.mcts_policies(
+            roots, 64, 2.0, 0.01, _uniform_eval, leaf_minimax_depth=5
+        ),
+    )
+    assert q_penalty.shape == q_no_penalty.shape == (3,)
+    # The last root is a proven win: an exact win without penalty, discounted with it.
+    assert q_no_penalty[2] == 1.0
+    assert 0.0 < q_penalty[2] < 1.0
+
+
+def test_sample_split_positions_stays_out_of_held_out_suites() -> None:
+    def canonical(moves: list[str]) -> set[bytes]:
+        boards = c4a0_rust.encode_positions(moves)
+        return {min(b.tobytes(), b[..., ::-1].copy().tobytes()) for b in boards}
+
+    sampled = c4a0_rust.sample_split_positions("train", 0, 8, 200, 3)
+    assert len(sampled) == len(set(sampled)) > 200
+    assert all(len(m) <= 8 for m in sampled)
+    held_out = load_suite(Split.DEV).labels.moves + load_suite(Split.TEST).labels.moves
+    assert not canonical(sampled) & canonical([m for m in held_out if len(m) <= 8])

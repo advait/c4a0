@@ -17,13 +17,48 @@ use crate::{
 /// deterministic evaluator. No root noise and no temperature. `leaf_minimax_depth` > 0 searches
 /// each leaf that exactly before evaluating it ([MctsGame::with_leaf_minimax_depth]).
 pub fn search_positions<F, E>(
-    mut eval: F,
+    eval: F,
     roots: &[Pos],
     n_iterations: usize,
     c_exploration: f32,
     c_ply_penalty: f32,
     leaf_minimax_depth: usize,
 ) -> Result<Vec<Policy>, E>
+where
+    F: FnMut(Vec<Pos>) -> Result<Vec<EvalPosResult>, E>,
+{
+    Ok(search_roots(
+        eval,
+        roots,
+        n_iterations,
+        c_exploration,
+        c_ply_penalty,
+        leaf_minimax_depth,
+    )?
+    .into_iter()
+    .map(|root| root.policy)
+    .collect())
+}
+
+/// A searched root: its visit policy and its (q_penalty, q_no_penalty), the MCTS mean or the exact
+/// value once proven ([MctsGame::root_q]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchedRoot {
+    pub policy: Policy,
+    pub q_penalty: f32,
+    pub q_no_penalty: f32,
+}
+
+/// [search_positions], also returning each root's Q: the targets a deeper search gives for
+/// distilling it into the network.
+pub fn search_roots<F, E>(
+    mut eval: F,
+    roots: &[Pos],
+    n_iterations: usize,
+    c_exploration: f32,
+    c_ply_penalty: f32,
+    leaf_minimax_depth: usize,
+) -> Result<Vec<SearchedRoot>, E>
 where
     F: FnMut(Vec<Pos>) -> Result<Vec<EvalPosResult>, E>,
 {
@@ -80,7 +115,17 @@ where
         }
     }
 
-    Ok(games.iter().map(|g| g.root_policy()).collect())
+    Ok(games
+        .iter()
+        .map(|g| {
+            let (q_penalty, q_no_penalty) = g.root_q(c_ply_penalty);
+            SearchedRoot {
+                policy: g.root_policy(),
+                q_penalty,
+                q_no_penalty,
+            }
+        })
+        .collect())
 }
 
 #[cfg(test)]
@@ -134,6 +179,19 @@ mod tests {
             let single = search_positions(hashed, std::slice::from_ref(root), 64, 4.0, 0.01, 0);
             assert_eq!(&single.unwrap()[0], got);
         }
+    }
+
+    #[test]
+    fn searched_roots_carry_the_policy_and_mean_q() {
+        let roots = roots();
+        let searched = search_roots(hashed, &roots, 64, 4.0, 0.01, 0).unwrap();
+        let policies = search_positions(hashed, &roots, 64, 4.0, 0.01, 0).unwrap();
+        for (root, policy) in searched.iter().zip(&policies) {
+            assert_eq!(&root.policy, policy);
+            assert!(root.q_penalty.abs() <= 1.0 && root.q_no_penalty.abs() <= 1.0);
+        }
+        // Duplicate roots search identically, so their Q agrees too.
+        assert_eq!(searched[1], searched[3]);
     }
 
     #[test]

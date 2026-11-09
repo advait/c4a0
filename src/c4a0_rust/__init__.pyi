@@ -92,6 +92,24 @@ def mcts_policies(
     `leaf_minimax_depth` > 0 proves leaves by exact search to that depth before evaluation."""
     ...
 
+def mcts_search(
+    moves: Sequence[str],
+    n_mcts_iterations: int,
+    c_exploration: float,
+    c_ply_penalty: float,
+    py_eval_pos_cb: EvalPosCb,
+    leaf_minimax_depth: int = 0,
+) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]:
+    """`mcts_policies` plus each root's (q_penalty, q_no_penalty), shapes (N,): the MCTS mean,
+    or the exact value once the search proves the root."""
+    ...
+
+def sample_split_positions(
+    split: str, first_ply: int, last_ply: int, per_ply: int, seed: int
+) -> list[str]:
+    """Unlabeled positions in `split`: up to `per_ply` move strings per ply."""
+    ...
+
 def label_positions(
     split: str,
     first_ply: int,

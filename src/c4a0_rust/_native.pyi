@@ -29,8 +29,14 @@ from . import (
     mcts_policies as mcts_policies,
 )
 from . import (
+    mcts_search as mcts_search,
+)
+from . import (
     play_games as play_games,
 )
 from . import (
     run_tui as run_tui,
+)
+from . import (
+    sample_split_positions as sample_split_positions,
 )
