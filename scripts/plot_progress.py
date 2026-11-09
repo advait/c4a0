@@ -5,8 +5,7 @@ Usage: uv run python scripts/plot_progress.py
 Writes images/training-progress-light.svg and images/training-progress-dark.svg: the best
 self-play run's dev-suite accuracy per generation (left axis), over the self-play games it has
 played so far (right axis, a recessive context area rather than a second measure to compare).
-Line colors are the dataviz reference categorical slots in fixed order, stepped separately for
-the light and dark surfaces.
+Colors and fonts come from figure_theme, shared with the hero GIF and the network diagram.
 """
 
 import json
@@ -15,37 +14,26 @@ from pathlib import Path
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+from figure_theme import THEMES, font_file
+from matplotlib.font_manager import fontManager
+from matplotlib.patches import Patch
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "docs/data/training-progress.json"
 
-THEMES = {
-    "light": {
-        "surface": "#fcfcfb",
-        "ink": "#0b0b0b",
-        "ink2": "#52514e",
-        "muted": "#8a897f",
-        "grid": "#e7e6e1",
-        "area": "#ecebe6",
-        "series": ["#2a78d6", "#eb6834", "#1baf7a"],
-    },
-    "dark": {
-        "surface": "#1a1a19",
-        "ink": "#f0efec",
-        "ink2": "#c3c2b7",
-        "muted": "#8f8e86",
-        "grid": "#2e2e2c",
-        "area": "#262624",
-        "series": ["#3987e5", "#d95926", "#199e70"],
-    },
-}
-
-# (data key, legend label), in the fixed categorical order.
+# (theme color, data key, legend label), in the fixed categorical order.
 LINES = [
-    ("mcts256_strict_leaf10", "Network + MCTS-256 + 10-ply exact leaf search"),
-    ("mcts256_strict", "Network + MCTS-256"),
-    ("raw_strict", "Network alone (policy argmax)"),
+    ("blue", "mcts256_strict_leaf10", "Network + MCTS-256 + 10-ply exact leaf search"),
+    ("orange", "mcts256_strict", "Network + MCTS-256"),
+    ("green", "raw_strict", "Network alone (policy argmax)"),
 ]
+
+
+for bold in (
+    False,
+    True,
+):  # the exact bundled files figure_theme names, not a system lookup
+    fontManager.addfont(str(font_file(bold=bold)))
 
 
 def render(theme_name: str) -> Path:
@@ -56,16 +44,17 @@ def render(theme_name: str) -> Path:
     plt.rcParams.update(
         {
             "font.family": "DejaVu Sans",
-            "font.size": 10,
+            "font.size": 12,
             "axes.edgecolor": t["grid"],
             "axes.labelcolor": t["ink2"],
             "xtick.color": t["ink2"],
             "ytick.color": t["ink2"],
-            "svg.fonttype": "none",
+            "svg.fonttype": "path",
         }
     )
-    fig, ax = plt.subplots(figsize=(9, 4.8), facecolor=t["surface"])
-    fig.subplots_adjust(left=0.08, right=0.84, top=0.8, bottom=0.12)
+    # 980 x 540 units, the network diagram's canvas, so both scale identically in the README.
+    fig, ax = plt.subplots(figsize=(980 / 72, 540 / 72), facecolor=t["surface"])
+    fig.subplots_adjust(left=0.07, right=0.86, top=0.8, bottom=0.11)
 
     # Context layer on the right axis: experience accumulated by self-play.
     games = ax.twinx()
@@ -94,10 +83,10 @@ def render(theme_name: str) -> Path:
     ax.set_xlim(0, gens.max())
     ax.set_xlabel("Generation")
 
-    for color, (key, label) in zip(t["series"], LINES, strict=True):
+    for color, key, label in LINES:
         points = [(r["gen"], r[key] * 100) for r in rows if r.get(key) is not None]
         x, y = np.array(points).T
-        ax.plot(x, y, color=color, linewidth=2, label=label, solid_capstyle="round")
+        ax.plot(x, y, color=t[color], linewidth=2, label=label, solid_capstyle="round")
         ax.annotate(
             f"{y[-1]:.1f}%",
             (x[-1], y[-1]),
@@ -105,28 +94,35 @@ def render(theme_name: str) -> Path:
             textcoords="offset points",
             va="center",
             color=t["ink"],
-            fontsize=9,
+            fontsize=12,
             annotation_clip=False,
         )
 
     fig.text(
-        0.08,
-        0.93,
+        24 / 980,
+        1 - 36 / 540,
         "Learning Connect Four from nothing but self-play",
         color=t["ink"],
-        fontsize=14,
+        fontsize=18,
         fontweight="bold",
     )
     fig.text(
-        0.08,
-        0.875,
+        24 / 980,
+        1 - 58 / 540,
         "Share of held-out positions where the move is solver-optimal (fastest win, "
         f"slowest loss). {rows[-1]['hours']:.1f} hours on one shared RTX 3090.",
         color=t["ink2"],
-        fontsize=9.5,
+        fontsize=12.5,
     )
+    area = Patch(
+        facecolor=t["area"],
+        edgecolor=t["muted"],
+        linewidth=0.8,
+        label="Self-play games played (right axis)",
+    )
+    handles = [*ax.get_legend_handles_labels()[0], area]
     legend = ax.legend(
-        loc="lower right", frameon=False, fontsize=9, labelcolor=t["ink2"]
+        handles=handles, loc="lower right", frameon=False, labelcolor=t["ink2"]
     )
     legend.set_zorder(5)
 

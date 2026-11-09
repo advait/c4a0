@@ -115,7 +115,7 @@ These were real defects, each fixed with a test that fails before the fix:
 
 ## What is still open
 
-The final configuration is the default for `mise run train`. These are the most promising next steps:
+The final configuration is the default for `mise train`. These are the most promising next steps:
 
 1. **Openings.** Most remaining misses are at plies 0 to 11 and change the result. Search depth, capacity, data and opening distillation did not move them. An opening curriculum or a value target that sees further ahead is untested.
 2. **Draws.** Drawn positions missed far more often than won positions in the earlier runs. A value head trained mostly on decisive games may not separate "drawn" from "slightly winning".

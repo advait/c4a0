@@ -120,7 +120,7 @@ run = [
 ]
 
 [tasks.hero]
-description = "Regenerate the README hero GIF (images/hero.gif) from models/c4a0-final.pkl and the real search"
+description = "Regenerate the README hero GIFs (images/hero-light.gif, images/hero-dark.gif) from models/c4a0-final.pkl and the real search"
 depends = ["install"]
 run = "uv run --locked python scripts/render_hero.py"
 

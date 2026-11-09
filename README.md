@@ -3,14 +3,17 @@
 ![CI](https://github.com/advait/c4a0/actions/workflows/ci.yaml/badge.svg?ts=2)
 
 <p align="center">
-  <img alt="Animated Connect Four position with Red to move. The network's prior puts 72% on column 4, which loses. Bars standing on each column fill as 256 MCTS iterations run; column 3, the only winning move, takes the lead at iteration 73 and ends with 83% of the visits, which a perfect solver confirms at the end." src="images/hero.gif" width="800">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="images/hero-dark.gif">
+    <img alt="Animated Connect Four position, filled stones to move. The network's prior puts 72% on column 4, which loses. Bars over each column fill as 256 MCTS iterations run; column 3, the only winning move, takes the lead at iteration 73 and ends with 83% of the visits, which a perfect solver confirms at the end." src="images/hero-light.gif" width="800">
+  </picture>
 </p>
 
 **A 605K-parameter network that learns near-perfect Connect Four strictly through self-play.** No human games, no opening book, no solver in the training loop: it starts from random weights, plays itself, and learns from its own search. After 6 hours on one GPU it picks the solver-optimal move (the fastest win, or the slowest loss) in 97% of held-out positions, and keeps the game result (a won position stays won, a drawn one stays drawn) in 99% of them.
 
 **[Play it in your browser at c4a0.advait.lol.](https://c4a0.advait.lol)** The real network runs on your GPU through WebGPU, searching each move with the exact agent from the results table below.
 
-The animation above is the real final network on a real position. Its first instinct, column 4 at 72%, loses. Search tests that instinct one walk down the tree at a time, takes the lead with column 3 at iteration 73, and ends with 83% of its visits on it: the only winning move. That is the whole idea of AlphaZero in one move: a network that guesses, a search that checks, and a training loop that teaches the network to guess what the search found.
+The animation above is the real final network on a real position. Its first instinct, column 4 at 72%, loses. Search tests that instinct one iteration at a time, moves its lead to column 3 at iteration 73, and ends with 83% of its visits there. Column 3 is the only winning move. Training then teaches the network to put its prior where the search ended up.
 
 ## Results
 
@@ -32,27 +35,27 @@ The test split played no part in any decision. Most of the remaining misses are 
 
 ## Try it
 
-Install [mise](https://mise.jdx.dev/getting-started.html), which brings Rust, uv and Python 3.11 for the project, and a C linker (`cc`; on Debian or Ubuntu, `sudo apt install build-essential`). Then, from the repository root:
+Install [mise](https://mise.jdx.dev/getting-started.html), which brings Rust, uv and Python 3.11 for the project. Rust also needs the system C linker `cc` (on Debian or Ubuntu, `sudo apt install build-essential`; on macOS, `xcode-select --install`). Then, from the repository root:
 
 ```sh
 mise trust
 mise install
-mise run play
+mise play
 ```
 
-`play` opens a terminal UI against the final network (`models/c4a0-final.pkl`), searching 1,400 MCTS iterations per move without the optional leaf search or mirror averaging used in the results table. The first run builds the Rust extension and the Python environment; there is no separate build step. `mise run web` serves the browser player locally at http://localhost:8000.
+`play` opens a terminal UI against the final network (`models/c4a0-final.pkl`), searching 1,400 MCTS iterations per move without the optional leaf search or mirror averaging used in the results table. The first run builds the Rust extension and the Python environment; there is no separate build step. `mise web` serves the browser player locally at http://localhost:8000.
 
 ![Terminal UI](images/tui.png)
 
 To train your own from scratch (a GPU is strongly recommended; on Linux the locked PyTorch build includes CUDA):
 
 ```sh
-mise run train                      # resumes from training/ if it exists
-mise run play -- --model latest     # play your newest generation
-mise run report -- training         # score curve per generation
+mise train                      # resumes from training/ if it exists
+mise play -- --model latest     # play your newest generation
+mise report training            # score curve per generation
 ```
 
-`mise run train:smoke` checks the whole loop on a CPU in seconds.
+`mise train:smoke` checks the whole loop on a CPU in seconds. [docs/development.md](docs/development.md) covers the tooling, every training option, and the remaining tasks.
 
 ## How it works
 
@@ -97,13 +100,3 @@ Without the penalty every winning move looks equally good, and search has no rea
 ### The judge
 
 The evaluation suites in `src/c4a0/suite/v1/` are labeled by `rust/src/native_solver/`, a clean-room Rust solver that scores every move of a position exactly (validated against [Pascal Pons's solver](https://github.com/PascalPons/connect4) on 228,041 positions; [report](docs/native-solver.md)). A position and its mirror image always land in the same split, and the supervised experiments in `docs/experiments.md` train only on positions from a third, train split. Self-play training never calls the solver and never reads a label.
-
-## Develop
-
-```sh
-mise run check   # Ruff, ty, Rust tests, Python tests
-mise run plot    # redraw the README figures
-mise run hero    # re-render the hero animation from the final model
-```
-
-CI runs `mise run ci`, which adds a smoke training run. [docs/development.md](docs/development.md) covers the tooling, every training option, and the remaining tasks.

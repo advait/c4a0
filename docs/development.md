@@ -13,7 +13,7 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `rust/src/labels.rs` | Mirror-canonical position keys, the dev/test/train split, the position sampler. |
 | `rust/src/native_solver/`, `rust/src/bin/c4native.rs` | The clean-room solver that labels every position, its self-generated opening book, and a benchmark. See [native-solver.md](native-solver.md). |
 | `rust/src/pybridge.rs` | The PyO3 API. Its stubs are `src/c4a0_rust/__init__.pyi`. |
-| `rust/src/tui.rs`, `rust/src/interactive_play.rs` | The terminal UI behind `mise run play`. |
+| `rust/src/tui.rs`, `rust/src/interactive_play.rs` | The terminal UI behind `mise play`. |
 | `rust/web/` | The search compiled to WebAssembly for the browser player, built without the default `python` feature (PyO3, self-play, TUI). |
 | `web/` | The browser player published to https://c4a0.advait.lol: `net.js` runs the network on WebGPU, `app.js` drives the search and the page. |
 | `src/c4a0/nn.py` | The residual network with AlphaZero-style policy and value heads, its loss and the inference callback. |
@@ -27,7 +27,8 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `scripts/plot_architecture.py` | The README network diagram, with parameter counts from the default network. |
 | `scripts/export_web.py` | Exports a model for `web/`: weights with BatchNorm folded in, a layer manifest, and PyTorch reference outputs the page checks its GPU against on load. |
 | `scripts/web_test.py` | Runs the built player in headless Chrome: the GPU check, then a full game. |
-| `scripts/render_hero.py` | The README hero GIF: MCTS on one dev position with the final model, every number verified (`mise run hero`). |
+| `scripts/render_hero.py` | The README hero GIFs: MCTS on one dev position with the final model, every number verified (`mise hero`). |
+| `scripts/figure_theme.py` | The palette and fonts every README figure shares, in light and dark variants. |
 | `scripts/alapin` | Runs jobs on a remote GPU machine: `sync`, `run`, `status`, `stop`, `fetch`. |
 
 ## Tasks
@@ -47,7 +48,7 @@ This page describes the code layout, tasks, tooling and training options. For in
 
 ## Tooling
 
-- **uv** owns the Python environment and the interpreter. `.python-version` picks the interpreter and `requires-python` states the supported range. Every task runs with `--locked`, so a stale `uv.lock` fails. Run `mise run install:update` after changing dependencies.
+- **uv** owns the Python environment and the interpreter. `.python-version` picks the interpreter and `requires-python` states the supported range. Every task runs with `--locked`, so a stale `uv.lock` fails. Run `mise install:update` after changing dependencies.
 - **ty** is the only type checker. It runs with `--error-on-warning`.
 - **Ruff** lints and formats. The ANN rules require annotations on every function signature, and `Any` is not allowed in signatures. Suppress a finding only with a rule-scoped comment and a reason.
 - **Rust** uses the stable toolchain from mise. Run `cargo fmt` in `rust/` on code you change.
@@ -98,7 +99,7 @@ an existing model with them, call `evaluate_model(..., leaf_minimax_depth=D)` on
 `mirror_inference` attribute is set.
 
 `label` samples train-split positions and labels them with the solver; build the book first
-with `mise run solver:book`. `ceiling` trains the same network on solver labels. Its defaults match `train`: 8x64 and
+with `mise solver:book`. `ceiling` trains the same network on solver labels. Its defaults match `train`: 8x64 and
 `--anneal-epochs 40` (0 early-stops on dev loss with `--max-epochs` and `--patience`). Its
 `report.json` records the model configuration under `net` and the parameter count under
 `parameter_count`. Use genuine train-split labels and at least three seeds per arm. Judge
@@ -107,7 +108,7 @@ the final check.
 
 ## Benchmarking
 
-Build with `mise run build`. `scripts/bench_generation.py` appends exactly one generation to
+Build with `mise build`. `scripts/bench_generation.py` appends exactly one generation to
 a copy of a completed run, inheriting its configuration. `--phase all` measures normal
 self-play. `--phase training` reuses the latest games and trains from the latest model,
 with older ancestors included once. Both modes evaluate and publish; use copies only.
