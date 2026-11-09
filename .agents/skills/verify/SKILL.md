@@ -55,10 +55,11 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   singleton batches, gradients, numpy callbacks, pickle round trips and the
   `--value-hidden` resume check. Retired metadata fields (architecture, head, value-bin
   and temperature controls) load and are dropped on save.
-- `generation_golden_test.py` pins two conv-head generations to `515664f`: game CBOR and
-  augmented dataset bytes exactly, and every training and validation batch loss, validation
-  score and published model tensor (float64 sum and norm) within 1% relative. CPU kernels
-  differ by instruction set, so GitHub runners drift ~1e-3 from the capturing machine. It uses seed 1337, one torch thread, singleton NN
+- `generation_golden_test.py` is skipped on GitHub runners (`CI=true`): its floats, and so its
+  game bytes, are exact only on the CPU that captured it. Run `mise run check` locally before
+  changing generation code. It pins two conv-head generations to `515664f`: game CBOR,
+  augmented dataset bytes, every training and validation batch loss, validation scores,
+  and every published model tensor. It uses seed 1337, one torch thread, singleton NN
   batches and serial games **in the test only**. Master returns games in worker completion
   order, which otherwise changes replay splits even with fixed random seeds. Both omitted
   and explicitly disabled BF16, compile and fixed-step controls must match the fixture.
