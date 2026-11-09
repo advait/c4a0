@@ -31,7 +31,7 @@ from c4a0.labels import (  # noqa: E402
 from c4a0.labels import (  # noqa: E402
     label as label_positions,
 )
-from c4a0.nn import Arch, ConnectFourNet, Head, ModelConfig  # noqa: E402
+from c4a0.nn import ConnectFourNet, Head, ModelConfig  # noqa: E402
 from c4a0.supervised import TARGET_VERSION, CeilingReport, fit_supervised  # noqa: E402
 from c4a0.tournament import ModelID, RandomPlayer, UniformPlayer  # noqa: E402
 from c4a0.training import (  # noqa: E402
@@ -57,13 +57,6 @@ def _cap_gpu_memory() -> None:
         limit_cuda_memory("cuda")
 
 
-def validate_token_width(arch: Arch, d_model: int, n_heads: int) -> None:
-    if arch in ("transformer", "hybrid") and d_model % n_heads:
-        raise typer.BadParameter(
-            "must be divisible by --n-heads", param_hint="--d-model"
-        )
-
-
 @app.command()
 def train(
     base_dir: str = "training",
@@ -82,19 +75,9 @@ def train(
     n_value_layers: int = typer.Option(
         2, help="FC value layers; ignored with --head conv."
     ),
-    arch: Arch = "resnet",
-    n_layers: int = typer.Option(
-        6, min=1, help="Transformer encoder layers; token models only."
-    ),
-    d_model: int = typer.Option(
-        128, min=1, help="Token width; divisible by --n-heads."
-    ),
-    n_heads: int = typer.Option(4, min=1, help="Attention heads; token models only."),
-    head: Head = typer.Option(
-        "fc", help="Spatial heads; ignored for transformer/hybrid."
-    ),
+    head: Head = typer.Option("fc", help="Policy and value head architecture."),
     value_hidden: int = typer.Option(
-        256, min=1, help="Value hidden width for conv heads and token models."
+        256, min=1, help="Value hidden width for conv heads."
     ),
     value_bins: int = typer.Option(
         0,
@@ -146,7 +129,6 @@ def train(
     """Trains a model via self-play. Each generation's saved model is scored on the v1 dev
     suite (raw network, plus MCTS at each --eval-mcts-iterations budget)."""
 
-    validate_token_width(arch, d_model, n_heads)
     if not math.isfinite(value_target_q_weight):
         raise typer.BadParameter(
             "must be finite and between 0 and 1", param_hint="--value-target-q-weight"
@@ -156,10 +138,6 @@ def train(
             "must be finite and between 0 and 1", param_hint="--random-start-frac"
         )
     model_config = ModelConfig(
-        arch=arch,
-        n_layers=n_layers,
-        d_model=d_model,
-        n_heads=n_heads,
         head=head,
         value_hidden=value_hidden,
         value_bins=value_bins,
@@ -174,10 +152,6 @@ def train(
     )
 
     config = GenConfig(
-        arch=arch,
-        n_layers=n_layers,
-        d_model=d_model,
-        n_heads=n_heads,
         head=head,
         value_hidden=value_hidden,
         n_self_play_games=n_self_play_games,
@@ -291,19 +265,9 @@ def ceiling(
     n_value_layers: int = typer.Option(
         2, help="FC value layers; ignored with --head conv."
     ),
-    arch: Arch = "resnet",
-    n_layers: int = typer.Option(
-        6, min=1, help="Transformer encoder layers; token models only."
-    ),
-    d_model: int = typer.Option(
-        128, min=1, help="Token width; divisible by --n-heads."
-    ),
-    n_heads: int = typer.Option(4, min=1, help="Attention heads; token models only."),
-    head: Head = typer.Option(
-        "fc", help="Spatial heads; ignored for transformer/hybrid."
-    ),
+    head: Head = typer.Option("fc", help="Policy and value head architecture."),
     value_hidden: int = typer.Option(
-        256, min=1, help="Value hidden width for conv heads and token models."
+        256, min=1, help="Value hidden width for conv heads."
     ),
     value_bins: int = typer.Option(
         0,
@@ -336,17 +300,12 @@ def ceiling(
     early-stopping on dev loss, and scores the saved model on dev (and test with --report-test,
     once the configuration is chosen). Writes model.pkl and report.json to out_dir.
     """
-    validate_token_width(arch, d_model, n_heads)
     train = read_labels(labels)
     if train.recipe.split != Split.TRAIN:
         raise typer.BadParameter(f"{labels} is a {train.recipe.split} file, not train")
     dev = load_suite(Split.DEV)
     torch.manual_seed(seed)
     config = ModelConfig(
-        arch=arch,
-        n_layers=n_layers,
-        d_model=d_model,
-        n_heads=n_heads,
         head=head,
         value_hidden=value_hidden,
         value_bins=value_bins,

@@ -636,16 +636,30 @@ def test_legacy_metadata_ignores_retired_controls(tmp_path: Path) -> None:
         greedy_after_ply=8,
         mask_terminal_policy=True,
         temperature_schedule=[[2, 1.5]],
+        arch="transformer",
+        n_layers=6,
+        d_model=128,
+        n_heads=4,
     )
+    retired = {
+        "greedy_after_ply",
+        "mask_terminal_policy",
+        "temperature_schedule",
+        "arch",
+        "n_layers",
+        "d_model",
+        "n_heads",
+    }
     gen = TrainingGen.model_validate(metadata)
     gen.save_metadata(str(tmp_path))
     loaded = TrainingGen.load(str(tmp_path), gen.created_at)
     assert loaded == gen
     assert loaded.gen_n == metadata["gen_n"]
-    assert (
-        not {"greedy_after_ply", "mask_terminal_policy", "temperature_schedule"}
-        & loaded.model_dump().keys()
+    assert not retired & loaded.model_dump().keys()
+    saved = json.loads(
+        (Path(gen.gen_folder(str(tmp_path))) / "metadata.json").read_text()
     )
+    assert not retired & saved.keys()
 
 
 def test_generation_metrics_and_reusing_games(
