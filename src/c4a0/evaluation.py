@@ -67,6 +67,8 @@ class SuiteEval(BaseModel):
     n_trivial: int
     c_exploration: float
     c_ply_penalty: float
+    leaf_minimax_depth: int = 0
+    """Exact leaf search depth used by the MCTS evals; older evals predate it and used none."""
     raw: PolicyEval
     """Raw network policy, illegal moves masked as in play."""
     illegal_argmax: int
@@ -165,9 +167,11 @@ def evaluate_model(
     c_exploration: float,
     c_ply_penalty: float,
     device: str | torch.device = "cpu",
+    leaf_minimax_depth: int = 0,
 ) -> SuiteEval:
     """Scores the model pickled at `model_path` on `suite`: raw policy and value on every row,
-    plus root-visit MCTS policies at each budget in `mcts_iterations` on non-trivial rows."""
+    plus root-visit MCTS policies at each budget in `mcts_iterations` on non-trivial rows, with
+    leaves searched `leaf_minimax_depth` plies exactly before evaluation."""
     model_bytes = model_path.read_bytes()
     model = load_model(io.BytesIO(model_bytes), device)
     labels = suite.labels
@@ -186,6 +190,7 @@ def evaluate_model(
             c_exploration,
             c_ply_penalty,
             lambda _model_id, pos: model.forward_numpy(pos),
+            leaf_minimax_depth=leaf_minimax_depth,
         )
         mcts[n] = tally_policy(top1_credit(visits, nontrivial), nontrivial)
         mcts_keeps[n] = tally_policy(
@@ -207,6 +212,7 @@ def evaluate_model(
                 c_exploration,
                 c_ply_penalty,
                 lambda _model_id, pos: model.forward_numpy(pos),
+                leaf_minimax_depth=leaf_minimax_depth,
             )
         )
         for n in mcts_iterations
@@ -220,6 +226,7 @@ def evaluate_model(
         n_trivial=int(labels.trivial.sum()),
         c_exploration=c_exploration,
         c_ply_penalty=c_ply_penalty,
+        leaf_minimax_depth=leaf_minimax_depth,
         raw=tally_policy(top1_credit(policy, labels), labels),
         raw_keeps=tally_policy(
             top1_credit(policy, labels, labels.keeps), labels, ~labels.keeps_trivial

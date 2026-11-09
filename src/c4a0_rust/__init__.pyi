@@ -74,6 +74,7 @@ def play_games(
     value_target_q_weight: float = 0.0,
     random_start_frac: float = 0.0,
     random_start_max_ply: int = 12,
+    leaf_minimax_depth: int = 0,
 ) -> PlayGamesResult: ...
 def encode_positions(moves: Sequence[str]) -> NDArray[np.float32]:
     """Network input (N,2,6,7) for 0-indexed move strings. Raises ValueError on invalid moves."""
@@ -85,8 +86,10 @@ def mcts_policies(
     c_exploration: float,
     c_ply_penalty: float,
     py_eval_pos_cb: EvalPosCb,
+    leaf_minimax_depth: int = 0,
 ) -> NDArray[np.float32]:
-    """Root visit policies (N,7) after single-threaded lockstep MCTS from non-terminal roots."""
+    """Root visit policies (N,7) after single-threaded lockstep MCTS from non-terminal roots.
+    `leaf_minimax_depth` > 0 proves leaves by exact search to that depth before evaluation."""
     ...
 
 def label_positions(

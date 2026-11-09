@@ -24,7 +24,7 @@ use rand::{rngs::StdRng, seq::SliceRandom, SeedableRng};
 /// Play games via MCTS. This is a python wrapper around [self_play].
 /// `reqs` is a list of [GameMetadata] that describes the games to play.
 /// The `py_eval_pos_cb` callback is expected to be a pytorch model that runs on the GPU.
-#[pyfunction(signature = (reqs, max_nn_batch_size, n_mcts_iterations, c_exploration, c_ply_penalty, py_eval_pos_cb, root_noise_alpha=None, root_noise_frac=0.0, value_target_q_weight=0.0, random_start_frac=0.0, random_start_max_ply=12))]
+#[pyfunction(signature = (reqs, max_nn_batch_size, n_mcts_iterations, c_exploration, c_ply_penalty, py_eval_pos_cb, root_noise_alpha=None, root_noise_frac=0.0, value_target_q_weight=0.0, random_start_frac=0.0, random_start_max_ply=12, leaf_minimax_depth=0))]
 pub fn play_games<'py>(
     py: Python<'py>,
     reqs: &Bound<'py, PyList>,
@@ -38,6 +38,7 @@ pub fn play_games<'py>(
     value_target_q_weight: f32,
     random_start_frac: f32,
     random_start_max_ply: usize,
+    leaf_minimax_depth: usize,
 ) -> PyResult<PlayGamesResult> {
     let options = SelfPlayOptions {
         root_noise_alpha,
@@ -45,6 +46,7 @@ pub fn play_games<'py>(
         value_target_q_weight,
         random_start_frac,
         random_start_max_ply,
+        leaf_minimax_depth,
     };
     options.validate().map_err(PyValueError::new_err)?;
     let reqs: Vec<GameMetadata> = reqs.extract().expect("error extracting reqs");
@@ -318,8 +320,9 @@ pub fn encode_positions<'py>(
 
 /// Runs evaluation MCTS ([search_positions]) from every non-terminal root and returns the root
 /// visit policies, shape (N, 7). Single-threaded: `py_eval_pos_cb` is called on this thread with
-/// model_id 0 and its exceptions propagate.
-#[pyfunction]
+/// model_id 0 and its exceptions propagate. `leaf_minimax_depth` > 0 proves leaves by exact
+/// search to that depth before evaluating them.
+#[pyfunction(signature = (moves, n_mcts_iterations, c_exploration, c_ply_penalty, py_eval_pos_cb, leaf_minimax_depth=0))]
 pub fn mcts_policies<'py>(
     py: Python<'py>,
     moves: Vec<String>,
@@ -327,6 +330,7 @@ pub fn mcts_policies<'py>(
     c_exploration: f32,
     c_ply_penalty: f32,
     py_eval_pos_cb: &Bound<'py, PyAny>,
+    leaf_minimax_depth: usize,
 ) -> PyResult<Bound<'py, PyArray2<f32>>> {
     let roots = parse_all(&moves)?;
     if let Some(i) = roots.iter().position(|p| p.is_terminal_state().is_some()) {
@@ -346,6 +350,7 @@ pub fn mcts_policies<'py>(
         n_mcts_iterations,
         c_exploration,
         c_ply_penalty,
+        leaf_minimax_depth,
     )?;
     let flat: Vec<f32> = policies.iter().flatten().copied().collect();
     Ok(Array2::from_shape_vec((policies.len(), Pos::N_COLS), flat)

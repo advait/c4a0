@@ -128,6 +128,13 @@ def test_evaluate_model_scores_the_pickled_bytes(tmp_path: Path) -> None:
         assert policy_eval.top1 is not None and 0.0 <= policy_eval.top1 <= 1.0
     assert sum(map(sum, result.value.confusion)) == 5
     assert SuiteEval.model_validate_json(result.model_dump_json()) == result
+    # Older evals ran without leaf search and load as depth 0.
+    assert result.leaf_minimax_depth == 0
+    legacy = result.model_dump(exclude={"leaf_minimax_depth"})
+    assert SuiteEval.model_validate(legacy).leaf_minimax_depth == 0
+
+    searched = evaluate_model(path, suite, (2,), 2.0, 0.01, leaf_minimax_depth=2)
+    assert searched.leaf_minimax_depth == 2
 
 
 def test_cpu_evaluation_matches_legacy_loading_exactly(

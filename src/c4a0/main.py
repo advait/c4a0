@@ -110,6 +110,11 @@ def train(
         12, min=1, help="Maximum random opening length; capped at 41 plies."
     ),
     value_target_q_weight: float = typer.Option(1.0, min=0.0, max=1.0),
+    leaf_minimax_depth: int = typer.Option(
+        0,
+        min=0,
+        help="Plies of exact search on each MCTS leaf in self-play and eval; 0 disables.",
+    ),
     replay_gens: int = typer.Option(8, min=1),
     train_max_epochs: int = typer.Option(20, min=1),
     train_patience: int = typer.Option(3, min=1),
@@ -176,6 +181,7 @@ def train(
         random_start_frac=random_start_frac,
         random_start_max_ply=random_start_max_ply,
         value_target_q_weight=value_target_q_weight,
+        leaf_minimax_depth=leaf_minimax_depth,
         replay_gens=replay_gens,
         train_max_epochs=train_max_epochs,
         train_patience=train_patience,
@@ -392,7 +398,12 @@ def eval_gens(
     for gen in reversed(TrainingGen.load_all(base_dir)):
         model_path = Path(gen.gen_folder(base_dir)) / "model.pkl"
         gen.evals[suite.name] = evaluate_model(
-            model_path, suite, mcts_iterations, gen.c_exploration, gen.c_ply_penalty
+            model_path,
+            suite,
+            mcts_iterations,
+            gen.c_exploration,
+            gen.c_ply_penalty,
+            leaf_minimax_depth=gen.leaf_minimax_depth,
         )
         gen.save_metadata(base_dir)
         e = gen.evals[suite.name]

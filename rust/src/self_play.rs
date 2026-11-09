@@ -26,6 +26,8 @@ pub struct SelfPlayOptions {
     pub value_target_q_weight: f32,
     pub random_start_frac: f32,
     pub random_start_max_ply: usize,
+    /// See [MctsGame::with_leaf_minimax_depth]; 0 disables leaf search.
+    pub leaf_minimax_depth: usize,
 }
 
 impl Default for SelfPlayOptions {
@@ -36,6 +38,7 @@ impl Default for SelfPlayOptions {
             value_target_q_weight: 0.0,
             random_start_frac: 0.0,
             random_start_max_ply: 12,
+            leaf_minimax_depth: 0,
         }
     }
 }
@@ -156,7 +159,8 @@ pub fn self_play<E: EvalPosT + Send + Sync>(
 
     // Create initial games
     for req in reqs {
-        let game = MctsGame::new_from_pos(options.start_pos(req.game_id), req);
+        let game = MctsGame::new_from_pos(options.start_pos(req.game_id), req)
+            .with_leaf_minimax_depth(options.leaf_minimax_depth);
         nn_queue_tx.send(game).unwrap();
     }
 

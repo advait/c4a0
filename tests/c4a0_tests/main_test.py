@@ -30,6 +30,7 @@ def _plain(output: str) -> str:
                 "random_start_frac": 0.5,
                 "random_start_max_ply": 12,
                 "value_target_q_weight": 1.0,
+                "leaf_minimax_depth": 0,
                 "replay_gens": 8,
                 "train_max_epochs": 20,
                 "train_patience": 3,
@@ -60,6 +61,8 @@ def _plain(output: str) -> str:
                 "17",
                 "--value-target-q-weight",
                 "0.6",
+                "--leaf-minimax-depth",
+                "6",
                 "--replay-gens",
                 "3",
                 "--train-max-epochs",
@@ -73,6 +76,7 @@ def _plain(output: str) -> str:
                 "random_start_frac": 0.5,
                 "random_start_max_ply": 17,
                 "value_target_q_weight": 0.6,
+                "leaf_minimax_depth": 6,
                 "replay_gens": 3,
                 "train_max_epochs": 7,
                 "train_patience": 2,
@@ -216,6 +220,12 @@ def test_train_cli_rejects_invalid_random_start_max_ply(ply: str) -> None:
     result = CliRunner().invoke(main.app, ["train", "--random-start-max-ply", ply])
     assert result.exit_code == 2
     assert "random-start-max-ply" in _plain(result.output)
+
+
+def test_train_cli_rejects_negative_leaf_minimax_depth() -> None:
+    result = CliRunner().invoke(main.app, ["train", "--leaf-minimax-depth", "-1"])
+    assert result.exit_code == 2
+    assert "leaf-minimax-depth" in _plain(result.output)
 
 
 @pytest.mark.parametrize("weight", ["-0.1", "1.1", "nan", "inf", "-inf"])

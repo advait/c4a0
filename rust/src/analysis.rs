@@ -14,13 +14,15 @@ use crate::{
 /// on the proven-best moves. Each round takes one leaf per unfinished root, dedups the unproven
 /// leaves, makes ONE `eval` call on them and applies the results; proven leaves (terminal or
 /// proven by search) back up their exact value without an evaluation. Deterministic for a
-/// deterministic evaluator. No root noise and no temperature.
+/// deterministic evaluator. No root noise and no temperature. `leaf_minimax_depth` > 0 searches
+/// each leaf that exactly before evaluating it ([MctsGame::with_leaf_minimax_depth]).
 pub fn search_positions<F, E>(
     mut eval: F,
     roots: &[Pos],
     n_iterations: usize,
     c_exploration: f32,
     c_ply_penalty: f32,
+    leaf_minimax_depth: usize,
 ) -> Result<Vec<Policy>, E>
 where
     F: FnMut(Vec<Pos>) -> Result<Vec<EvalPosResult>, E>,
@@ -30,6 +32,7 @@ where
         .map(|pos| {
             debug_assert!(pos.is_terminal_state().is_none(), "terminal root");
             MctsGame::new_from_pos(pos.clone(), GameMetadata::default())
+                .with_leaf_minimax_depth(leaf_minimax_depth)
         })
         .collect();
 
@@ -126,9 +129,9 @@ mod tests {
     #[test]
     fn batched_search_equals_per_root_search() {
         let roots = roots();
-        let batched = search_positions(hashed, &roots, 64, 4.0, 0.01).unwrap();
+        let batched = search_positions(hashed, &roots, 64, 4.0, 0.01, 0).unwrap();
         for (root, got) in roots.iter().zip(&batched) {
-            let single = search_positions(hashed, std::slice::from_ref(root), 64, 4.0, 0.01);
+            let single = search_positions(hashed, std::slice::from_ref(root), 64, 4.0, 0.01, 0);
             assert_eq!(&single.unwrap()[0], got);
         }
     }
@@ -137,7 +140,7 @@ mod tests {
     fn immediate_win_is_the_argmax() {
         // Player to move has three in a row on the bottom at columns 1-3; 0 and 4 win.
         let pos = Pos::from_moves(&[1, 1, 2, 2, 3, 3]);
-        let policy = search_positions(uniform, &[pos], 512, 4.0, 0.01).unwrap()[0];
+        let policy = search_positions(uniform, &[pos], 512, 4.0, 0.01, 0).unwrap()[0];
         let best = policy.iter().cloned().fold(f32::MIN, f32::max);
         assert!(policy[0] == best || policy[4] == best, "{:?}", policy);
         assert!(policy[0] + policy[4] > 0.8, "{:?}", policy);
@@ -146,7 +149,7 @@ mod tests {
     #[test]
     fn root_visits_match_iterations() {
         // N root visits are the root expansion plus N-1 child visits.
-        let policy = search_positions(uniform, &[Pos::default()], 15, 4.0, 0.01).unwrap()[0];
+        let policy = search_positions(uniform, &[Pos::default()], 15, 4.0, 0.01, 0).unwrap()[0];
         let total: f32 = policy.iter().sum();
         assert!((total - 1.0).abs() < 1e-6);
         let visits: Vec<f32> = policy.iter().map(|p| (p * 14.0).round()).collect();
@@ -155,7 +158,7 @@ mod tests {
 
     #[test]
     fn evaluator_errors_propagate() {
-        let err = search_positions(|_| Err("boom"), &[Pos::default()], 4, 4.0, 0.01);
+        let err = search_positions(|_| Err("boom"), &[Pos::default()], 4, 4.0, 0.01, 0);
         assert_eq!(err.unwrap_err(), "boom");
     }
 }
