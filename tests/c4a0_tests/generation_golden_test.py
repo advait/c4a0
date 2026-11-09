@@ -1,6 +1,11 @@
 """CPU golden for two generations with conv heads, captured from 515664f before FC heads were
 removed. That code matched master 57d3a2a's FC golden byte for byte after the generation
-optimizations; master had no conv heads, so this fixture pins the pre-removal conv code."""
+optimizations; master had no conv heads, so this fixture pins the pre-removal conv code.
+
+Rust's side (games, augmented datasets) must match byte for byte. Training numerics (losses,
+validation scores, model tensors) match within FLOAT_RTOL: CPU kernels differ by instruction set,
+so GitHub runners drift ~1e-3 relative from the machine that captured the fixture. Tensors are
+compared through their float64 sum and L2 norm."""
 
 import hashlib
 import json
@@ -27,6 +32,31 @@ if TYPE_CHECKING:
     from c4a0_rust import EvalPosCb
 
 GOLDEN = Path(__file__).parent / "fixtures" / "generation_golden.json"
+
+
+FLOAT_RTOL = 1e-2
+
+
+def tensor_summary(tensor: torch.Tensor) -> list[float]:
+    t = tensor.detach().cpu().double()
+    return [float(t.sum()), float(t.norm())]
+
+
+def assert_matches(got: object, want: object, path: str = "") -> None:
+    """Exact for strings, ints and structure; relative tolerance for floats."""
+    if isinstance(want, float) or isinstance(got, float):
+        assert isinstance(got, int | float) and isinstance(want, int | float), path
+        assert got == pytest.approx(want, rel=FLOAT_RTOL, abs=1e-6), path
+    elif isinstance(want, dict):
+        assert isinstance(got, dict) and got.keys() == want.keys(), path
+        for key in want:
+            assert_matches(got[key], want[key], f"{path}.{key}")
+    elif isinstance(want, list):
+        assert isinstance(got, list) and len(got) == len(want), path
+        for i, (g, w) in enumerate(zip(got, want, strict=True)):
+            assert_matches(g, w, f"{path}[{i}]")
+    else:
+        assert got == want, path
 
 
 def tensor_hash(tensor: torch.Tensor) -> str:
@@ -122,7 +152,7 @@ def capture_generations(
                 "samples": samples,
                 "val_loss": gen.val_loss,
                 "model": {
-                    key: tensor_hash(t)
+                    key: tensor_summary(t)
                     for key, t in gen.get_model(str(tmp_path)).state_dict().items()
                 },
             }
@@ -134,6 +164,7 @@ def capture_generations(
 def test_two_generation_golden(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, explicit_off: bool
 ) -> None:
-    assert capture_generations(tmp_path, monkeypatch, explicit_off) == json.loads(
-        GOLDEN.read_text()
+    assert_matches(
+        capture_generations(tmp_path, monkeypatch, explicit_off),
+        json.loads(GOLDEN.read_text()),
     )
