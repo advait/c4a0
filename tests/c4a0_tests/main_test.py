@@ -338,6 +338,8 @@ def test_cli_loads_legacy_cuda_model_on_cpu(
     monkeypatch.setattr(main.c4a0_rust, "run_tui", run_tui)
     monkeypatch.setattr(main, "load_suite", lambda _split: suite)
     flags = ["--mcts-iterations", "4"] if command == "eval" else []
+    if command == "play":
+        flags = ["--model", "latest"]
     result = CliRunner().invoke(main.app, [command, "--base-dir", base_dir, *flags])
 
     assert result.exit_code == 0, result.output
@@ -356,8 +358,27 @@ def test_play_best_without_generations_explains_how_to_train(
     base = tmp_path / "training"
     if existing_dir:
         base.mkdir()
-    result = CliRunner().invoke(main.app, ["play", "--base-dir", str(base)])
+    result = CliRunner().invoke(
+        main.app, ["play", "--base-dir", str(base), "--model", "latest"]
+    )
     assert result.exit_code == 1
     assert (
         result.output == "No trained generations found. Run `mise run train` first.\n"
     )
+
+
+def test_play_defaults_to_the_shipped_final_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loaded: list[str] = []
+    real_load = main.load_model
+
+    def load(path: str | Path) -> object:
+        loaded.append(str(path))
+        return real_load(path)
+
+    monkeypatch.setattr(main, "load_model", load)
+    monkeypatch.setattr(main.c4a0_rust, "run_tui", lambda *_args: None)
+    result = CliRunner().invoke(main.app, ["play"])
+    assert result.exit_code == 0, result.output
+    assert loaded == [str(main.FINAL_MODEL)]

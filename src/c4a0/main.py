@@ -44,9 +44,11 @@ from c4a0.training import (  # noqa: E402
 from c4a0.utils import (  # noqa: E402
     get_torch_device,
     limit_cuda_memory,
+    load_model,
 )
 
 app = typer.Typer()
+FINAL_MODEL = Path(__file__).resolve().parents[2] / "models/c4a0-final.pkl"
 
 
 @app.callback()
@@ -169,15 +171,19 @@ def train(
 
 @app.command()
 def play(
+    model: str = typer.Option(
+        "final",
+        help="`final` (the shipped models/c4a0-final.pkl), `latest` (your newest "
+        "generation in --base-dir), `uniform`, `random`, or a model .pkl path.",
+    ),
     base_dir: str = "training",
     max_mcts_iters: int = 1400,
     c_exploration: float = 2.0,
     c_ply_penalty: float = 0.01,
-    model: str = "best",
 ) -> None:
-    """Play interactive games"""
+    """Play interactive games, by default against the shipped final model."""
     nn: ConnectFourNet | RandomPlayer | UniformPlayer
-    if model == "best":
+    if model == "latest":
         try:
             gen = TrainingGen.load_latest(base_dir)
         except FileNotFoundError:
@@ -191,7 +197,7 @@ def play(
     elif model == "uniform":
         nn = UniformPlayer(ModelID(0))
     else:
-        raise ValueError(f"unrecognized model: {model}")
+        nn = load_model(FINAL_MODEL if model == "final" else model)
 
     c4a0_rust.run_tui(
         lambda model_id, x: nn.forward_numpy(x),
