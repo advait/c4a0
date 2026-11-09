@@ -1,7 +1,7 @@
 """
 Solver-labeled positions: the labels file format, the committed evaluation suites, and labeling
-with Pascal Pons's solver. The (N, 7) Pons score matrix is the only stored solver fact; legal,
-best, trivial, value and ply bucket are derived from it.
+with the native solver (rust/src/native_solver). The (N, 7) score matrix is the only stored solver
+fact; legal, best, trivial, value and ply bucket are derived from it.
 """
 
 import hashlib
@@ -57,7 +57,10 @@ class Labels:
     recipe: Recipe
     moves: tuple[Moves, ...]
     scores: NDArray[np.int8]
-    """(N, 7) Pons scores for playing each column, from the mover's view. ILLEGAL = full column."""
+    """(N, 7) scores for playing each column, from the mover's view. ILLEGAL = full column.
+
+    The Pons `c4solver -a` convention: a win with the winner's k-th stone scores 22 - k for the
+    winner (faster wins are larger), a draw 0."""
 
     def __post_init__(self) -> None:
         n = len(self.moves)
@@ -77,7 +80,7 @@ class Labels:
 
     @cached_property
     def best_score(self) -> NDArray[np.int8]:
-        """The position's Pons score: the best legal move's score (ILLEGAL is below all)."""
+        """The position's score: the best legal move's score (ILLEGAL is below all)."""
         return self.scores.max(axis=1)
 
     @cached_property
@@ -203,8 +206,16 @@ def write_labels(path: Path, labels: Labels) -> None:
     os.replace(tmp, path)
 
 
-def label(recipe: Recipe, solver_path: str, book_path: str, n_procs: int) -> Labels:
-    """Samples `recipe` positions in Rust and labels them with Pons's solver."""
+DEFAULT_BOOK = Path("native-solver/book-ply10.bin")
+"""Where `mise run solver:book` writes the native solver's opening book (gitignored)."""
+
+
+def label(
+    recipe: Recipe, book: Path | None = None, threads: int | None = None
+) -> Labels:
+    """Samples `recipe` positions in Rust and labels them with the native solver on `threads`
+    workers (default: every core). `book` only speeds early plies; the labels do not depend on
+    it."""
     first_ply, last_ply = recipe.plies
     rows = c4a0_rust.label_positions(
         recipe.split.value,
@@ -212,9 +223,8 @@ def label(recipe: Recipe, solver_path: str, book_path: str, n_procs: int) -> Lab
         last_ply,
         recipe.per_ply,
         recipe.seed,
-        solver_path,
-        book_path,
-        n_procs,
+        None if book is None else str(book),
+        threads,
     )
     scores = [[int(ILLEGAL) if v is None else v for v in s] for _, s in rows]
     return Labels(

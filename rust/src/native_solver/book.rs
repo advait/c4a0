@@ -1,6 +1,6 @@
 //! [Book]: exact scores of every non-terminal position at one ply, keyed by mirror-canonical
 //! [Board::canonical_key]. The search stops at that ply, which bounds the depth of early solves.
-//! The native solver builds its own book ([build]); it never reads the Pons book.
+//! The book is this solver's own output ([Book::solve], `mise run solver:book`).
 //!
 //! File format, little-endian: the 8-byte magic `C4NBOOK1`, the ply (u8), the entry count
 //! (u64), then that many keys (u64, strictly increasing) followed by as many scores (i8).
@@ -53,7 +53,7 @@ impl Book {
     }
 
     /// Loads a book and checks its framing and key order. Scores are trusted: the file is this
-    /// solver's own output (see [build]).
+    /// solver's own output (see [Book::solve]).
     pub fn load(path: &Path) -> io::Result<Book> {
         let bad =
             |m: &str| io::Error::new(io::ErrorKind::InvalidData, format!("{:?}: {}", path, m));
@@ -177,7 +177,7 @@ mod tests {
     }
 
     #[test]
-    fn searching_through_a_book_matches_pons_and_reads_the_book() {
+    fn searching_through_a_book_matches_the_suite_and_reads_the_book() {
         let rows: Vec<_> = suite_rows("dev")
             .into_iter()
             .filter(|r| (18..=20).contains(&r.moves.len()))

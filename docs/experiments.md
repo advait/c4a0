@@ -34,7 +34,7 @@ Conv heads, an 8x64 trunk and cosine-annealed training then produced the agent a
 
 The target is MCTS move selection, not the raw network. The network is only the estimator that guides search.
 
-Every generation is scored on the committed v1 dev suite (`src/c4a0/suite/v1/dev.tsv`). The suite holds about 2,400 positions per split, sampled by random walks across plies 2 to 41 and labeled by Pascal Pons's solver. A separate test split is held back for a final check. Two metrics are recorded per generation in each `metadata.json`:
+Every generation is scored on the committed v1 dev suite (`src/c4a0/suite/v1/dev.tsv`). The suite holds about 2,400 positions per split, sampled by random walks across plies 2 to 41 and labeled by an exact solver (built in since 2026-11-09; Pascal Pons's solver labeled them first, and the native solver reproduces them byte for byte). A separate test split is held back for a final check. Two metrics are recorded per generation in each `metadata.json`:
 
 - **Keeps the result** (`mcts_keeps`). The share of positions where the MCTS-chosen move keeps the game result: a won position stays won and a drawn position stays drawn. Positions where every legal move keeps the result (lost positions) are not counted. This is the convergence target, measured at 256 MCTS iterations.
 - **Strict** (`mcts`). The share of positions where MCTS picks a move the solver ranks best, which means the fastest win or the slowest loss. Ties are split evenly. This is stricter than perfect play needs.
@@ -65,7 +65,7 @@ Experiments ran on `alapin` (one RTX 3090) through `scripts/alapin`. A generatio
 - **Search depth does not fix the openings.** With a fixed, solver-trained network, 16,384 MCTS iterations still threw away the result in about 13% of positions at plies 0 to 5. The opening is decided too far ahead for any affordable search.
 - **The network sees the openings.** Every dev position at plies 0 to 5 occurs in self-play, so opening errors are a learning problem, not missing data. Only 35% of positions at plies 6 to 11, and none from ply 12 on, occur in self-play.
 - **The supervised ceiling is about 92% strict.** Trained directly on 846k solver-labeled positions, the network scores 91.8 to 92.6% strict on held-out positions whether it is 1x32, 4x64 or 8x128. That number measures generalization to unseen positions. It is not a cap on self-play, which visits its own positions repeatedly.
-- **The labels are trustworthy.** A clean-room Rust solver (`rust/src/native_solver/`) agrees with Pons on every one of 228,041 compared positions across all plies. Brute-force minimax confirms both on 119,181 late positions, and Pons is self-consistent on 1,058,402 child positions.
+- **The labels are trustworthy.** A clean-room Rust solver (`rust/src/native_solver/`) agreed with Pascal Pons's solver on every one of 228,041 compared positions across all plies. Brute-force minimax confirmed both on 119,181 late positions, and Pons was self-consistent on 1,058,402 child positions. It replaced Pons on 2026-11-09 and relabels both committed suites byte for byte ([details](native-solver.md)).
 
 ## Toward optimal play
 
@@ -121,4 +121,4 @@ The final configuration is the default for `mise run train`. These are the most 
 2. **Draws.** Drawn positions missed far more often than won positions in the earlier runs. A value head trained mostly on decisive games may not separate "drawn" from "slightly winning".
 3. **Evaluation overrides.** Leaf minimax and mirror averaging help most at evaluation, but `eval` and `play` only reuse what the run recorded. A CLI override, recorded in `SuiteEval`, would make them first-class.
 4. **Faster generations.** Self-play is limited by Python dispatch and CPU-side MCTS (GPU about 20% busy). `--compile` gave nothing end to end.
-5. **Drop Pons.** The Rust solver in `rust/src/native_solver/` is verified but runs at about 0.66x Pons's throughput and is not wired into labeling.
+5. **Solver throughput.** The built-in solver replaced Pons, at about 0.66x Pons's measured throughput on the labeling mix. A ply-12 book is the measured next lever ([details](native-solver.md)).

@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import torch
 
+import c4a0_rust
 from c4a0 import evaluation
 from c4a0.evaluation import (
     SuiteEval,
@@ -17,9 +18,9 @@ from c4a0.evaluation import (
     tally_value,
     top1_credit,
 )
-from c4a0.labels import Suite
+from c4a0.labels import DEFAULT_BOOK, Moves, Suite
 from c4a0.nn import ConnectFourNet, ModelConfig
-from c4a0_tests.labels_test import PONS_ROWS, X, make_labels
+from c4a0_tests.labels_test import SOLVER_ROWS, X, make_labels
 
 
 def one_hot_ties(*cols: int) -> list[float]:
@@ -27,7 +28,7 @@ def one_hot_ties(*cols: int) -> list[float]:
 
 
 def test_ties_split_credit_evenly() -> None:
-    labels = make_labels({"3344": PONS_ROWS["3344"]})  # best {2, 5}
+    labels = make_labels({"3344": SOLVER_ROWS["3344"]})  # best {2, 5}
     policies = np.array(
         [
             one_hot_ties(2, 3),  # half of the tie is best
@@ -44,7 +45,9 @@ def test_ties_split_credit_evenly() -> None:
 
 
 def test_illegal_argmax_is_masked_and_counted() -> None:
-    labels = make_labels({"000000": PONS_ROWS["000000"], "": PONS_ROWS[""]})  # best {3}
+    labels = make_labels(
+        {"000000": SOLVER_ROWS["000000"], "": SOLVER_ROWS[""]}
+    )  # best {3}
     policies = np.array(
         [[9.0, 0, 0, 5, 0, 0, 0], [0, 0, 0, 5, 0, 0, 0]], dtype=np.float32
     )
@@ -53,13 +56,13 @@ def test_illegal_argmax_is_masked_and_counted() -> None:
 
 
 def test_log_probs_with_masked_minus_inf_columns() -> None:
-    labels = make_labels({"000000": PONS_ROWS["000000"]})
+    labels = make_labels({"000000": SOLVER_ROWS["000000"]})
     policies = np.array([[-np.inf, -2.3, -2.3, -0.5, -2.3, -2.3, -np.inf]], np.float32)
     assert top1_credit(policies, labels).tolist() == [1.0]
 
 
 def test_nan_and_all_minus_inf_rows_are_rejected() -> None:
-    labels = make_labels({"": PONS_ROWS[""]})
+    labels = make_labels({"": SOLVER_ROWS[""]})
     with pytest.raises(ValueError):
         top1_credit(np.full((1, 7), np.nan, dtype=np.float32), labels)
     with pytest.raises(ValueError):
@@ -67,7 +70,9 @@ def test_nan_and_all_minus_inf_rows_are_rejected() -> None:
 
 
 def test_trivial_rows_leave_policy_denominators() -> None:
-    labels = make_labels({"0": [-2] * 7, "3344": PONS_ROWS["3344"], "": PONS_ROWS[""]})
+    labels = make_labels(
+        {"0": [-2] * 7, "3344": SOLVER_ROWS["3344"], "": SOLVER_ROWS[""]}
+    )
     credit = top1_credit(np.zeros((3, 7), dtype=np.float32), labels)
     tally = tally_policy(credit, labels)
     assert tally.by_bucket["00-05"].n == 2
@@ -76,7 +81,7 @@ def test_trivial_rows_leave_policy_denominators() -> None:
 
 
 def test_oracle_scores_one_and_uniform_scores_best_share() -> None:
-    labels = make_labels(PONS_ROWS)
+    labels = make_labels(SOLVER_ROWS)
     oracle = labels.best.astype(np.float32)
     assert tally_policy(top1_credit(oracle, labels), labels).top1 == 1.0
     uniform = tally_policy(top1_credit(np.zeros((4, 7), np.float32), labels), labels)
@@ -88,7 +93,7 @@ def test_oracle_scores_one_and_uniform_scores_best_share() -> None:
 def test_value_confusion_uses_fixed_cutoffs() -> None:
     labels = make_labels(
         {
-            "": PONS_ROWS[""],  # win
+            "": SOLVER_ROWS[""],  # win
             "1": [0, 0, 0, -1, 0, 0, 0],  # draw
             "0": [-2] * 7,  # loss
             "2": [-3, -3, -3, -3, -3, -3, -3],  # loss
@@ -112,7 +117,7 @@ def test_evaluate_model_scores_the_pickled_bytes(tmp_path: Path) -> None:
     )
     path = tmp_path / "model.pkl"
     path.write_bytes(pickle.dumps(model))
-    labels = make_labels({**PONS_ROWS, "0": [-2] * 7})
+    labels = make_labels({**SOLVER_ROWS, "0": [-2] * 7})
     suite = Suite(labels=labels, name="test/tiny", sha256="abc")
 
     result = evaluate_model(path, suite, (2, 8), 2.0, 0.01)
@@ -143,7 +148,7 @@ def test_cpu_evaluation_matches_legacy_loading_exactly(
     path.write_bytes(
         (Path(__file__).parent / "fixtures" / "conv_model_515664f.pkl").read_bytes()
     )
-    suite = Suite(labels=make_labels(PONS_ROWS), name="test/tiny", sha256="abc")
+    suite = Suite(labels=make_labels(SOLVER_ROWS), name="test/tiny", sha256="abc")
     result = evaluate_model(path, suite, (2, 8), 2.0, 0.01, device="cpu")
 
     def legacy_load(
@@ -162,7 +167,7 @@ def test_evaluation_scores_legacy_cuda_bytes_on_cpu(
 ) -> None:
     model, path = legacy_cuda_model
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
-    suite = Suite(labels=make_labels(PONS_ROWS), name="test/tiny", sha256="abc")
+    suite = Suite(labels=make_labels(SOLVER_ROWS), name="test/tiny", sha256="abc")
     result = evaluate_model(path, suite, (4,), 2.0, 0.01)
     assert result.model_sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -175,7 +180,7 @@ def test_evaluation_scores_legacy_cuda_bytes_on_cpu(
 
 
 def test_non_finite_value_is_rejected_not_scored_as_draw() -> None:
-    labels = make_labels({"3344": PONS_ROWS["3344"]})
+    labels = make_labels({"3344": SOLVER_ROWS["3344"]})
     with pytest.raises(ValueError, match="non-finite"):
         tally_value(np.array([np.nan], dtype=np.float32), labels)
 
@@ -193,37 +198,29 @@ def test_openings_oracle_scores_full_and_column_zero_first_move_scores_zero() ->
     assert OPENINGS.best[0].tolist() == [c == 3 for c in range(7)]
 
 
-SOLVER_BIN = (
-    __import__("pathlib").Path(__file__).resolve().parents[2] / "solver" / "c4solver"
+REPO = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.skipif(
+    not (REPO / DEFAULT_BOOK).is_file(),
+    reason="no native solver book (mise run solver:book); about 6 min on 32 cores without it",
 )
-
-
-@pytest.mark.skipif(not SOLVER_BIN.is_file(), reason="solver not built in solver/")
 def test_openings_scores_match_the_solver() -> None:
-    import subprocess
-
     from c4a0.evaluation import OPENINGS
 
-    book = SOLVER_BIN.parent / "7x6.book"
-    lines = (
-        "\n".join("".join(str(int(c) + 1) for c in m) for m in OPENINGS.moves) + "\n"
-    )
-    out = subprocess.run(
-        [str(SOLVER_BIN), "-b", str(book), "-a"],
-        input=lines,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    rows = [
-        [int(x) for x in line.split()[-7:]] for line in out.splitlines() if line.strip()
-    ]
-    assert rows == OPENINGS.scores.tolist()
+    # Plies 0-1 all hash to train; sampling returns one board per mirror class, either side up.
+    rows = c4a0_rust.label_positions("train", 0, 1, 64, 0, str(REPO / DEFAULT_BOOK))
+    assert len(rows) == 5
+    stored = dict(zip(OPENINGS.moves, OPENINGS.scores.tolist(), strict=True))
+    for moves, scores in rows:
+        assert scores == stored[Moves(moves)]
+        mirror = Moves("".join(str(6 - int(c)) for c in moves))
+        assert scores[::-1] == stored[mirror]
 
 
 def test_keeps_credits_a_slower_win_but_not_a_loss() -> None:
     labels = make_labels(
-        {"3344": PONS_ROWS["3344"]}
+        {"3344": SOLVER_ROWS["3344"]}
     )  # wins: 2, 5 (fastest), 3, 4; losses: 0, 1, 6
     slower_win = np.array([one_hot_ties(3)], dtype=np.float32)
     losing = np.array([one_hot_ties(0)], dtype=np.float32)
@@ -236,7 +233,7 @@ def test_keeps_tally_skips_positions_where_every_move_keeps_the_result() -> None
     # "01010": only column 0 wins, so a losing move throws the win away: counted.
     # A lost position (every move loses) cannot be thrown away: not counted.
     labels = make_labels(
-        {"01010": PONS_ROWS["01010"], "6666": [-3, -2, -5, -4, -2, -6, -3]}
+        {"01010": SOLVER_ROWS["01010"], "6666": [-3, -2, -5, -4, -2, -6, -3]}
     )
     assert labels.keeps_trivial.tolist() == [False, True]
     credit = top1_credit(

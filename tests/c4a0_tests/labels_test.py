@@ -18,8 +18,8 @@ from c4a0.labels import (
 X = int(ILLEGAL)
 RECIPE = Recipe(version=1, split=Split.DEV, seed=1, per_ply=64, plies=(0, 41))
 
-# Real `c4solver -a` rows from this machine, moves converted to 0-indexed.
-PONS_ROWS = {
+# Solver rows, moves 0-indexed (recorded from Pons's `c4solver -a`, which the native solver matches).
+SOLVER_ROWS = {
     "": [-2, -1, 0, 1, 0, -1, -2],
     "3344": [-4, -3, 18, 2, 2, 18, -3],
     "000000": [X, -2, 0, 1, -2, 0, -2],
@@ -35,8 +35,8 @@ def make_labels(rows: dict[str, list[int]], recipe: Recipe = RECIPE) -> Labels:
     )
 
 
-def test_derived_facts_from_pons_rows() -> None:
-    labels = make_labels(PONS_ROWS)
+def test_derived_facts_from_solver_rows() -> None:
+    labels = make_labels(SOLVER_ROWS)
     assert labels.best.tolist() == [
         [False, False, False, True, False, False, False],
         [False, False, True, False, False, True, False],
@@ -69,7 +69,7 @@ def test_buckets_are_six_plies_wide() -> None:
 
 
 def test_round_trip_is_byte_identical(tmp_path: Path) -> None:
-    labels = make_labels(PONS_ROWS)
+    labels = make_labels(SOLVER_ROWS)
     path = tmp_path / "dev.tsv"
     write_labels(path, labels)
     text = path.read_text()

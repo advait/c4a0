@@ -20,6 +20,7 @@ if str(parent_dir) not in sys.path:
 import c4a0_rust  # noqa: E402
 from c4a0.evaluation import SuiteEval, evaluate_model  # noqa: E402
 from c4a0.labels import (  # noqa: E402
+    DEFAULT_BOOK,
     SUITE_V1,
     Recipe,
     Split,
@@ -207,15 +208,17 @@ def play(
     )
 
 
+THREADS_HELP = "Solver threads; 0 uses every core."
+
+
 @app.command()
 def build_suite(
-    solver_path: str = "solver/c4solver",
-    book_path: str = "solver/7x6.book",
-    n_procs: int = 32,
+    threads: int = typer.Option(0, min=0, help=THREADS_HELP),
 ) -> None:
-    """Rebuilds the committed v1 dev and test suites (deterministic: same bytes every run)."""
+    """Rebuilds the committed v1 dev and test suites (deterministic: same bytes every run).
+    Needs no opening book."""
     for split, recipe in SUITE_V1.items():
-        labels = label_positions(recipe, solver_path, book_path, n_procs)
+        labels = label_positions(recipe, threads=threads or None)
         path = suite_path(split)
         write_labels(path, labels)
         logger.info("Wrote {} rows to {}", len(labels), path)
@@ -229,15 +232,23 @@ def label(
     seed: int = 7,
     first_ply: int = 0,
     last_ply: int = 41,
-    solver_path: str = "solver/c4solver",
-    book_path: str = "solver/7x6.book",
-    n_procs: int = 32,
+    book: Path = typer.Option(
+        DEFAULT_BOOK,
+        help="Native solver opening book, from `mise run solver:book`. Without it the "
+        "early plies of a large job take hours.",
+    ),
+    threads: int = typer.Option(0, min=0, help=THREADS_HELP),
 ) -> None:
     """Samples and solver-labels positions in a split (train by default, for the ceiling)."""
+    if not book.is_file():
+        raise typer.BadParameter(
+            f"{book} not found; build it with `mise run solver:book` (about 22 min on 32 cores)",
+            param_hint="--book",
+        )
     recipe = Recipe(
         version=1, split=split, seed=seed, per_ply=per_ply, plies=(first_ply, last_ply)
     )
-    labels = label_positions(recipe, solver_path, book_path, n_procs)
+    labels = label_positions(recipe, book, threads or None)
     write_labels(out, labels)
     logger.info("Wrote {} rows to {}", len(labels), out)
 

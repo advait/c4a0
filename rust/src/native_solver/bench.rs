@@ -1,17 +1,16 @@
-//! Throughput and scaling measurement on a labeling-like workload: the [Stratum::Walk] cases of
-//! [diff::sample], uniform per ply 0-41. Sides run interleaved, each with a cold table, and every
-//! run's rows are checked against the first run's, so a fast wrong run cannot pass as a speedup.
+//! Throughput and scaling measurement on a labeling-like workload: [sample::walks], uniform per
+//! ply 0-41. Thread counts run interleaved, each with a cold table, and every run's rows are
+//! checked against the first run's, so a fast wrong run cannot pass as a speedup.
 
 use std::time::Instant;
 
 use super::board::Board;
 use super::book::Book;
-use super::diff::{sample, Stratum};
 use super::parallel::analyze_batch;
+use super::sample;
 use super::search::Searcher;
 use super::tt::Tt;
-use crate::c4r::Move;
-use crate::solver::MoveScores;
+use super::MoveScores;
 
 pub struct BenchConfig {
     pub per_ply: usize,
@@ -20,15 +19,11 @@ pub struct BenchConfig {
     pub runs: usize,
     pub tt_bytes: usize,
     pub book: Option<Book>,
-    /// Pons binary and book, to time the oracle on the same workload with as many processes as
-    /// the largest native thread count.
-    pub pons: Option<(String, String)>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Side {
     Native(usize),
-    Pons(usize),
 }
 
 fn median_range(xs: &[f64]) -> (f64, f64, f64) {
@@ -52,17 +47,13 @@ fn load_average() -> String {
 
 /// Runs the benchmark and returns a plain-text report. Errors if any run's rows differ.
 pub fn run(cfg: &BenchConfig) -> Result<String, String> {
-    let cases: Vec<_> = sample(cfg.per_ply, cfg.seed)
-        .into_iter()
-        .filter(|c| c.stratum == Stratum::Walk)
+    let cases = sample::walks(cfg.per_ply, cfg.seed);
+    let boards: Vec<Board> = cases
+        .iter()
+        .map(|m| Board::from_moves(m).expect("walks are legal"))
         .collect();
-    let boards: Vec<Board> = cases.iter().map(|c| c.board()).collect();
-    let moves: Vec<Vec<Move>> = cases.iter().map(|c| c.moves.clone()).collect();
     let max_threads = cfg.threads.iter().copied().max().unwrap_or(1);
-    let mut sides: Vec<Side> = cfg.threads.iter().map(|&t| Side::Native(t)).collect();
-    if cfg.pons.is_some() {
-        sides.push(Side::Pons(max_threads));
-    }
+    let sides: Vec<Side> = cfg.threads.iter().map(|&t| Side::Native(t)).collect();
     let mut report = format!(
         "workload: {} walk positions, {} per ply 0-41, seed {}; tt {} MiB; book ply {:?}\n",
         boards.len(),
@@ -103,11 +94,6 @@ pub fn run(cfg: &BenchConfig) -> Result<String, String> {
                 Side::Native(n) => {
                     let tt = Tt::with_bytes(cfg.tt_bytes);
                     analyze_batch(&boards, &tt, cfg.book.as_ref(), n, &|_| {})
-                }
-                Side::Pons(n) => {
-                    let (bin, book) = cfg.pons.as_ref().unwrap();
-                    crate::solver::solve_parallel(bin, book, &moves, n)
-                        .map_err(|e| e.to_string())?
                 }
             };
             let elapsed = t.elapsed().as_secs_f64();
@@ -154,11 +140,11 @@ pub fn run(cfg: &BenchConfig) -> Result<String, String> {
                 (0, 0.0),
                 |acc, (i, &t)| if t > acc.1 { (i, t) } else { acc },
             );
-        let moves: String = cases[i].moves.iter().map(|m| m.to_string()).collect();
+        let moves: String = cases[i].iter().map(|m| m.to_string()).collect();
         report += &format!(
             "hardest position: {:?} (ply {}), {:.2} s in the first 1-thread run\n",
             moves,
-            cases[i].ply(),
+            cases[i].len(),
             t1
         );
         for &n in &[1, max_threads] {
@@ -183,7 +169,7 @@ pub fn run(cfg: &BenchConfig) -> Result<String, String> {
             cases
                 .iter()
                 .zip(&per_position)
-                .filter(|(c, _)| (lo..=hi).contains(&c.ply()))
+                .filter(|(c, _)| (lo..=hi).contains(&c.len()))
                 .map(|(_, t)| t)
                 .sum()
         };

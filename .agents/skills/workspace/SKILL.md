@@ -13,8 +13,9 @@ Status: implemented
   cold `uv sync` builds the Rust extension, which takes about 2 minutes. Each worktree gets
   its own `.venv` and `rust/target`.
 - Give every concurrent training or convergence run its own `--base-dir`. Runs in one base
-  dir resume each other's generations. A worktree needs the solver only to rebuild suites or
-  label positions; symlink the main checkout's `solver/` into it (read-only use).
+  dir resume each other's generations. The solver is built in, so no worktree needs extra setup to
+  rebuild suites. A large `main.py label` job needs the opening book: symlink the main
+  checkout's `native-solver/` into the worktree (read-only use) instead of rebuilding it.
 - Concurrent runs share 32 cores. Self-play uses all of them, so parallel arms slow each
   other. For timings you will compare, run arms one at a time, or pin each arm to its own
   cores with `taskset` and record that.

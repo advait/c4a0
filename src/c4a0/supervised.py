@@ -22,6 +22,7 @@ from c4a0.labels import Labels
 from c4a0.nn import ConnectFourNet, ModelConfig
 from c4a0.utils import BestModelCheckpoint, GenerationTrainer, tensor_batches
 
+# Saved in report.json; the name predates the native solver, whose scores are identical.
 TargetVersion = Literal["pons_terminal_ply_v1"]
 TARGET_VERSION: TargetVersion = "pons_terminal_ply_v1"
 
@@ -29,9 +30,9 @@ TARGET_VERSION: TargetVersion = "pons_terminal_ply_v1"
 def terminal_ply(
     score: NDArray[np.integer], ply: NDArray[np.integer]
 ) -> NDArray[np.int64]:
-    """Ply of the final position under perfect play, from Pons score `score` at ply `ply`.
+    """Ply of the final position under perfect play, from solver score `score` at ply `ply`.
 
-    Pons scores a win as 22 minus the winner's stone count including the winning stone. The
+    The solver scores a win as 22 minus the winner's stone count including the winning stone. The
     first player's k-th stone lands on ply 2k - 1, the second player's on ply 2k. The player to
     move wins when score > 0, the opponent when score < 0. Draws end at ply 42.
     """

@@ -117,11 +117,10 @@ mod tests {
     use super::*;
     use crate::{
         c4r::{Pos, TerminalState},
-        native_solver::{brute, live_pos, suite_rows},
-        solver::MoveScores,
+        native_solver::{brute, live_pos, suite_rows, MoveScores},
     };
 
-    /// The true outcome of the non-terminal `pos` from Pons scores (22 - k for a win with the
+    /// The true outcome of the non-terminal `pos` from suite scores (22 - k for a win with the
     /// winner's k-th stone): the first player's k-th stone lands on ply 2k - 1, the second's on 2k.
     fn true_outcome(pos: &Pos, scores: &MoveScores) -> Proof {
         let best = scores.iter().flatten().copied().max().unwrap();
@@ -184,10 +183,10 @@ mod tests {
         }
     }
 
-    /// Every committed dev row has Pons scores for every ply, so this covers the middle game
+    /// Every committed dev row has exact scores for every ply, so this covers the middle game
     /// where the true result usually lies beyond the horizon and the search must say so.
     #[test]
-    fn proofs_match_committed_pons_scores_on_dev_suite() {
+    fn proofs_match_committed_suite_scores_on_dev_suite() {
         let rows = suite_rows("dev");
         assert!(rows.len() > 2000, "{} rows", rows.len());
         let mut proven = 0;

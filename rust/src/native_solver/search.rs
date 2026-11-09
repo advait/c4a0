@@ -9,7 +9,7 @@
 use super::board::{Board, CELLS, WIDTH};
 use super::book::Book;
 use super::tt::{Bound, Tt};
-use crate::solver::MoveScores;
+use super::MoveScores;
 
 /// Columns from the center out. Central stones take part in more lines, so they cut first.
 const COLUMN_ORDER: [usize; WIDTH] = [3, 2, 4, 1, 5, 0, 6];
@@ -19,7 +19,7 @@ pub fn win_now_score(ply: u8) -> i8 {
 }
 
 /// Move ordering policy. [Order::Threats] is the default; [Order::Columns] is the plain center
-/// order, kept as an independent configuration for adjudicating disagreements.
+/// order, an independent configuration the tests check against the default.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Order {
     Threats,
@@ -79,7 +79,7 @@ impl<'a> Searcher<'a> {
         lo
     }
 
-    /// Scores of every column of a non-terminal `b`, like `c4solver -a`.
+    /// Scores of every column of a non-terminal `b` ([super::MoveScores]).
     pub fn analyze(&mut self, b: &Board) -> MoveScores {
         std::array::from_fn(|col| self.score_move(b, col))
     }
@@ -283,7 +283,7 @@ mod tests {
     }
 
     #[test]
-    fn matches_committed_pons_scores_from_ply_20() {
+    fn matches_committed_suite_scores_from_ply_20() {
         let tt = Tt::with_bytes(16 << 20);
         let mut s = Searcher::new(&tt, None);
         let rows: Vec<_> = suite_rows("dev")

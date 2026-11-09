@@ -7,28 +7,22 @@ use std::time::Instant;
 use c4a0_rust::native_solver::bench::BenchConfig;
 use c4a0_rust::native_solver::board::Board;
 use c4a0_rust::native_solver::book::{positions_at, Book};
-use c4a0_rust::native_solver::diff::{run, Config};
 use c4a0_rust::native_solver::parallel::{analyze_batch, default_threads, solve_batch};
 use c4a0_rust::native_solver::tt::Tt;
 
 const USAGE: &str = "\
 c4native analyze [--book FILE] [--tt-mb N] [--threads N]
     Reads one position per stdin line as 1-indexed column digits (empty line = empty board) and
-    prints the line followed by seven scores, -1000 for a full column, like `c4solver -a`.
+    prints the line followed by seven scores, -1000 for a full column.
 c4native book --ply P --out FILE [--deeper FILE] [--tt-mb N] [--threads N] [--estimate K]
     Solves every non-terminal position at ply P into a book. --estimate K solves K evenly spaced
     positions instead and prints the projected build time.
 
-c4native diff --pons BIN --pons-book FILE --book FILE --out DIR [--per-ply N] [--seed S]
-        [--suite FILE]... [--tt-mb N] [--threads N]
-    Samples positions from the seed, adds the suite rows, scores everything with both solvers,
-    adjudicates each disagreement and writes diffs.jsonl, cases.tsv and summary.json to DIR.
-    Exits 1 if any disagreement is unexplained.
 
-c4native bench --book FILE [--per-ply N] [--seed S] [--threads-list 1,8,32] [--runs R]
-        [--tt-mb N] [--pons BIN --pons-book FILE]
-    Times analysis of the seeded walk positions at each thread count (and Pons, if given),
-    interleaved, each with a cold table, checking every run's rows against the first.
+c4native bench [--book FILE] [--per-ply N] [--seed S] [--threads-list 1,8,32] [--runs R]
+        [--tt-mb N]
+    Times analysis of the seeded walk positions at each thread count, interleaved, each with a
+    cold table, checking every run's rows against the first.
 
 --tt-mb is the shared transposition table size (default 256); --threads defaults to the
 available parallelism.";
@@ -41,11 +35,8 @@ struct Opts {
     tt_mb: usize,
     threads: usize,
     estimate: Option<usize>,
-    pons: Option<String>,
-    pons_book: Option<String>,
     per_ply: usize,
     seed: u64,
-    suites: Vec<PathBuf>,
     threads_list: Vec<usize>,
     runs: usize,
 }
@@ -59,11 +50,8 @@ fn parse(args: &[String]) -> Result<Opts, String> {
         tt_mb: Tt::DEFAULT_BYTES >> 20,
         threads: default_threads(),
         estimate: None,
-        pons: None,
-        pons_book: None,
         per_ply: 200,
         seed: 1,
-        suites: vec![],
         threads_list: vec![1, 8, 32],
         runs: 5,
     };
@@ -79,11 +67,8 @@ fn parse(args: &[String]) -> Result<Opts, String> {
             "--tt-mb" => o.tt_mb = num(value()?)?,
             "--threads" => o.threads = num(value()?)?.max(1),
             "--estimate" => o.estimate = Some(num(value()?)?),
-            "--pons" => o.pons = Some(value()?.clone()),
-            "--pons-book" => o.pons_book = Some(value()?.clone()),
             "--per-ply" => o.per_ply = num(value()?)?,
             "--seed" => o.seed = num(value()?)? as u64,
-            "--suite" => o.suites.push(value()?.into()),
             "--runs" => o.runs = num(value()?)?.max(1),
             "--threads-list" => {
                 o.threads_list = value()?
@@ -106,7 +91,7 @@ fn load_book(path: &Option<PathBuf>) -> Result<Option<Book>, String> {
         .transpose()
 }
 
-/// Parses a Pons-protocol line: 1-indexed column digits from the empty board.
+/// Parses an `analyze` line: 1-indexed column digits from the empty board.
 fn parse_line(line: &str) -> Result<Board, String> {
     let moves = line
         .chars()
@@ -196,39 +181,7 @@ fn book(o: &Opts) -> Result<(), String> {
     Ok(())
 }
 
-fn diff(o: &Opts) -> Result<bool, String> {
-    let suites = o
-        .suites
-        .iter()
-        .map(|p| {
-            let name = p.file_stem().and_then(|s| s.to_str()).unwrap_or("suite");
-            // Suite names label report rows for the life of the process.
-            let name: &'static str = Box::leak(name.to_string().into_boxed_str());
-            std::fs::read_to_string(p)
-                .map(|t| (name, t))
-                .map_err(|e| format!("{:?}: {}", p, e))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let cfg = Config {
-        pons: o.pons.clone().ok_or("--pons is required")?,
-        pons_book: o.pons_book.clone().ok_or("--pons-book is required")?,
-        book: Some(load_book(&o.book)?.ok_or("--book is required")?),
-        per_ply: o.per_ply,
-        seed: o.seed,
-        threads: o.threads,
-        tt_bytes: o.tt_mb << 20,
-        suites,
-        out: o.out.clone().ok_or("--out is required")?,
-    };
-    Ok(run(&cfg)? == 0)
-}
-
 fn bench(o: &Opts) -> Result<(), String> {
-    let pons = match (&o.pons, &o.pons_book) {
-        (Some(p), Some(b)) => Some((p.clone(), b.clone())),
-        (None, None) => None,
-        _ => return Err("--pons and --pons-book go together".into()),
-    };
     let cfg = BenchConfig {
         per_ply: o.per_ply,
         seed: o.seed,
@@ -236,7 +189,6 @@ fn bench(o: &Opts) -> Result<(), String> {
         runs: o.runs,
         tt_bytes: o.tt_mb << 20,
         book: load_book(&o.book)?,
-        pons,
     };
     print!("{}", c4a0_rust::native_solver::bench::run(&cfg)?);
     Ok(())
@@ -245,19 +197,15 @@ fn bench(o: &Opts) -> Result<(), String> {
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
-        Some(cmd @ ("analyze" | "book" | "diff" | "bench")) => {
-            parse(&args[1..]).and_then(|o| match cmd {
-                "analyze" => analyze(&o).map(|_| true),
-                "book" => book(&o).map(|_| true),
-                "bench" => bench(&o).map(|_| true),
-                _ => diff(&o),
-            })
-        }
+        Some(cmd @ ("analyze" | "book" | "bench")) => parse(&args[1..]).and_then(|o| match cmd {
+            "analyze" => analyze(&o),
+            "book" => book(&o),
+            _ => bench(&o),
+        }),
         _ => Err(USAGE.into()),
     };
     match result {
-        Ok(true) => {}
-        Ok(false) => std::process::exit(1),
+        Ok(()) => {}
         Err(e) => {
             eprintln!("{}", e);
             std::process::exit(2);

@@ -121,6 +121,37 @@ def test_head_options_reject_invalid_values(command: str, flags: list[str]) -> N
     assert flags[0] in _plain(result.output)
 
 
+def test_label_requires_the_book_and_forwards_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from c4a0.labels import Labels, Recipe
+    from c4a0_tests.labels_test import SOLVER_ROWS, make_labels
+
+    out = tmp_path / "train.tsv"
+    missing = tmp_path / "missing.bin"
+    result = CliRunner().invoke(main.app, ["label", str(out), "--book", str(missing)])
+    assert result.exit_code == 2
+    assert "solver:book" in _plain(result.output)
+    assert not out.exists()
+
+    calls: list[tuple[Path | None, int | None]] = []
+
+    def fake_label(
+        recipe: Recipe, book: Path | None = None, threads: int | None = None
+    ) -> Labels:
+        calls.append((book, threads))
+        return make_labels(SOLVER_ROWS, recipe)
+
+    book = tmp_path / "book.bin"
+    book.write_bytes(b"")
+    monkeypatch.setattr(main, "label_positions", fake_label)
+    args = ["label", str(out), "--book", str(book), "--per-ply", "1", "--threads", "3"]
+    result = CliRunner().invoke(main.app, args)
+    assert result.exit_code == 0, result.output
+    assert calls == [(book, 3)]
+    assert len(main.read_labels(out)) == len(SOLVER_ROWS)
+
+
 @pytest.mark.parametrize(
     "anneal_flags,anneal", [([], 40), (["--anneal-epochs", "0"], None)]
 )
@@ -135,14 +166,14 @@ def test_ceiling_options_reach_model_pickle_and_report(
 
     from c4a0.labels import Labels, Recipe, Split, write_labels
     from c4a0.nn import ConnectFourNet
-    from c4a0_tests.labels_test import PONS_ROWS, make_labels
+    from c4a0_tests.labels_test import SOLVER_ROWS, make_labels
     from c4a0_tests.training_test import _tiny_suite
 
     labels = tmp_path / "train.tsv"
     write_labels(
         labels,
         make_labels(
-            PONS_ROWS,
+            SOLVER_ROWS,
             Recipe(version=1, split=Split.TRAIN, seed=1, per_ply=4, plies=(0, 41)),
         ),
     )
@@ -310,7 +341,7 @@ def test_cli_loads_legacy_cuda_model_on_cpu(
 
     from c4a0.labels import Suite
     from c4a0.training import TrainingGen
-    from c4a0_tests.labels_test import PONS_ROWS, make_labels
+    from c4a0_tests.labels_test import SOLVER_ROWS, make_labels
     from c4a0_tests.training_test import TINY_GEN_CONFIG
 
     model, path = legacy_cuda_model
@@ -334,7 +365,7 @@ def test_cli_loads_legacy_cuda_model_on_cpu(
             np.testing.assert_array_equal(actual, expected)
         called.append(True)
 
-    suite = Suite(labels=make_labels(PONS_ROWS), name="test/tiny", sha256="abc")
+    suite = Suite(labels=make_labels(SOLVER_ROWS), name="test/tiny", sha256="abc")
     monkeypatch.setattr(main.c4a0_rust, "run_tui", run_tui)
     monkeypatch.setattr(main, "load_suite", lambda _split: suite)
     flags = ["--mcts-iterations", "4"] if command == "eval" else []

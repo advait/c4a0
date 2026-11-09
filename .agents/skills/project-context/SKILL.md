@@ -8,8 +8,8 @@ description: "Read before the first decision on c4a0: who uses it, what is one-w
 Status: implemented
 
 **What it is.** An AlphaZero-style Connect Four engine. Rust (`rust/src`) holds the rules,
-MCTS, multi-threaded self-play, position sampling and splits, the Pascal Pons solver interface
-and the TUI. Python
+MCTS, multi-threaded self-play, position sampling and splits, the clean-room solver that labels
+every position (`rust/src/native_solver/`) and the TUI. Python
 (`src/c4a0`) holds the PyTorch Lightning network, the generation loop and the CLI
 (`src/c4a0/main.py`). PyO3 joins them (`rust/src/pybridge.rs`, stubs in
 `src/c4a0_rust/__init__.pyi`).
@@ -49,8 +49,8 @@ is the single version pin. ty is the only type checker. Ruff checks annotations 
 All validation tasks enforce `uv.lock` with `--locked`.
 
 **Task runner.** mise (`mise.toml`). Canonical tasks: `install`, `build`, `lint`,
-`typecheck`, `test:rust`, `test:python`, `check`, `train:smoke`, `ci`, `train`, `play`, `eval`, `report`, and `suite:build`
-(needs the solver). See the **verify** skill for which to run when.
+`typecheck`, `test:rust`, `test:python`, `check`, `train:smoke`, `ci`, `train`, `play`, `eval`, `report`, `suite:build`, and
+`solver:book` (the opening book large `label` jobs need). See the **verify** skill for which to run when.
 
 **Follow-ups.** GitHub issues on `advait/c4a0`, or list them in the reply. Convergence
 hypotheses, their measured results and the open next steps live in `docs/experiments.md`.
