@@ -27,6 +27,13 @@ calling the work done. Timings were measured on the CPU dev container (32 cores,
   loss and near-full draws against a negamax oracle in the test module.
   Search tests assert preferred moves and visit spread, including the low-prior immediate
   win that the old formula starved. Do not restore old-formula visit-share thresholds.
+- Leaf minimax (`--leaf-minimax-depth`, `rust/src/minimax.rs`, default 0 = off) is an exact
+  depth-limited alpha-beta over the rules, never a solver or book. `minimax.rs` checks every
+  proof and every "unknown" against brute force on late random positions at every depth, and
+  against the dev suite's Pons scores at depths 1-8. `mcts.rs` checks proven roots at once with
+  exact distances, proofs one ply past the root's horizon via child searches, games from proven
+  roots ending at the proven ply, and depth 0 matching plain search. Per-call cost:
+  `cargo test --release minimax_cost -- --ignored --nocapture` in `rust/`.
 - For experiment controls, `mcts.rs` tests root-Q blending at W=0, W=0.25 and W=1,
   unchanged terminal targets, signed-zero preservation in draws, and positive targets
   for either player in immediate-win positions. `self_play.rs` checks the fixed

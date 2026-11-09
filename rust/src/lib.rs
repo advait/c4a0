@@ -4,6 +4,7 @@ pub mod c4r;
 mod interactive_play;
 pub mod labels;
 mod mcts;
+mod minimax;
 pub mod native_solver;
 mod pybridge;
 mod self_play;

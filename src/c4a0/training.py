@@ -82,6 +82,9 @@ class GenConfig(BaseModel):
     random_start_frac: float = Field(default=0.0, ge=0.0, le=1.0)
     random_start_max_ply: int = Field(default=12, ge=1)
     value_target_q_weight: float = Field(default=0.0, ge=0.0, le=1.0)
+    leaf_minimax_depth: int = Field(default=0, ge=0)
+    """Plies of exact search on each MCTS leaf before the network sees it (self-play and
+    evaluation); 0 is plain MCTS-Solver."""
     replay_gens: int = Field(default=1, ge=1)
     train_max_epochs: int = Field(default=100, ge=1)
     train_patience: int = Field(default=10, ge=1)
@@ -152,6 +155,7 @@ class TrainingGen(GenConfig):
                 self.c_exploration,
                 self.c_ply_penalty,
                 device=device,
+                leaf_minimax_depth=self.leaf_minimax_depth,
             )
         self.evals[suite_eval.suite] = suite_eval
         release_cuda_cache(device)
@@ -331,6 +335,7 @@ def train_single_gen(
                 value_target_q_weight=config.value_target_q_weight,
                 random_start_frac=config.random_start_frac,
                 random_start_max_ply=config.random_start_max_ply,
+                leaf_minimax_depth=config.leaf_minimax_depth,
             )
             del evaluator
 

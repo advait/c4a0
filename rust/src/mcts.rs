@@ -12,6 +12,7 @@ use rand::{
 
 use crate::{
     c4r::{Move, Pos, TerminalState},
+    minimax,
     types::{policy_from_iter, GameMetadata, GameResult, ModelID, Policy, QValue, Sample},
     utils::OrdF32,
 };
@@ -30,6 +31,9 @@ pub struct MctsGame {
     leaf: Rc<RefCell<Node>>,
     moves: Vec<RecordedMove>,
     root_noise_applied: bool,
+    /// Plies of exact [minimax::prove] search on each new leaf before it goes to the network;
+    /// 0 disables it.
+    leaf_minimax_depth: usize,
 }
 
 impl Default for MctsGame {
@@ -54,7 +58,17 @@ impl MctsGame {
             leaf: root_node,
             moves: Vec::new(),
             root_noise_applied: false,
+            leaf_minimax_depth: 0,
         }
+    }
+
+    /// Searches every leaf `depth` plies with [minimax::prove] before it would go to the network,
+    /// starting with the root. A proven leaf backs up its exact value like a terminal one, and
+    /// MCTS-Solver carries the proof upward. 0 keeps plain MCTS-Solver.
+    pub fn with_leaf_minimax_depth(mut self, depth: usize) -> MctsGame {
+        self.leaf_minimax_depth = depth;
+        self.search_leaf();
+        self
     }
 
     /// Gets the root position - the last moved that was played.
@@ -126,8 +140,11 @@ impl MctsGame {
     /// Backpropagate value up the tree, alternating value signs for each step.
     /// The value starts as the NN's estimate for the leaf. Any proven node on the path (the leaf
     /// included) replaces it with its exact value, so its ancestors average exact outcomes.
-    /// Proofs propagate upward: a node is re-proven only when the node below it was proven in
-    /// this backup, so far from any terminal this costs one comparison per step.
+    /// Proofs propagate upward: a node is re-proven only when the node below it is proven (the
+    /// leaf included), so far from any terminal this costs one comparison per step. Re-proving
+    /// the parent of an already proven leaf finds nothing new for terminal leaves (their parent
+    /// was re-proven when it was expanded), but a leaf that [Self::search_leaf] just proved has
+    /// never been seen by its parent.
     fn backpropagate_value(&self, q_penalty: QValue, q_no_penalty: QValue, c_ply_penalty: f32) {
         let mut value = (q_penalty, q_no_penalty);
         let mut node_ref = Rc::clone(&self.leaf);
@@ -136,10 +153,8 @@ impl MctsGame {
             let mut node = node_ref.borrow_mut();
             if reprove && node.proof.is_none() {
                 node.proof = node.proof_from_children();
-                reprove = node.proof.is_some();
-            } else {
-                reprove = false;
             }
+            reprove = reprove && node.proof.is_some();
             if let Some(proof) = node.proof {
                 value = proof.q(c_ply_penalty);
             }
@@ -189,6 +204,53 @@ impl MctsGame {
         }
 
         self.leaf = node_ref;
+        self.search_leaf();
+    }
+
+    /// With [Self::leaf_minimax_depth] > 0, tries to prove an unexpanded leaf before it goes to
+    /// the network, and gives a proven, unexpanded root children so its policy and
+    /// [Self::make_move] work. Searching at the leaf rather than at every child on expansion
+    /// costs one search per network call instead of one per legal move.
+    ///
+    /// A leaf may be searched again when selection returns to it without an evaluation (after a
+    /// move or root noise); the search is deterministic, so that only costs time.
+    fn search_leaf(&mut self) {
+        let depth = self.leaf_minimax_depth;
+        if depth == 0 {
+            return;
+        }
+        let mut leaf = self.leaf.borrow_mut();
+        if leaf.proof.is_none() && leaf.children.is_none() {
+            leaf.proof = minimax::prove(&leaf.pos, depth);
+        }
+        drop(leaf);
+
+        let mut root = self.root.borrow_mut();
+        if root.children.is_some() || root.proof.is_none() || root.pos.is_terminal_state().is_some()
+        {
+            return;
+        }
+        // The root was proven by its own search, so its outcome ends within `depth` plies, and
+        // each optimal child's (the same outcome, one ply nearer) within `depth` - 1. Searching
+        // every child to `depth` therefore proves exactly the optimal ones with the root's
+        // outcome, which is where [Node::policy] puts the proven root's mass. No network prior
+        // is needed: selection never descends below a proven root.
+        let pos = root.pos.clone();
+        let legal = pos.legal_moves();
+        root.children = Some(array::from_fn(|m| {
+            legal[m].then(|| {
+                let child_pos = pos.make_move(m).unwrap();
+                let mut child = Node::new(
+                    child_pos,
+                    Rc::downgrade(&self.root),
+                    Self::UNIFORM_POLICY[m],
+                );
+                if child.proof.is_none() {
+                    child.proof = minimax::prove(&child.pos, depth);
+                }
+                Rc::new(RefCell::new(child))
+            })
+        }));
     }
 
     /// Makes a move, updating the root node to be the child node corresponding to the move.
@@ -292,6 +354,7 @@ impl MctsGame {
         self.leaf = root;
         self.root_noise_applied = false;
         self.moves = moves;
+        self.search_leaf();
         true
     }
 
@@ -397,9 +460,12 @@ struct RecordedMove {
 /// move at the node. `end_ply` is the ply of the terminal position reached under the best play the
 /// proof knows, so faster wins and slower losses rank higher and the existing ply penalty applies
 /// unchanged. A Win proven while some siblings of its winning move were unproven records the
-/// fastest win found, which can be slower than the fastest win that exists.
+/// fastest win found, which can be slower than the fastest win that exists. Leaf searches
+/// ([minimax::prove]) are exact, and so is a Win through a child they proved: the parent's own
+/// search at the same depth found no win within that depth, so the child's win, at most one ply
+/// further, is the fastest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Proof {
+pub(crate) enum Proof {
     Win { end_ply: u8 },
     Draw,
     Loss { end_ply: u8 },
@@ -452,8 +518,8 @@ impl Proof {
 /// We maintain two separate Q values: one with ply penalties applied ([Self::q_sum_penalty]) and
 /// one without ([Self::q_sum_no_penalty]). These are normalized with [Self::visit_count] to get the
 /// average [QValue]s in [Self::q_with_penalty()] and [Self::q_no_penalty()].
-/// [Self::proof] is the node's exact outcome once the rules (terminal nodes) or its children
-/// settle it; None while unproven.
+/// [Self::proof] is the node's exact outcome once the rules (terminal nodes), a leaf search
+/// ([MctsGame::with_leaf_minimax_depth]) or its children settle it; None while unproven.
 #[derive(Debug, Clone)]
 struct Node {
     pos: Pos,
@@ -1157,8 +1223,15 @@ mod tests {
     }
 
     /// Uniform-estimator search until the root is proven or `budget` iterations are spent.
-    fn search_until_proven(pos: &Pos, budget: usize) -> MctsGame {
-        let mut game = MctsGame::new_from_pos(pos.clone(), GameMetadata::default());
+    fn search_until_proven(pos: &Pos, budget: usize, leaf_depth: usize) -> MctsGame {
+        let mut game = MctsGame::new_from_pos(pos.clone(), GameMetadata::default())
+            .with_leaf_minimax_depth(leaf_depth);
+        search(&mut game, budget);
+        game
+    }
+
+    /// Uniform-estimator iterations until the root is proven or has `budget` visits.
+    fn search(game: &mut MctsGame, budget: usize) {
         while game.needs_search(budget) {
             game.on_received_policy(
                 MctsGame::UNIFORM_POLICY,
@@ -1168,14 +1241,19 @@ mod tests {
                 TEST_C_PLY_PENALTY,
             );
         }
-        game
     }
 
     /// The root is proven within the budget, its Q is exact, and the policy splits all mass
     /// evenly over oracle-best moves. An equally fast win still unproven gets none.
-    fn assert_proven_best(pos: &Pos, budget: usize, expected: Proof, depth: usize) {
+    fn assert_proven_best(
+        pos: &Pos,
+        budget: usize,
+        expected: Proof,
+        depth: usize,
+        leaf_depth: usize,
+    ) {
         assert_eq!(solve(pos, depth), Some(expected), "oracle precondition");
-        let game = search_until_proven(pos, budget);
+        let game = search_until_proven(pos, budget, leaf_depth);
         assert!(
             game.root_visit_count() < budget,
             "not proven within {budget}"
@@ -1205,7 +1283,7 @@ mod tests {
             (moves("2453645131230"), 5, 512),
         ] {
             let end_ply = (pos.ply() + plies) as u8;
-            assert_proven_best(&pos, budget, Proof::Win { end_ply }, plies);
+            assert_proven_best(&pos, budget, Proof::Win { end_ply }, plies, 0);
         }
     }
 
@@ -1214,7 +1292,7 @@ mod tests {
         // Every move loses. Column 1 holds out until ply 15; every other move loses at ply 13.
         let pos = moves("16153315336");
         assert_eq!(best_moves(&pos, 5), vec![1]);
-        assert_proven_best(&pos, 4096, Proof::Loss { end_ply: 15 }, 5);
+        assert_proven_best(&pos, 4096, Proof::Loss { end_ply: 15 }, 5, 0);
     }
 
     #[test]
@@ -1226,7 +1304,95 @@ mod tests {
         ] {
             let pos = moves(s);
             assert_eq!(best_moves(&pos, 42 - pos.ply()), vec![draw]);
-            assert_proven_best(&pos, 4096, Proof::Draw, 42 - pos.ply());
+            assert_proven_best(&pos, 4096, Proof::Draw, 42 - pos.ply(), 0);
+        }
+    }
+
+    #[test]
+    fn leaf_search_proves_forced_roots_with_exact_distances() {
+        // Searching as deep as the outcome proves the root before any evaluation.
+        for (pos, expected, plies) in [
+            (moves("2453645131230"), Proof::Win { end_ply: 18 }, 5),
+            (moves("16153315336"), Proof::Loss { end_ply: 15 }, 4),
+        ] {
+            let game = search_until_proven(&pos, 2, plies);
+            assert_eq!(game.root_visit_count(), 0);
+            assert_proven_best(&pos, 2, expected, plies + 1, plies);
+            // Exact children give every equally good move a share, not just the first proven.
+            let policy = game.root_policy();
+            let chosen: Vec<Move> = (0..Pos::N_COLS).filter(|&c| policy[c] > 0.0).collect();
+            assert_eq!(chosen, best_moves(&pos, plies + 1));
+        }
+        // One ply short, the root is unknown to its own search; the child searches at the same
+        // depth reach the win, and MCTS-Solver proves the root with the fastest distance.
+        let pos = moves("2453645131230");
+        assert_eq!(minimax::prove(&pos, 4), None);
+        assert_proven_best(&pos, 64, Proof::Win { end_ply: 18 }, 5, 4);
+        // The slowest loss is likewise exact one ply beyond the root's horizon.
+        assert_proven_best(
+            &moves("16153315336"),
+            256,
+            Proof::Loss { end_ply: 15 },
+            5,
+            3,
+        );
+    }
+
+    #[test]
+    fn games_from_proven_roots_play_optimally_to_the_proven_end() {
+        // Each new root is proven and expanded with proven children, so sampling at temperature
+        // 1 only ever picks a fastest win or a slowest loss. The end ply fixes who won.
+        for (s, end_ply) in [("2453645131230", 18), ("16153315336", 15)] {
+            let mut game = MctsGame::new_from_pos(moves(s), GameMetadata::default())
+                .with_leaf_minimax_depth(6);
+            while game.root_pos().is_terminal_state().is_none() {
+                search(&mut game, 8);
+                assert!(!game.needs_search(usize::MAX), "{}", game.root_pos());
+                game.make_random_move(TEST_C_EXPLORATION, TEST_C_PLY_PENALTY, 1.0);
+            }
+            let end = game.root_pos();
+            assert_eq!(end.ply(), end_ply);
+            assert_eq!(end.is_terminal_state(), Some(TerminalState::OpponentWin));
+        }
+    }
+
+    #[test]
+    fn leaf_search_at_depth_zero_is_plain_search() {
+        // Same tree, same floats: default construction and an explicit 0 match after a move.
+        let pos = moves("2453645131");
+        let mut plain = MctsGame::new_from_pos(pos.clone(), GameMetadata::default());
+        let mut zero =
+            MctsGame::new_from_pos(pos, GameMetadata::default()).with_leaf_minimax_depth(0);
+        for game in [&mut plain, &mut zero] {
+            search(game, 200);
+            game.make_move(3, TEST_C_EXPLORATION, TEST_C_PLY_PENALTY);
+            search(game, 400);
+        }
+        assert_eq!(plain.root_policy(), zero.root_policy());
+        assert_eq!(
+            plain.root_q(TEST_C_PLY_PENALTY),
+            zero.root_q(TEST_C_PLY_PENALTY)
+        );
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        /// Late positions searched to the end of the game: the root is proven at once, and its
+        /// policy covers only brute-force-best moves.
+        #[test]
+        fn leaf_search_to_the_end_matches_brute_force(
+            pos in crate::native_solver::live_pos(41)
+        ) {
+            prop_assume!(pos.ply() >= 33);
+            let scores = crate::native_solver::brute::analyze(&pos);
+            let best = scores.iter().flatten().max().copied();
+            let game = search_until_proven(&pos, 2, 42 - pos.ply());
+            prop_assert_eq!(game.root_visit_count(), 0);
+            let policy = game.root_policy();
+            for col in 0..Pos::N_COLS {
+                prop_assert_eq!(policy[col] > 0.0, scores[col].is_some() && scores[col] == best);
+            }
         }
     }
 

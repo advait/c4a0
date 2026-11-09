@@ -86,6 +86,54 @@ def test_mcts_policies_prefers_immediate_win() -> None:
     assert policies[0, 0] + policies[0, 4] > 0.8
 
 
+def test_mcts_policies_leaf_search_proves_forced_win_at_once() -> None:
+    # The mover wins in 5 plies with column 1 or 4. A 5-ply leaf search proves the root before
+    # any network call and splits the policy over both. Plain MCTS-Solver, with a large budget,
+    # proves the same win through one of them and leaves the other unproven.
+    calls: list[int] = []
+
+    def counting_eval(
+        model_id: int, pos: NDArray[np.float32]
+    ) -> tuple[NDArray[np.float32], NDArray[np.float32], NDArray[np.float32]]:
+        calls.append(pos.shape[0])
+        return _uniform_eval(model_id, pos)
+
+    root = ["2453645131230"]
+    searched = c4a0_rust.mcts_policies(
+        root, 2, 2.0, 0.01, counting_eval, leaf_minimax_depth=5
+    )
+    assert calls == []
+    np.testing.assert_array_equal(searched[0], [0, 0.5, 0, 0, 0.5, 0, 0])
+    plain = c4a0_rust.mcts_policies(root, 4096, 2.0, 0.01, _uniform_eval)
+    assert set(np.flatnonzero(plain[0])) <= {1, 4}
+
+
+def test_mcts_policies_default_leaf_depth_is_zero() -> None:
+    roots = ["", "33", "2453645131"]
+    np.testing.assert_array_equal(
+        c4a0_rust.mcts_policies(roots, 32, 2.0, 0.01, _uniform_eval),
+        c4a0_rust.mcts_policies(
+            roots, 32, 2.0, 0.01, _uniform_eval, leaf_minimax_depth=0
+        ),
+    )
+
+
+def test_play_games_with_leaf_search_finishes_games() -> None:
+    games = c4a0_rust.play_games(
+        [c4a0_rust.GameMetadata(i, 0, 0) for i in range(4)],
+        8,
+        8,
+        2.0,
+        0.01,
+        _uniform_eval,
+        leaf_minimax_depth=4,
+    )
+    assert sorted(_game_ids(games)) == [0, 1, 2, 3]
+    for result in games.results:
+        for sample in result.samples:
+            assert sample.to_numpy()[1].sum() == pytest.approx(1.0)
+
+
 def test_mcts_policies_is_deterministic_and_batch_independent() -> None:
     roots = ["", "3", "33", "24", "42", "3"]
     batched = c4a0_rust.mcts_policies(roots, 32, 4.0, 0.01, _uniform_eval)

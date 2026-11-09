@@ -234,10 +234,17 @@ def test_root_and_child_evaluate_on_training_device(
         c_exploration: float,
         c_ply_penalty: float,
         device: str | torch.device = "cpu",
+        leaf_minimax_depth: int = 0,
     ) -> training.SuiteEval:
         devices.append(device)
         return evaluate_model(
-            path, suite, mcts_iterations, c_exploration, c_ply_penalty, device
+            path,
+            suite,
+            mcts_iterations,
+            c_exploration,
+            c_ply_penalty,
+            device,
+            leaf_minimax_depth,
         )
 
     monkeypatch.setattr(training, "evaluate_model", check_device)
@@ -264,10 +271,16 @@ def test_root_forwards_cuda_device_without_requiring_cuda_to_save(
         c_exploration: float,
         c_ply_penalty: float,
         device: str | torch.device = "cpu",
+        leaf_minimax_depth: int = 0,
     ) -> training.SuiteEval:
         devices.append(device)
         return evaluate_model(
-            path, suite, mcts_iterations, c_exploration, c_ply_penalty
+            path,
+            suite,
+            mcts_iterations,
+            c_exploration,
+            c_ply_penalty,
+            leaf_minimax_depth=leaf_minimax_depth,
         )
 
     monkeypatch.setattr(training, "evaluate_model", cpu_eval)
@@ -338,6 +351,7 @@ def test_legacy_metadata_loads_with_empty_evals(tmp_path: Path) -> None:
     assert gen.root_noise_frac == 0.0
     assert gen.random_start_frac == 0.0
     assert gen.random_start_max_ply == 12
+    assert gen.leaf_minimax_depth == 0
     assert gen.replay_gens == 1
     assert gen.train_max_epochs == 100
     assert gen.train_patience == 10

@@ -55,6 +55,7 @@ def capture_generations(
         value_target_q_weight: float = 0.0,
         random_start_frac: float = 0.0,
         random_start_max_ply: int = 12,
+        leaf_minimax_depth: int = 0,
     ) -> c4a0_rust.PlayGamesResult:
         result = c4a0_rust.PlayGamesResult()
         for req in reqs:
@@ -70,6 +71,7 @@ def capture_generations(
                 value_target_q_weight=value_target_q_weight,
                 random_start_frac=random_start_frac,
                 random_start_max_ply=random_start_max_ply,
+                leaf_minimax_depth=leaf_minimax_depth,
             )
         return result
 
