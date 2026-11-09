@@ -1,2494 +1,376 @@
 {
- "note": "Per-generation dev-suite scores from the alapin convergence runs (scripts/converge_report.py reads the same metadata). strict64 = MCTS-64 top-1 agreement with the solver's fastest-win move; keeps256 = MCTS-256 top-1 keeps the game result. Two runs per arm.",
- "series": {
-  "search": [
-   {
-    "label": "Original search (ln-UCB)",
-    "runs": [
-     "converge-v1/current-r1",
-     "converge-v1/current-r2"
-    ],
-    "short": "ln-UCB"
-   },
-   {
-    "label": "PUCT + true-mean Q",
-    "runs": [
-     "converge-v1/puct-r1",
-     "converge-v1/puct-r2"
-    ],
-    "short": "PUCT"
-   },
-   {
-    "label": "+ root noise + replay 4",
-    "runs": [
-     "converge-v3/nr-r1",
-     "converge-v3/nr-r2"
-    ],
-    "short": "+ noise, replay"
-   },
-   {
-    "label": "+ 2,048 games/gen",
-    "runs": [
-     "converge-v3/nr-g2048-r1",
-     "converge-v3/nr-g2048-r2"
-    ],
-    "short": "+ 2,048 games"
-   }
-  ],
-  "target": [
-   {
-    "label": "1\u00d732 net, replay 8 (60 gens)",
-    "short": "1\u00d732 net",
-    "runs": [
-     "converge-v4/best-r1",
-     "converge-v4/best-r2"
-    ]
-   },
-   {
-    "label": "Final defaults: 4\u00d764, random starts",
-    "short": "final defaults",
-    "runs": [
-     "converge-v10/final-r1",
-     "converge-v10/final-r2"
-    ]
-   },
-   {
-    "label": "Final defaults + MCTS-Solver",
-    "short": "+ MCTS-Solver",
-    "runs": [
-     "converge-v11/solver-r1",
-     "converge-v11/solver-r2"
-    ]
-   }
-  ]
- },
- "runs": {
-  "converge-v1/current-r1": [
-   {
-    "gen": 0,
-    "strict64": 0.75705,
-    "keeps256": null
-   },
-   {
-    "gen": 1,
-    "strict64": 0.72746,
-    "keeps256": null
-   },
-   {
-    "gen": 2,
-    "strict64": 0.75225,
-    "keeps256": null
-   },
-   {
-    "gen": 3,
-    "strict64": 0.73461,
-    "keeps256": null
-   },
-   {
-    "gen": 4,
-    "strict64": 0.71313,
-    "keeps256": null
-   },
-   {
-    "gen": 5,
-    "strict64": 0.65703,
-    "keeps256": null
-   },
-   {
-    "gen": 6,
-    "strict64": 0.65262,
-    "keeps256": null
-   },
-   {
-    "gen": 7,
-    "strict64": 0.62469,
-    "keeps256": null
-   },
-   {
-    "gen": 8,
-    "strict64": 0.62739,
-    "keeps256": null
-   },
-   {
-    "gen": 9,
-    "strict64": 0.60755,
-    "keeps256": null
-   },
-   {
-    "gen": 10,
-    "strict64": 0.63939,
-    "keeps256": null
-   },
-   {
-    "gen": 11,
-    "strict64": 0.62322,
-    "keeps256": null
-   },
-   {
-    "gen": 12,
-    "strict64": 0.64005,
-    "keeps256": null
-   },
-   {
-    "gen": 13,
-    "strict64": 0.61636,
-    "keeps256": null
-   },
-   {
-    "gen": 14,
-    "strict64": 0.60534,
-    "keeps256": null
-   },
-   {
-    "gen": 15,
-    "strict64": 0.60828,
-    "keeps256": null
-   },
-   {
-    "gen": 16,
-    "strict64": 0.59832,
-    "keeps256": null
-   },
-   {
-    "gen": 17,
-    "strict64": 0.60395,
-    "keeps256": null
-   },
-   {
-    "gen": 18,
-    "strict64": 0.62331,
-    "keeps256": null
-   },
-   {
-    "gen": 19,
-    "strict64": 0.58942,
-    "keeps256": null
-   },
-   {
-    "gen": 20,
-    "strict64": 0.58746,
-    "keeps256": null
-   }
-  ],
-  "converge-v1/current-r2": [
-   {
-    "gen": 0,
-    "strict64": 0.78224,
-    "keeps256": null
-   },
-   {
-    "gen": 1,
-    "strict64": 0.74114,
-    "keeps256": null
-   },
-   {
-    "gen": 2,
-    "strict64": 0.72987,
-    "keeps256": null
-   },
-   {
-    "gen": 3,
-    "strict64": 0.73665,
-    "keeps256": null
-   },
-   {
-    "gen": 4,
-    "strict64": 0.70627,
-    "keeps256": null
-   },
-   {
-    "gen": 5,
-    "strict64": 0.68937,
-    "keeps256": null
-   },
-   {
-    "gen": 6,
-    "strict64": 0.65189,
-    "keeps256": null
-   },
-   {
-    "gen": 7,
-    "strict64": 0.67728,
-    "keeps256": null
-   },
-   {
-    "gen": 8,
-    "strict64": 0.63425,
-    "keeps256": null
-   },
-   {
-    "gen": 9,
-    "strict64": 0.6416,
-    "keeps256": null
-   },
-   {
-    "gen": 10,
-    "strict64": 0.63462,
-    "keeps256": null
-   },
-   {
-    "gen": 11,
-    "strict64": 0.5895,
-    "keeps256": null
-   },
-   {
-    "gen": 12,
-    "strict64": 0.64772,
-    "keeps256": null
-   },
-   {
-    "gen": 13,
-    "strict64": 0.58762,
-    "keeps256": null
-   },
-   {
-    "gen": 14,
-    "strict64": 0.58729,
-    "keeps256": null
-   },
-   {
-    "gen": 15,
-    "strict64": 0.59187,
-    "keeps256": null
-   },
-   {
-    "gen": 16,
-    "strict64": 0.57137,
-    "keeps256": null
-   },
-   {
-    "gen": 17,
-    "strict64": 0.59726,
-    "keeps256": null
-   },
-   {
-    "gen": 18,
-    "strict64": 0.5717,
-    "keeps256": null
-   },
-   {
-    "gen": 19,
-    "strict64": 0.57153,
-    "keeps256": null
-   },
-   {
-    "gen": 20,
-    "strict64": 0.54851,
-    "keeps256": null
-   }
-  ],
-  "converge-v1/puct-r1": [
-   {
-    "gen": 0,
-    "strict64": 0.77366,
-    "keeps256": null
-   },
-   {
-    "gen": 1,
-    "strict64": 0.81489,
-    "keeps256": null
-   },
-   {
-    "gen": 2,
-    "strict64": 0.83121,
-    "keeps256": null
-   },
-   {
-    "gen": 3,
-    "strict64": 0.84403,
-    "keeps256": null
-   },
-   {
-    "gen": 4,
-    "strict64": 0.83121,
-    "keeps256": null
-   },
-   {
-    "gen": 5,
-    "strict64": 0.82092,
-    "keeps256": null
-   },
-   {
-    "gen": 6,
-    "strict64": 0.81292,
-    "keeps256": null
-   },
-   {
-    "gen": 7,
-    "strict64": 0.8152,
-    "keeps256": null
-   },
-   {
-    "gen": 8,
-    "strict64": 0.81349,
-    "keeps256": null
-   },
-   {
-    "gen": 9,
-    "strict64": 0.83611,
-    "keeps256": null
-   },
-   {
-    "gen": 10,
-    "strict64": 0.83244,
-    "keeps256": null
-   },
-   {
-    "gen": 11,
-    "strict64": 0.83023,
-    "keeps256": null
-   },
-   {
-    "gen": 12,
-    "strict64": 0.82411,
-    "keeps256": null
-   },
-   {
-    "gen": 13,
-    "strict64": 0.83219,
-    "keeps256": null
-   },
-   {
-    "gen": 14,
-    "strict64": 0.81872,
-    "keeps256": null
-   },
-   {
-    "gen": 15,
-    "strict64": 0.80622,
-    "keeps256": null
-   },
-   {
-    "gen": 16,
-    "strict64": 0.80451,
-    "keeps256": null
-   },
-   {
-    "gen": 17,
-    "strict64": 0.80328,
-    "keeps256": null
-   },
-   {
-    "gen": 18,
-    "strict64": 0.81455,
-    "keeps256": null
-   },
-   {
-    "gen": 19,
-    "strict64": 0.79422,
-    "keeps256": null
-   },
-   {
-    "gen": 20,
-    "strict64": 0.81325,
-    "keeps256": null
-   }
-  ],
-  "converge-v1/puct-r2": [
-   {
-    "gen": 0,
-    "strict64": 0.78401,
-    "keeps256": null
-   },
-   {
-    "gen": 1,
-    "strict64": 0.82476,
-    "keeps256": null
-   },
-   {
-    "gen": 2,
-    "strict64": 0.83648,
-    "keeps256": null
-   },
-   {
-    "gen": 3,
-    "strict64": 0.83268,
-    "keeps256": null
-   },
-   {
-    "gen": 4,
-    "strict64": 0.83603,
-    "keeps256": null
-   },
-   {
-    "gen": 5,
-    "strict64": 0.83048,
-    "keeps256": null
-   },
-   {
-    "gen": 6,
-    "strict64": 0.825,
-    "keeps256": null
-   },
-   {
-    "gen": 7,
-    "strict64": 0.84542,
-    "keeps256": null
-   },
-   {
-    "gen": 8,
-    "strict64": 0.84346,
-    "keeps256": null
-   },
-   {
-    "gen": 9,
-    "strict64": 0.85007,
-    "keeps256": null
-   },
-   {
-    "gen": 10,
-    "strict64": 0.84664,
-    "keeps256": null
-   },
-   {
-    "gen": 11,
-    "strict64": 0.83244,
-    "keeps256": null
-   },
-   {
-    "gen": 12,
-    "strict64": 0.8317,
-    "keeps256": null
-   },
-   {
-    "gen": 13,
-    "strict64": 0.82827,
-    "keeps256": null
-   },
-   {
-    "gen": 14,
-    "strict64": 0.82435,
-    "keeps256": null
-   },
-   {
-    "gen": 15,
-    "strict64": 0.82108,
-    "keeps256": null
-   },
-   {
-    "gen": 16,
-    "strict64": 0.80459,
-    "keeps256": null
-   },
-   {
-    "gen": 17,
-    "strict64": 0.82141,
-    "keeps256": null
-   },
-   {
-    "gen": 18,
-    "strict64": 0.82166,
-    "keeps256": null
-   },
-   {
-    "gen": 19,
-    "strict64": 0.81439,
-    "keeps256": null
-   },
-   {
-    "gen": 20,
-    "strict64": 0.80426,
-    "keeps256": null
-   }
-  ],
-  "converge-v3/nr-r1": [
-   {
-    "gen": 0,
-    "strict64": 0.75599,
-    "keeps256": null
-   },
-   {
-    "gen": 1,
-    "strict64": 0.83166,
-    "keeps256": null
-   },
-   {
-    "gen": 2,
-    "strict64": 0.85742,
-    "keeps256": null
-   },
-   {
-    "gen": 3,
-    "strict64": 0.8522,
-    "keeps256": null
-   },
-   {
-    "gen": 4,
-    "strict64": 0.86722,
-    "keeps256": null
-   },
-   {
-    "gen": 5,
-    "strict64": 0.86232,
-    "keeps256": null
-   },
-   {
-    "gen": 6,
-    "strict64": 0.86118,
-    "keeps256": null
-   },
-   {
-    "gen": 7,
-    "strict64": 0.86314,
-    "keeps256": null
-   },
-   {
-    "gen": 8,
-    "strict64": 0.87188,
-    "keeps256": null
-   },
-   {
-    "gen": 9,
-    "strict64": 0.87286,
-    "keeps256": null
-   },
-   {
-    "gen": 10,
-    "strict64": 0.86894,
-    "keeps256": null
-   },
-   {
-    "gen": 11,
-    "strict64": 0.86183,
-    "keeps256": null
-   },
-   {
-    "gen": 12,
-    "strict64": 0.86134,
-    "keeps256": null
-   },
-   {
-    "gen": 13,
-    "strict64": 0.8584,
-    "keeps256": null
-   },
-   {
-    "gen": 14,
-    "strict64": 0.866,
-    "keeps256": null
-   },
-   {
-    "gen": 15,
-    "strict64": 0.8562,
-    "keeps256": null
-   },
-   {
-    "gen": 16,
-    "strict64": 0.85873,
-    "keeps256": null
-   },
-   {
-    "gen": 17,
-    "strict64": 0.85146,
-    "keeps256": null
-   },
-   {
-    "gen": 18,
-    "strict64": 0.85906,
-    "keeps256": null
-   },
-   {
-    "gen": 19,
-    "strict64": 0.8682,
-    "keeps256": null
-   },
-   {
-    "gen": 20,
-    "strict64": 0.86355,
-    "keeps256": null
-   }
-  ],
-  "converge-v3/nr-r2": [
-   {
-    "gen": 0,
-    "strict64": 0.79159,
-    "keeps256": null
-   },
-   {
-    "gen": 1,
-    "strict64": 0.82194,
-    "keeps256": null
-   },
-   {
-    "gen": 2,
-    "strict64": 0.83358,
-    "keeps256": null
-   },
-   {
-    "gen": 3,
-    "strict64": 0.83856,
-    "keeps256": null
-   },
-   {
-    "gen": 4,
-    "strict64": 0.8611,
-    "keeps256": null
-   },
-   {
-    "gen": 5,
-    "strict64": 0.85587,
-    "keeps256": null
-   },
-   {
-    "gen": 6,
-    "strict64": 0.85473,
-    "keeps256": null
-   },
-   {
-    "gen": 7,
-    "strict64": 0.84485,
-    "keeps256": null
-   },
-   {
-    "gen": 8,
-    "strict64": 0.84607,
-    "keeps256": null
-   },
-   {
-    "gen": 9,
-    "strict64": 0.85987,
-    "keeps256": null
-   },
-   {
-    "gen": 10,
-    "strict64": 0.8562,
-    "keeps256": null
-   },
-   {
-    "gen": 11,
-    "strict64": 0.85595,
-    "keeps256": null
-   },
-   {
-    "gen": 12,
-    "strict64": 0.85546,
-    "keeps256": null
-   },
-   {
-    "gen": 13,
-    "strict64": 0.85693,
-    "keeps256": null
-   },
-   {
-    "gen": 14,
-    "strict64": 0.86036,
-    "keeps256": null
-   },
-   {
-    "gen": 15,
-    "strict64": 0.86061,
-    "keeps256": null
-   },
-   {
-    "gen": 16,
-    "strict64": 0.86845,
-    "keeps256": null
-   },
-   {
-    "gen": 17,
-    "strict64": 0.86869,
-    "keeps256": null
-   },
-   {
-    "gen": 18,
-    "strict64": 0.86028,
-    "keeps256": null
-   },
-   {
-    "gen": 19,
-    "strict64": 0.86526,
-    "keeps256": null
-   },
-   {
-    "gen": 20,
-    "strict64": 0.85644,
-    "keeps256": null
-   }
-  ],
-  "converge-v3/nr-g2048-r1": [
-   {
-    "gen": 0,
-    "strict64": 0.78439,
-    "keeps256": null
-   },
-   {
-    "gen": 1,
-    "strict64": 0.83653,
-    "keeps256": null
-   },
-   {
-    "gen": 2,
-    "strict64": 0.84999,
-    "keeps256": null
-   },
-   {
-    "gen": 3,
-    "strict64": 0.86183,
-    "keeps256": null
-   },
-   {
-    "gen": 4,
-    "strict64": 0.86232,
-    "keeps256": null
-   },
-   {
-    "gen": 5,
-    "strict64": 0.87114,
-    "keeps256": null
-   },
-   {
-    "gen": 6,
-    "strict64": 0.85865,
-    "keeps256": null
-   },
-   {
-    "gen": 7,
-    "strict64": 0.85816,
-    "keeps256": null
-   },
-   {
-    "gen": 8,
-    "strict64": 0.86967,
-    "keeps256": null
-   },
-   {
-    "gen": 9,
-    "strict64": 0.86485,
-    "keeps256": null
-   },
-   {
-    "gen": 10,
-    "strict64": 0.88021,
-    "keeps256": null
-   },
-   {
-    "gen": 11,
-    "strict64": 0.87482,
-    "keeps256": null
-   },
-   {
-    "gen": 12,
-    "strict64": 0.87139,
-    "keeps256": null
-   },
-   {
-    "gen": 13,
-    "strict64": 0.87073,
-    "keeps256": null
-   },
-   {
-    "gen": 14,
-    "strict64": 0.8731,
-    "keeps256": null
-   },
-   {
-    "gen": 15,
-    "strict64": 0.88094,
-    "keeps256": null
-   },
-   {
-    "gen": 16,
-    "strict64": 0.87457,
-    "keeps256": null
-   },
-   {
-    "gen": 17,
-    "strict64": 0.87972,
-    "keeps256": null
-   },
-   {
-    "gen": 18,
-    "strict64": 0.88021,
-    "keeps256": null
-   },
-   {
-    "gen": 19,
-    "strict64": 0.8807,
-    "keeps256": null
-   },
-   {
-    "gen": 20,
-    "strict64": 0.88217,
-    "keeps256": null
-   }
-  ],
-  "converge-v3/nr-g2048-r2": [
-   {
-    "gen": 0,
-    "strict64": 0.77809,
-    "keeps256": null
-   },
-   {
-    "gen": 1,
-    "strict64": 0.8326,
-    "keeps256": null
-   },
-   {
-    "gen": 2,
-    "strict64": 0.83178,
-    "keeps256": null
-   },
-   {
-    "gen": 3,
-    "strict64": 0.8486,
-    "keeps256": null
-   },
-   {
-    "gen": 4,
-    "strict64": 0.85791,
-    "keeps256": null
-   },
-   {
-    "gen": 5,
-    "strict64": 0.84338,
-    "keeps256": null
-   },
-   {
-    "gen": 6,
-    "strict64": 0.866,
-    "keeps256": null
-   },
-   {
-    "gen": 7,
-    "strict64": 0.86281,
-    "keeps256": null
-   },
-   {
-    "gen": 8,
-    "strict64": 0.86698,
-    "keeps256": null
-   },
-   {
-    "gen": 9,
-    "strict64": 0.87245,
-    "keeps256": null
-   },
-   {
-    "gen": 10,
-    "strict64": 0.878,
-    "keeps256": null
-   },
-   {
-    "gen": 11,
-    "strict64": 0.87261,
-    "keeps256": null
-   },
-   {
-    "gen": 12,
-    "strict64": 0.87776,
-    "keeps256": null
-   },
-   {
-    "gen": 13,
-    "strict64": 0.87825,
-    "keeps256": null
-   },
-   {
-    "gen": 14,
-    "strict64": 0.8731,
-    "keeps256": null
-   },
-   {
-    "gen": 15,
-    "strict64": 0.87139,
-    "keeps256": null
-   },
-   {
-    "gen": 16,
-    "strict64": 0.87392,
-    "keeps256": null
-   },
-   {
-    "gen": 17,
-    "strict64": 0.87547,
-    "keeps256": null
-   },
-   {
-    "gen": 18,
-    "strict64": 0.87653,
-    "keeps256": null
-   },
-   {
-    "gen": 19,
-    "strict64": 0.87359,
-    "keeps256": null
-   },
-   {
-    "gen": 20,
-    "strict64": 0.87482,
-    "keeps256": null
-   }
-  ],
-  "converge-v4/best-r1": [
-   {
-    "gen": 0,
-    "strict64": 0.78304,
-    "keeps256": 0.87186
-   },
-   {
-    "gen": 1,
-    "strict64": 0.83995,
-    "keeps256": 0.91678
-   },
-   {
-    "gen": 2,
-    "strict64": 0.84027,
-    "keeps256": 0.9316
-   },
-   {
-    "gen": 3,
-    "strict64": 0.85669,
-    "keeps256": 0.93464
-   },
-   {
-    "gen": 4,
-    "strict64": 0.8602,
-    "keeps256": 0.93531
-   },
-   {
-    "gen": 5,
-    "strict64": 0.87408,
-    "keeps256": 0.93598
-   },
-   {
-    "gen": 6,
-    "strict64": 0.86747,
-    "keeps256": 0.94508
-   },
-   {
-    "gen": 7,
-    "strict64": 0.86869,
-    "keeps256": 0.93969
-   },
-   {
-    "gen": 8,
-    "strict64": 0.87555,
-    "keeps256": 0.93666
-   },
-   {
-    "gen": 9,
-    "strict64": 0.87359,
-    "keeps256": 0.9471
-   },
-   {
-    "gen": 10,
-    "strict64": 0.87433,
-    "keeps256": 0.94609
-   },
-   {
-    "gen": 11,
-    "strict64": 0.87384,
-    "keeps256": 0.94474
-   },
-   {
-    "gen": 12,
-    "strict64": 0.88511,
-    "keeps256": 0.95013
-   },
-   {
-    "gen": 13,
-    "strict64": 0.87457,
-    "keeps256": 0.94609
-   },
-   {
-    "gen": 14,
-    "strict64": 0.87482,
-    "keeps256": 0.94811
-   },
-   {
-    "gen": 15,
-    "strict64": 0.88045,
-    "keeps256": 0.95115
-   },
-   {
-    "gen": 16,
-    "strict64": 0.88143,
-    "keeps256": 0.95148
-   },
-   {
-    "gen": 17,
-    "strict64": 0.87874,
-    "keeps256": 0.95283
-   },
-   {
-    "gen": 18,
-    "strict64": 0.87433,
-    "keeps256": 0.9562
-   },
-   {
-    "gen": 19,
-    "strict64": 0.88094,
-    "keeps256": 0.95418
-   },
-   {
-    "gen": 20,
-    "strict64": 0.88462,
-    "keeps256": 0.95822
-   },
-   {
-    "gen": 21,
-    "strict64": 0.88192,
-    "keeps256": 0.9535
-   },
-   {
-    "gen": 22,
-    "strict64": 0.89123,
-    "keeps256": 0.95755
-   },
-   {
-    "gen": 23,
-    "strict64": 0.89286,
-    "keeps256": 0.95721
-   },
-   {
-    "gen": 24,
-    "strict64": 0.88568,
-    "keeps256": 0.95889
-   },
-   {
-    "gen": 25,
-    "strict64": 0.87457,
-    "keeps256": 0.95451
-   },
-   {
-    "gen": 26,
-    "strict64": 0.87972,
-    "keeps256": 0.95586
-   },
-   {
-    "gen": 27,
-    "strict64": 0.88756,
-    "keeps256": 0.96092
-   },
-   {
-    "gen": 28,
-    "strict64": 0.89025,
-    "keeps256": 0.96159
-   },
-   {
-    "gen": 29,
-    "strict64": 0.8829,
-    "keeps256": 0.96159
-   },
-   {
-    "gen": 30,
-    "strict64": 0.87996,
-    "keeps256": 0.96327
-   },
-   {
-    "gen": 31,
-    "strict64": 0.88266,
-    "keeps256": 0.95923
-   },
-   {
-    "gen": 32,
-    "strict64": 0.88633,
-    "keeps256": 0.96159
-   },
-   {
-    "gen": 33,
-    "strict64": 0.88707,
-    "keeps256": 0.96496
-   },
-   {
-    "gen": 34,
-    "strict64": 0.88241,
-    "keeps256": 0.96631
-   },
-   {
-    "gen": 35,
-    "strict64": 0.88878,
-    "keeps256": 0.96429
-   },
-   {
-    "gen": 36,
-    "strict64": 0.88707,
-    "keeps256": 0.96496
-   },
-   {
-    "gen": 37,
-    "strict64": 0.88315,
-    "keeps256": 0.96226
-   },
-   {
-    "gen": 38,
-    "strict64": 0.89221,
-    "keeps256": 0.96934
-   },
-   {
-    "gen": 39,
-    "strict64": 0.89074,
-    "keeps256": 0.96765
-   },
-   {
-    "gen": 40,
-    "strict64": 0.88951,
-    "keeps256": 0.96631
-   },
-   {
-    "gen": 41,
-    "strict64": 0.89237,
-    "keeps256": 0.96765
-   },
-   {
-    "gen": 42,
-    "strict64": 0.89147,
-    "keeps256": 0.96799
-   },
-   {
-    "gen": 43,
-    "strict64": 0.8945,
-    "keeps256": 0.96294
-   },
-   {
-    "gen": 44,
-    "strict64": 0.89074,
-    "keeps256": 0.96294
-   },
-   {
-    "gen": 45,
-    "strict64": 0.89466,
-    "keeps256": 0.96226
-   },
-   {
-    "gen": 46,
-    "strict64": 0.89564,
-    "keeps256": 0.96968
-   },
-   {
-    "gen": 47,
-    "strict64": 0.88486,
-    "keeps256": 0.96631
-   },
-   {
-    "gen": 48,
-    "strict64": 0.89441,
-    "keeps256": 0.96193
-   },
-   {
-    "gen": 49,
-    "strict64": 0.89907,
-    "keeps256": 0.96563
-   },
-   {
-    "gen": 50,
-    "strict64": 0.89074,
-    "keeps256": 0.96294
-   },
-   {
-    "gen": 51,
-    "strict64": 0.90176,
-    "keeps256": 0.96496
-   },
-   {
-    "gen": 52,
-    "strict64": 0.89294,
-    "keeps256": 0.96833
-   },
-   {
-    "gen": 53,
-    "strict64": 0.89809,
-    "keeps256": 0.96867
-   },
-   {
-    "gen": 54,
-    "strict64": 0.89833,
-    "keeps256": 0.969
-   },
-   {
-    "gen": 55,
-    "strict64": 0.89417,
-    "keeps256": 0.969
-   },
-   {
-    "gen": 56,
-    "strict64": 0.89646,
-    "keeps256": 0.96462
-   },
-   {
-    "gen": 57,
-    "strict64": 0.8949,
-    "keeps256": 0.96698
-   },
-   {
-    "gen": 58,
-    "strict64": 0.90078,
-    "keeps256": 0.96664
-   },
-   {
-    "gen": 59,
-    "strict64": 0.89817,
-    "keeps256": 0.96968
-   },
-   {
-    "gen": 60,
-    "strict64": 0.89025,
-    "keeps256": 0.96496
-   }
-  ],
-  "converge-v4/best-r2": [
-   {
-    "gen": 0,
-    "strict64": 0.76224,
-    "keeps256": 0.86489
-   },
-   {
-    "gen": 1,
-    "strict64": 0.82419,
-    "keeps256": 0.9033
-   },
-   {
-    "gen": 2,
-    "strict64": 0.84501,
-    "keeps256": 0.91509
-   },
-   {
-    "gen": 3,
-    "strict64": 0.84934,
-    "keeps256": 0.92554
-   },
-   {
-    "gen": 4,
-    "strict64": 0.85914,
-    "keeps256": 0.93329
-   },
-   {
-    "gen": 5,
-    "strict64": 0.8571,
-    "keeps256": 0.93329
-   },
-   {
-    "gen": 6,
-    "strict64": 0.866,
-    "keeps256": 0.93127
-   },
-   {
-    "gen": 7,
-    "strict64": 0.86722,
-    "keeps256": 0.92925
-   },
-   {
-    "gen": 8,
-    "strict64": 0.87686,
-    "keeps256": 0.93632
-   },
-   {
-    "gen": 9,
-    "strict64": 0.87163,
-    "keeps256": 0.94171
-   },
-   {
-    "gen": 10,
-    "strict64": 0.87547,
-    "keeps256": 0.94003
-   },
-   {
-    "gen": 11,
-    "strict64": 0.87147,
-    "keeps256": 0.93733
-   },
-   {
-    "gen": 12,
-    "strict64": 0.87555,
-    "keeps256": 0.9434
-   },
-   {
-    "gen": 13,
-    "strict64": 0.87776,
-    "keeps256": 0.94306
-   },
-   {
-    "gen": 14,
-    "strict64": 0.87996,
-    "keeps256": 0.95283
-   },
-   {
-    "gen": 15,
-    "strict64": 0.87972,
-    "keeps256": 0.9535
-   },
-   {
-    "gen": 16,
-    "strict64": 0.88731,
-    "keeps256": 0.95182
-   },
-   {
-    "gen": 17,
-    "strict64": 0.87531,
-    "keeps256": 0.94879
-   },
-   {
-    "gen": 18,
-    "strict64": 0.88682,
-    "keeps256": 0.95283
-   },
-   {
-    "gen": 19,
-    "strict64": 0.87947,
-    "keeps256": 0.95485
-   },
-   {
-    "gen": 20,
-    "strict64": 0.88935,
-    "keeps256": 0.95687
-   },
-   {
-    "gen": 21,
-    "strict64": 0.88796,
-    "keeps256": 0.95485
-   },
-   {
-    "gen": 22,
-    "strict64": 0.88021,
-    "keeps256": 0.9562
-   },
-   {
-    "gen": 23,
-    "strict64": 0.89025,
-    "keeps256": 0.95755
-   },
-   {
-    "gen": 24,
-    "strict64": 0.87914,
-    "keeps256": 0.95553
-   },
-   {
-    "gen": 25,
-    "strict64": 0.88976,
-    "keeps256": 0.96024
-   },
-   {
-    "gen": 26,
-    "strict64": 0.88535,
-    "keeps256": 0.95822
-   },
-   {
-    "gen": 27,
-    "strict64": 0.88805,
-    "keeps256": 0.95755
-   },
-   {
-    "gen": 28,
-    "strict64": 0.89049,
-    "keeps256": 0.95957
-   },
-   {
-    "gen": 29,
-    "strict64": 0.88829,
-    "keeps256": 0.96159
-   },
-   {
-    "gen": 30,
-    "strict64": 0.88878,
-    "keeps256": 0.96429
-   },
-   {
-    "gen": 31,
-    "strict64": 0.89074,
-    "keeps256": 0.9626
-   },
-   {
-    "gen": 32,
-    "strict64": 0.88878,
-    "keeps256": 0.96496
-   },
-   {
-    "gen": 33,
-    "strict64": 0.89221,
-    "keeps256": 0.96563
-   },
-   {
-    "gen": 34,
-    "strict64": 0.90078,
-    "keeps256": 0.96597
-   },
-   {
-    "gen": 35,
-    "strict64": 0.87955,
-    "keeps256": 0.96765
-   },
-   {
-    "gen": 36,
-    "strict64": 0.88707,
-    "keeps256": 0.96631
-   },
-   {
-    "gen": 37,
-    "strict64": 0.88462,
-    "keeps256": 0.96968
-   },
-   {
-    "gen": 38,
-    "strict64": 0.89539,
-    "keeps256": 0.96765
-   },
-   {
-    "gen": 39,
-    "strict64": 0.88854,
-    "keeps256": 0.96395
-   },
-   {
-    "gen": 40,
-    "strict64": 0.88707,
-    "keeps256": 0.96698
-   },
-   {
-    "gen": 41,
-    "strict64": 0.89221,
-    "keeps256": 0.96631
-   },
-   {
-    "gen": 42,
-    "strict64": 0.89074,
-    "keeps256": 0.96361
-   },
-   {
-    "gen": 43,
-    "strict64": 0.88878,
-    "keeps256": 0.96294
-   },
-   {
-    "gen": 44,
-    "strict64": 0.89319,
-    "keeps256": 0.96429
-   },
-   {
-    "gen": 45,
-    "strict64": 0.88854,
-    "keeps256": 0.96159
-   },
-   {
-    "gen": 46,
-    "strict64": 0.88666,
-    "keeps256": 0.96226
-   },
-   {
-    "gen": 47,
-    "strict64": 0.89515,
-    "keeps256": 0.96294
-   },
-   {
-    "gen": 48,
-    "strict64": 0.8856,
-    "keeps256": 0.96092
-   },
-   {
-    "gen": 49,
-    "strict64": 0.88927,
-    "keeps256": 0.96125
-   },
-   {
-    "gen": 50,
-    "strict64": 0.89294,
-    "keeps256": 0.96833
-   },
-   {
-    "gen": 51,
-    "strict64": 0.88854,
-    "keeps256": 0.969
-   },
-   {
-    "gen": 52,
-    "strict64": 0.90054,
-    "keeps256": 0.96968
-   },
-   {
-    "gen": 53,
-    "strict64": 0.89466,
-    "keeps256": 0.969
-   },
-   {
-    "gen": 54,
-    "strict64": 0.89833,
-    "keeps256": 0.96765
-   },
-   {
-    "gen": 55,
-    "strict64": 0.89147,
-    "keeps256": 0.96361
-   },
-   {
-    "gen": 56,
-    "strict64": 0.89809,
-    "keeps256": 0.97035
-   },
-   {
-    "gen": 57,
-    "strict64": 0.89098,
-    "keeps256": 0.96631
-   },
-   {
-    "gen": 58,
-    "strict64": 0.89294,
-    "keeps256": 0.96226
-   },
-   {
-    "gen": 59,
-    "strict64": 0.89058,
-    "keeps256": 0.96597
-   },
-   {
-    "gen": 60,
-    "strict64": 0.88845,
-    "keeps256": 0.96563
-   }
-  ],
-  "converge-v6/q10-big-r1": [
-   {
-    "gen": 0,
-    "strict64": 0.76603,
-    "keeps256": 0.85804
-   },
-   {
-    "gen": 1,
-    "strict64": 0.83695,
-    "keeps256": 0.90319
-   },
-   {
-    "gen": 2,
-    "strict64": 0.86722,
-    "keeps256": 0.91139
-   },
-   {
-    "gen": 3,
-    "strict64": 0.87792,
-    "keeps256": 0.91577
-   },
-   {
-    "gen": 4,
-    "strict64": 0.89372,
-    "keeps256": 0.9188
-   },
-   {
-    "gen": 5,
-    "strict64": 0.8947,
-    "keeps256": 0.93115
-   },
-   {
-    "gen": 6,
-    "strict64": 0.8967,
-    "keeps256": 0.92925
-   },
-   {
-    "gen": 7,
-    "strict64": 0.90168,
-    "keeps256": 0.93363
-   },
-   {
-    "gen": 8,
-    "strict64": 0.90348,
-    "keeps256": 0.94239
-   },
-   {
-    "gen": 9,
-    "strict64": 0.91842,
-    "keeps256": 0.94441
-   },
-   {
-    "gen": 10,
-    "strict64": 0.91859,
-    "keeps256": 0.95013
-   },
-   {
-    "gen": 11,
-    "strict64": 0.92324,
-    "keeps256": 0.95216
-   },
-   {
-    "gen": 12,
-    "strict64": 0.92487,
-    "keeps256": 0.95317
-   },
-   {
-    "gen": 13,
-    "strict64": 0.92438,
-    "keeps256": 0.95687
-   },
-   {
-    "gen": 14,
-    "strict64": 0.92585,
-    "keeps256": 0.95519
-   },
-   {
-    "gen": 15,
-    "strict64": 0.93328,
-    "keeps256": 0.96429
-   },
-   {
-    "gen": 16,
-    "strict64": 0.92822,
-    "keeps256": 0.96327
-   },
-   {
-    "gen": 17,
-    "strict64": 0.92553,
-    "keeps256": 0.96294
-   },
-   {
-    "gen": 18,
-    "strict64": 0.93034,
-    "keeps256": 0.97136
-   },
-   {
-    "gen": 19,
-    "strict64": 0.93451,
-    "keeps256": 0.969
-   },
-   {
-    "gen": 20,
-    "strict64": 0.93288,
-    "keeps256": 0.97035
-   },
-   {
-    "gen": 21,
-    "strict64": 0.93361,
-    "keeps256": 0.96765
-   },
-   {
-    "gen": 22,
-    "strict64": 0.92455,
-    "keeps256": 0.96968
-   },
-   {
-    "gen": 23,
-    "strict64": 0.92602,
-    "keeps256": 0.96765
-   },
-   {
-    "gen": 24,
-    "strict64": 0.9319,
-    "keeps256": 0.97608
-   },
-   {
-    "gen": 25,
-    "strict64": 0.93549,
-    "keeps256": 0.97709
-   },
-   {
-    "gen": 26,
-    "strict64": 0.9292,
-    "keeps256": 0.97911
-   },
-   {
-    "gen": 27,
-    "strict64": 0.92357,
-    "keeps256": 0.97844
-   },
-   {
-    "gen": 28,
-    "strict64": 0.93092,
-    "keeps256": 0.97574
-   },
-   {
-    "gen": 29,
-    "strict64": 0.9341,
-    "keeps256": 0.97978
-   },
-   {
-    "gen": 30,
-    "strict64": 0.93361,
-    "keeps256": 0.97642
-   }
-  ],
-  "converge-v6/q10-big-r2": [
-   {
-    "gen": 0,
-    "strict64": 0.7967,
-    "keeps256": 0.87208
-   },
-   {
-    "gen": 1,
-    "strict64": 0.84655,
-    "keeps256": 0.90869
-   },
-   {
-    "gen": 2,
-    "strict64": 0.86774,
-    "keeps256": 0.90869
-   },
-   {
-    "gen": 3,
-    "strict64": 0.88293,
-    "keeps256": 0.91611
-   },
-   {
-    "gen": 4,
-    "strict64": 0.89637,
-    "keeps256": 0.93093
-   },
-   {
-    "gen": 5,
-    "strict64": 0.89029,
-    "keeps256": 0.93565
-   },
-   {
-    "gen": 6,
-    "strict64": 0.90127,
-    "keeps256": 0.93868
-   },
-   {
-    "gen": 7,
-    "strict64": 0.90528,
-    "keeps256": 0.94441
-   },
-   {
-    "gen": 8,
-    "strict64": 0.90879,
-    "keeps256": 0.94474
-   },
-   {
-    "gen": 9,
-    "strict64": 0.9183,
-    "keeps256": 0.94632
-   },
-   {
-    "gen": 10,
-    "strict64": 0.91908,
-    "keeps256": 0.95182
-   },
-   {
-    "gen": 11,
-    "strict64": 0.92593,
-    "keeps256": 0.95822
-   },
-   {
-    "gen": 12,
-    "strict64": 0.92332,
-    "keeps256": 0.95923
-   },
-   {
-    "gen": 13,
-    "strict64": 0.92683,
-    "keeps256": 0.95755
-   },
-   {
-    "gen": 14,
-    "strict64": 0.92504,
-    "keeps256": 0.96429
-   },
-   {
-    "gen": 15,
-    "strict64": 0.92847,
-    "keeps256": 0.96294
-   },
-   {
-    "gen": 16,
-    "strict64": 0.92504,
-    "keeps256": 0.96294
-   },
-   {
-    "gen": 17,
-    "strict64": 0.93288,
-    "keeps256": 0.96294
-   },
-   {
-    "gen": 18,
-    "strict64": 0.92887,
-    "keeps256": 0.96024
-   },
-   {
-    "gen": 19,
-    "strict64": 0.93067,
-    "keeps256": 0.96833
-   },
-   {
-    "gen": 20,
-    "strict64": 0.93239,
-    "keeps256": 0.969
-   },
-   {
-    "gen": 21,
-    "strict64": 0.92847,
-    "keeps256": 0.97035
-   },
-   {
-    "gen": 22,
-    "strict64": 0.93435,
-    "keeps256": 0.97338
-   },
-   {
-    "gen": 23,
-    "strict64": 0.93361,
-    "keeps256": 0.97574
-   },
-   {
-    "gen": 24,
-    "strict64": 0.93263,
-    "keeps256": 0.97372
-   },
-   {
-    "gen": 25,
-    "strict64": 0.93729,
-    "keeps256": 0.97709
-   },
-   {
-    "gen": 26,
-    "strict64": 0.93508,
-    "keeps256": 0.97439
-   },
-   {
-    "gen": 27,
-    "strict64": 0.93214,
-    "keeps256": 0.97507
-   },
-   {
-    "gen": 28,
-    "strict64": 0.9319,
-    "keeps256": 0.97709
-   },
-   {
-    "gen": 29,
-    "strict64": 0.94096,
-    "keeps256": 0.97709
-   },
-   {
-    "gen": 30,
-    "strict64": 0.93239,
-    "keeps256": 0.97642
-   }
-  ],
-  "converge-v10/final-r1": [
-   {
-    "gen": 0,
-    "strict64": 0.77996,
-    "keeps256": 0.88056
-   },
-   {
-    "gen": 1,
-    "strict64": 0.83562,
-    "keeps256": 0.87567
-   },
-   {
-    "gen": 2,
-    "strict64": 0.84754,
-    "keeps256": 0.9033
-   },
-   {
-    "gen": 3,
-    "strict64": 0.8332,
-    "keeps256": 0.89488
-   },
-   {
-    "gen": 4,
-    "strict64": 0.87784,
-    "keeps256": 0.92015
-   },
-   {
-    "gen": 5,
-    "strict64": 0.88719,
-    "keeps256": 0.92655
-   },
-   {
-    "gen": 6,
-    "strict64": 0.89646,
-    "keeps256": 0.92992
-   },
-   {
-    "gen": 7,
-    "strict64": 0.90242,
-    "keeps256": 0.93834
-   },
-   {
-    "gen": 8,
-    "strict64": 0.90185,
-    "keeps256": 0.93598
-   },
-   {
-    "gen": 9,
-    "strict64": 0.91066,
-    "keeps256": 0.94272
-   },
-   {
-    "gen": 10,
-    "strict64": 0.91328,
-    "keeps256": 0.94474
-   },
-   {
-    "gen": 11,
-    "strict64": 0.91524,
-    "keeps256": 0.94811
-   },
-   {
-    "gen": 12,
-    "strict64": 0.92014,
-    "keeps256": 0.94845
-   },
-   {
-    "gen": 13,
-    "strict64": 0.91908,
-    "keeps256": 0.95519
-   },
-   {
-    "gen": 14,
-    "strict64": 0.92528,
-    "keeps256": 0.9562
-   },
-   {
-    "gen": 15,
-    "strict64": 0.92626,
-    "keeps256": 0.95822
-   },
-   {
-    "gen": 16,
-    "strict64": 0.92357,
-    "keeps256": 0.95856
-   },
-   {
-    "gen": 17,
-    "strict64": 0.92871,
-    "keeps256": 0.96125
-   },
-   {
-    "gen": 18,
-    "strict64": 0.91793,
-    "keeps256": 0.96226
-   },
-   {
-    "gen": 19,
-    "strict64": 0.92781,
-    "keeps256": 0.96159
-   },
-   {
-    "gen": 20,
-    "strict64": 0.92553,
-    "keeps256": 0.96092
-   },
-   {
-    "gen": 21,
-    "strict64": 0.92691,
-    "keeps256": 0.96563
-   },
-   {
-    "gen": 22,
-    "strict64": 0.92798,
-    "keeps256": 0.96361
-   },
-   {
-    "gen": 23,
-    "strict64": 0.92871,
-    "keeps256": 0.96698
-   },
-   {
-    "gen": 24,
-    "strict64": 0.9341,
-    "keeps256": 0.9717
-   },
-   {
-    "gen": 25,
-    "strict64": 0.92969,
-    "keeps256": 0.97035
-   },
-   {
-    "gen": 26,
-    "strict64": 0.92528,
-    "keeps256": 0.9717
-   },
-   {
-    "gen": 27,
-    "strict64": 0.92577,
-    "keeps256": 0.97305
-   },
-   {
-    "gen": 28,
-    "strict64": 0.92969,
-    "keeps256": 0.9754
-   },
-   {
-    "gen": 29,
-    "strict64": 0.93606,
-    "keeps256": 0.97473
-   },
-   {
-    "gen": 30,
-    "strict64": 0.9341,
-    "keeps256": 0.97574
-   },
-   {
-    "gen": 31,
-    "strict64": 0.94268,
-    "keeps256": 0.97574
-   },
-   {
-    "gen": 32,
-    "strict64": 0.93165,
-    "keeps256": 0.97844
-   },
-   {
-    "gen": 33,
-    "strict64": 0.9368,
-    "keeps256": 0.97507
-   },
-   {
-    "gen": 34,
-    "strict64": 0.93818,
-    "keeps256": 0.97978
-   },
-   {
-    "gen": 35,
-    "strict64": 0.93386,
-    "keeps256": 0.97574
-   },
-   {
-    "gen": 36,
-    "strict64": 0.93337,
-    "keeps256": 0.97439
-   },
-   {
-    "gen": 37,
-    "strict64": 0.93631,
-    "keeps256": 0.97709
-   },
-   {
-    "gen": 38,
-    "strict64": 0.93288,
-    "keeps256": 0.97911
-   },
-   {
-    "gen": 39,
-    "strict64": 0.93116,
-    "keeps256": 0.97709
-   },
-   {
-    "gen": 40,
-    "strict64": 0.93557,
-    "keeps256": 0.97911
-   },
-   {
-    "gen": 41,
-    "strict64": 0.93312,
-    "keeps256": 0.97978
-   }
-  ],
-  "converge-v10/final-r2": [
-   {
-    "gen": 0,
-    "strict64": 0.7703,
-    "keeps256": 0.87091
-   },
-   {
-    "gen": 1,
-    "strict64": 0.83232,
-    "keeps256": 0.9015
-   },
-   {
-    "gen": 2,
-    "strict64": 0.86967,
-    "keeps256": 0.92251
-   },
-   {
-    "gen": 3,
-    "strict64": 0.88453,
-    "keeps256": 0.9252
-   },
-   {
-    "gen": 4,
-    "strict64": 0.89735,
-    "keeps256": 0.93396
-   },
-   {
-    "gen": 5,
-    "strict64": 0.9071,
-    "keeps256": 0.93767
-   },
-   {
-    "gen": 6,
-    "strict64": 0.90862,
-    "keeps256": 0.93969
-   },
-   {
-    "gen": 7,
-    "strict64": 0.91205,
-    "keeps256": 0.94306
-   },
-   {
-    "gen": 8,
-    "strict64": 0.91916,
-    "keeps256": 0.95081
-   },
-   {
-    "gen": 9,
-    "strict64": 0.91695,
-    "keeps256": 0.95081
-   },
-   {
-    "gen": 10,
-    "strict64": 0.92626,
-    "keeps256": 0.95148
-   },
-   {
-    "gen": 11,
-    "strict64": 0.92177,
-    "keeps256": 0.95485
-   },
-   {
-    "gen": 12,
-    "strict64": 0.93092,
-    "keeps256": 0.9562
-   },
-   {
-    "gen": 13,
-    "strict64": 0.92471,
-    "keeps256": 0.95451
-   },
-   {
-    "gen": 14,
-    "strict64": 0.92749,
-    "keeps256": 0.9562
-   },
-   {
-    "gen": 15,
-    "strict64": 0.92749,
-    "keeps256": 0.95957
-   },
-   {
-    "gen": 16,
-    "strict64": 0.927,
-    "keeps256": 0.96429
-   },
-   {
-    "gen": 17,
-    "strict64": 0.92577,
-    "keeps256": 0.96429
-   },
-   {
-    "gen": 18,
-    "strict64": 0.92651,
-    "keeps256": 0.96496
-   },
-   {
-    "gen": 19,
-    "strict64": 0.9319,
-    "keeps256": 0.96563
-   },
-   {
-    "gen": 20,
-    "strict64": 0.92822,
-    "keeps256": 0.96867
-   },
-   {
-    "gen": 21,
-    "strict64": 0.92798,
-    "keeps256": 0.97237
-   },
-   {
-    "gen": 22,
-    "strict64": 0.9323,
-    "keeps256": 0.97102
-   },
-   {
-    "gen": 23,
-    "strict64": 0.92798,
-    "keeps256": 0.97035
-   },
-   {
-    "gen": 24,
-    "strict64": 0.93361,
-    "keeps256": 0.97642
-   },
-   {
-    "gen": 25,
-    "strict64": 0.92994,
-    "keeps256": 0.97439
-   },
-   {
-    "gen": 26,
-    "strict64": 0.93557,
-    "keeps256": 0.97372
-   },
-   {
-    "gen": 27,
-    "strict64": 0.92749,
-    "keeps256": 0.97743
-   },
-   {
-    "gen": 28,
-    "strict64": 0.9368,
-    "keeps256": 0.97507
-   },
-   {
-    "gen": 29,
-    "strict64": 0.93067,
-    "keeps256": 0.97911
-   },
-   {
-    "gen": 30,
-    "strict64": 0.93239,
-    "keeps256": 0.97844
-   },
-   {
-    "gen": 31,
-    "strict64": 0.92847,
-    "keeps256": 0.97978
-   },
-   {
-    "gen": 32,
-    "strict64": 0.93092,
-    "keeps256": 0.98113
-   },
-   {
-    "gen": 33,
-    "strict64": 0.93949,
-    "keeps256": 0.97978
-   },
-   {
-    "gen": 34,
-    "strict64": 0.93108,
-    "keeps256": 0.97978
-   },
-   {
-    "gen": 35,
-    "strict64": 0.93386,
-    "keeps256": 0.97776
-   },
-   {
-    "gen": 36,
-    "strict64": 0.93239,
-    "keeps256": 0.97911
-   },
-   {
-    "gen": 37,
-    "strict64": 0.93655,
-    "keeps256": 0.97945
-   },
-   {
-    "gen": 38,
-    "strict64": 0.93239,
-    "keeps256": 0.98046
-   },
-   {
-    "gen": 39,
-    "strict64": 0.939,
-    "keeps256": 0.97877
-   },
-   {
-    "gen": 40,
-    "strict64": 0.93949,
-    "keeps256": 0.98248
-   },
-   {
-    "gen": 41,
-    "strict64": 0.9368,
-    "keeps256": 0.98113
-   },
-   {
-    "gen": 42,
-    "strict64": 0.93631,
-    "keeps256": 0.98248
-   }
-  ],
-  "converge-v11/solver-r1": [
-   {
-    "gen": 0,
-    "strict64": 0.82318,
-    "keeps256": 0.8914
-   },
-   {
-    "gen": 1,
-    "strict64": 0.84664,
-    "keeps256": 0.8942
-   },
-   {
-    "gen": 2,
-    "strict64": 0.86339,
-    "keeps256": 0.91588
-   },
-   {
-    "gen": 3,
-    "strict64": 0.88849,
-    "keeps256": 0.92453
-   },
-   {
-    "gen": 4,
-    "strict64": 0.89507,
-    "keeps256": 0.93363
-   },
-   {
-    "gen": 5,
-    "strict64": 0.90768,
-    "keeps256": 0.94441
-   },
-   {
-    "gen": 6,
-    "strict64": 0.90495,
-    "keeps256": 0.94104
-   },
-   {
-    "gen": 7,
-    "strict64": 0.90764,
-    "keeps256": 0.94542
-   },
-   {
-    "gen": 8,
-    "strict64": 0.90626,
-    "keeps256": 0.94778
-   },
-   {
-    "gen": 9,
-    "strict64": 0.923,
-    "keeps256": 0.95047
-   },
-   {
-    "gen": 10,
-    "strict64": 0.92887,
-    "keeps256": 0.95654
-   },
-   {
-    "gen": 11,
-    "strict64": 0.92602,
-    "keeps256": 0.95553
-   },
-   {
-    "gen": 12,
-    "strict64": 0.92871,
-    "keeps256": 0.95553
-   },
-   {
-    "gen": 13,
-    "strict64": 0.927,
-    "keeps256": 0.95889
-   },
-   {
-    "gen": 14,
-    "strict64": 0.92798,
-    "keeps256": 0.96563
-   },
-   {
-    "gen": 15,
-    "strict64": 0.93361,
-    "keeps256": 0.96193
-   },
-   {
-    "gen": 16,
-    "strict64": 0.93655,
-    "keeps256": 0.96631
-   },
-   {
-    "gen": 17,
-    "strict64": 0.93034,
-    "keeps256": 0.96429
-   },
-   {
-    "gen": 18,
-    "strict64": 0.93827,
-    "keeps256": 0.96496
-   },
-   {
-    "gen": 19,
-    "strict64": 0.93484,
-    "keeps256": 0.97305
-   },
-   {
-    "gen": 20,
-    "strict64": 0.94023,
-    "keeps256": 0.97439
-   }
-  ],
-  "converge-v11/solver-r2": [
-   {
-    "gen": 0,
-    "strict64": 0.83834,
-    "keeps256": 0.89881
-   },
-   {
-    "gen": 1,
-    "strict64": 0.86849,
-    "keeps256": 0.91846
-   },
-   {
-    "gen": 2,
-    "strict64": 0.89188,
-    "keeps256": 0.92049
-   },
-   {
-    "gen": 3,
-    "strict64": 0.89123,
-    "keeps256": 0.92925
-   },
-   {
-    "gen": 4,
-    "strict64": 0.90274,
-    "keeps256": 0.93261
-   },
-   {
-    "gen": 5,
-    "strict64": 0.91009,
-    "keeps256": 0.94171
-   },
-   {
-    "gen": 6,
-    "strict64": 0.90936,
-    "keeps256": 0.94205
-   },
-   {
-    "gen": 7,
-    "strict64": 0.91295,
-    "keeps256": 0.94508
-   },
-   {
-    "gen": 8,
-    "strict64": 0.91254,
-    "keeps256": 0.94508
-   },
-   {
-    "gen": 9,
-    "strict64": 0.91132,
-    "keeps256": 0.94474
-   },
-   {
-    "gen": 10,
-    "strict64": 0.92283,
-    "keeps256": 0.9471
-   },
-   {
-    "gen": 11,
-    "strict64": 0.92275,
-    "keeps256": 0.95384
-   },
-   {
-    "gen": 12,
-    "strict64": 0.92704,
-    "keeps256": 0.95721
-   },
-   {
-    "gen": 13,
-    "strict64": 0.92553,
-    "keeps256": 0.95721
-   },
-   {
-    "gen": 14,
-    "strict64": 0.92789,
-    "keeps256": 0.96361
-   },
-   {
-    "gen": 15,
-    "strict64": 0.92871,
-    "keeps256": 0.9653
-   },
-   {
-    "gen": 16,
-    "strict64": 0.93569,
-    "keeps256": 0.9635
-   },
-   {
-    "gen": 17,
-    "strict64": 0.93475,
-    "keeps256": 0.97035
-   },
-   {
-    "gen": 18,
-    "strict64": 0.93998,
-    "keeps256": 0.96833
-   },
-   {
-    "gen": 19,
-    "strict64": 0.93802,
-    "keeps256": 0.96631
-   },
-   {
-    "gen": 20,
-    "strict64": 0.93974,
-    "keeps256": 0.97305
-   }
-  ]
- }
+ "description": "Best self-play run (8x64 conv, cosine-annealed, 2048 games/gen, MCTS-256 self-play). Dev-suite scores of each generation's saved network. strict = share of positions where the chosen move is solver-best (fastest win, slowest loss); keeps = share that keeps the game result; value_accuracy = network value head's win/draw/loss call; leaf10 = MCTS-256 with depth-10 leaf minimax at evaluation; hours = wall clock since gen 0 on one shared RTX 3090.",
+ "run": "anneal-v1/a8-r2",
+ "games_per_gen": 2048,
+ "rows": [
+  {
+   "gen": 0,
+   "raw_strict": 0.21264,
+   "mcts256_strict": 0.8689,
+   "mcts256_keeps": 0.90162,
+   "value_accuracy": 0.08786,
+   "hours": 0.0,
+   "mcts256_strict_leaf10": 0.89343
+  },
+  {
+   "gen": 1,
+   "raw_strict": 0.50465,
+   "mcts256_strict": 0.8856,
+   "mcts256_keeps": 0.9124,
+   "value_accuracy": 0.31263,
+   "hours": 0.04968,
+   "mcts256_strict_leaf10": 0.89319
+  },
+  {
+   "gen": 2,
+   "raw_strict": 0.66781,
+   "mcts256_strict": 0.89025,
+   "mcts256_keeps": 0.92453,
+   "value_accuracy": 0.44381,
+   "hours": 0.11112,
+   "mcts256_strict_leaf10": 0.90593
+  },
+  {
+   "gen": 3,
+   "raw_strict": 0.7315,
+   "mcts256_strict": 0.90262,
+   "mcts256_keeps": 0.92857,
+   "value_accuracy": 0.52718,
+   "hours": 0.18629,
+   "mcts256_strict_leaf10": 0.91842
+  },
+  {
+   "gen": 4,
+   "raw_strict": 0.74963,
+   "mcts256_strict": 0.90642,
+   "mcts256_keeps": 0.93228,
+   "value_accuracy": 0.57213,
+   "hours": 0.27581,
+   "mcts256_strict_leaf10": 0.91793
+  },
+  {
+   "gen": 5,
+   "raw_strict": 0.81235,
+   "mcts256_strict": 0.91548,
+   "mcts256_keeps": 0.93295,
+   "value_accuracy": 0.60891,
+   "hours": 0.379,
+   "mcts256_strict_leaf10": 0.92749
+  },
+  {
+   "gen": 6,
+   "raw_strict": 0.8388,
+   "mcts256_strict": 0.92161,
+   "mcts256_keeps": 0.94239,
+   "value_accuracy": 0.63261,
+   "hours": 0.49515,
+   "mcts256_strict_leaf10": 0.93043
+  },
+  {
+   "gen": 7,
+   "raw_strict": 0.85644,
+   "mcts256_strict": 0.92602,
+   "mcts256_keeps": 0.94474,
+   "value_accuracy": 0.65223,
+   "hours": 0.62492,
+   "mcts256_strict_leaf10": 0.93484
+  },
+  {
+   "gen": 8,
+   "raw_strict": 0.87457,
+   "mcts256_strict": 0.93043,
+   "mcts256_keeps": 0.94778,
+   "value_accuracy": 0.65877,
+   "hours": 0.76985,
+   "mcts256_strict_leaf10": 0.93508
+  },
+  {
+   "gen": 9,
+   "raw_strict": 0.88878,
+   "mcts256_strict": 0.93337,
+   "mcts256_keeps": 0.95721,
+   "value_accuracy": 0.68124,
+   "hours": 0.91472,
+   "mcts256_strict_leaf10": 0.94194
+  },
+  {
+   "gen": 10,
+   "raw_strict": 0.89613,
+   "mcts256_strict": 0.93655,
+   "mcts256_keeps": 0.95822,
+   "value_accuracy": 0.68206,
+   "hours": 1.04148,
+   "mcts256_strict_leaf10": 0.943
+  },
+  {
+   "gen": 11,
+   "raw_strict": 0.89662,
+   "mcts256_strict": 0.93998,
+   "mcts256_keeps": 0.96125,
+   "value_accuracy": 0.6841,
+   "hours": 1.15776,
+   "mcts256_strict_leaf10": 0.94855
+  },
+  {
+   "gen": 12,
+   "raw_strict": 0.89515,
+   "mcts256_strict": 0.94072,
+   "mcts256_keeps": 0.96159,
+   "value_accuracy": 0.69963,
+   "hours": 1.27466,
+   "mcts256_strict_leaf10": 0.94668
+  },
+  {
+   "gen": 13,
+   "raw_strict": 0.90054,
+   "mcts256_strict": 0.94243,
+   "mcts256_keeps": 0.96462,
+   "value_accuracy": 0.71516,
+   "hours": 1.39085,
+   "mcts256_strict_leaf10": 0.95035
+  },
+  {
+   "gen": 14,
+   "raw_strict": 0.90054,
+   "mcts256_strict": 0.94268,
+   "mcts256_keeps": 0.96294,
+   "value_accuracy": 0.72293,
+   "hours": 1.50786,
+   "mcts256_strict_leaf10": 0.94986
+  },
+  {
+   "gen": 15,
+   "raw_strict": 0.90348,
+   "mcts256_strict": 0.9461,
+   "mcts256_keeps": 0.96765,
+   "value_accuracy": 0.74132,
+   "hours": 1.62434,
+   "mcts256_strict_leaf10": 0.95305
+  },
+  {
+   "gen": 16,
+   "raw_strict": 0.90103,
+   "mcts256_strict": 0.94757,
+   "mcts256_keeps": 0.96765,
+   "value_accuracy": 0.74009,
+   "hours": 1.74162,
+   "mcts256_strict_leaf10": 0.95378
+  },
+  {
+   "gen": 17,
+   "raw_strict": 0.90103,
+   "mcts256_strict": 0.95149,
+   "mcts256_keeps": 0.97372,
+   "value_accuracy": 0.75398,
+   "hours": 1.85917,
+   "mcts256_strict_leaf10": 0.95844
+  },
+  {
+   "gen": 18,
+   "raw_strict": 0.89466,
+   "mcts256_strict": 0.9537,
+   "mcts256_keeps": 0.97574,
+   "value_accuracy": 0.76461,
+   "hours": 1.96159,
+   "mcts256_strict_leaf10": 0.96064
+  },
+  {
+   "gen": 19,
+   "raw_strict": 0.90544,
+   "mcts256_strict": 0.95541,
+   "mcts256_keeps": 0.97776,
+   "value_accuracy": 0.77605,
+   "hours": 2.08821,
+   "mcts256_strict_leaf10": 0.96227
+  },
+  {
+   "gen": 20,
+   "raw_strict": 0.9025,
+   "mcts256_strict": 0.95623,
+   "mcts256_keeps": 0.97844,
+   "value_accuracy": 0.77687,
+   "hours": 2.23701,
+   "mcts256_strict_leaf10": 0.9648
+  },
+  {
+   "gen": 21,
+   "raw_strict": 0.90054,
+   "mcts256_strict": 0.95786,
+   "mcts256_keeps": 0.97978,
+   "value_accuracy": 0.78463,
+   "hours": 2.38286,
+   "mcts256_strict_leaf10": 0.96358
+  },
+  {
+   "gen": 22,
+   "raw_strict": 0.90348,
+   "mcts256_strict": 0.95762,
+   "mcts256_keeps": 0.98012,
+   "value_accuracy": 0.79975,
+   "hours": 2.53277,
+   "mcts256_strict_leaf10": 0.96652
+  },
+  {
+   "gen": 23,
+   "raw_strict": 0.90397,
+   "mcts256_strict": 0.95639,
+   "mcts256_keeps": 0.97776,
+   "value_accuracy": 0.80221,
+   "hours": 2.67625,
+   "mcts256_strict_leaf10": 0.96382
+  },
+  {
+   "gen": 24,
+   "raw_strict": 0.90642,
+   "mcts256_strict": 0.95149,
+   "mcts256_keeps": 0.97642,
+   "value_accuracy": 0.80466,
+   "hours": 2.81319,
+   "mcts256_strict_leaf10": 0.95966
+  },
+  {
+   "gen": 25,
+   "raw_strict": 0.90495,
+   "mcts256_strict": 0.95917,
+   "mcts256_keeps": 0.98113,
+   "value_accuracy": 0.81324,
+   "hours": 2.9547,
+   "mcts256_strict_leaf10": 0.96521
+  },
+  {
+   "gen": 26,
+   "raw_strict": 0.90838,
+   "mcts256_strict": 0.95786,
+   "mcts256_keeps": 0.97911,
+   "value_accuracy": 0.81324,
+   "hours": 3.11466,
+   "mcts256_strict_leaf10": 0.96407
+  },
+  {
+   "gen": 27,
+   "raw_strict": 0.90936,
+   "mcts256_strict": 0.96007,
+   "mcts256_keeps": 0.98248,
+   "value_accuracy": 0.81774,
+   "hours": 3.29102,
+   "mcts256_strict_leaf10": 0.96701
+  },
+  {
+   "gen": 28,
+   "raw_strict": 0.91181,
+   "mcts256_strict": 0.96203,
+   "mcts256_keeps": 0.9845,
+   "value_accuracy": 0.82795,
+   "hours": 3.50079,
+   "mcts256_strict_leaf10": 0.96872
+  },
+  {
+   "gen": 29,
+   "raw_strict": 0.91573,
+   "mcts256_strict": 0.96203,
+   "mcts256_keeps": 0.98349,
+   "value_accuracy": 0.83245,
+   "hours": 3.70706,
+   "mcts256_strict_leaf10": 0.96864
+  },
+  {
+   "gen": 30,
+   "raw_strict": 0.91377,
+   "mcts256_strict": 0.95958,
+   "mcts256_keeps": 0.98113,
+   "value_accuracy": 0.83408,
+   "hours": 3.92227,
+   "mcts256_strict_leaf10": 0.96668
+  },
+  {
+   "gen": 31,
+   "raw_strict": 0.91573,
+   "mcts256_strict": 0.9608,
+   "mcts256_keeps": 0.98315,
+   "value_accuracy": 0.83,
+   "hours": 4.14461,
+   "mcts256_strict_leaf10": 0.96864
+  },
+  {
+   "gen": 32,
+   "raw_strict": 0.91622,
+   "mcts256_strict": 0.9608,
+   "mcts256_keeps": 0.98248,
+   "value_accuracy": 0.8398,
+   "hours": 4.36965,
+   "mcts256_strict_leaf10": 0.96652
+  },
+  {
+   "gen": 33,
+   "raw_strict": 0.91573,
+   "mcts256_strict": 0.96105,
+   "mcts256_keeps": 0.98518,
+   "value_accuracy": 0.84103,
+   "hours": 4.59198,
+   "mcts256_strict_leaf10": 0.96864
+  },
+  {
+   "gen": 34,
+   "raw_strict": 0.91377,
+   "mcts256_strict": 0.95982,
+   "mcts256_keeps": 0.98315,
+   "value_accuracy": 0.83653,
+   "hours": 4.81354,
+   "mcts256_strict_leaf10": 0.96946
+  },
+  {
+   "gen": 35,
+   "raw_strict": 0.92112,
+   "mcts256_strict": 0.96178,
+   "mcts256_keeps": 0.98383,
+   "value_accuracy": 0.84144,
+   "hours": 5.02543,
+   "mcts256_strict_leaf10": 0.96946
+  },
+  {
+   "gen": 36,
+   "raw_strict": 0.91818,
+   "mcts256_strict": 0.96031,
+   "mcts256_keeps": 0.98518,
+   "value_accuracy": 0.84062,
+   "hours": 5.25066,
+   "mcts256_strict_leaf10": 0.96799
+  },
+  {
+   "gen": 37,
+   "raw_strict": 0.92014,
+   "mcts256_strict": 0.9635,
+   "mcts256_keeps": 0.9845,
+   "value_accuracy": 0.84593,
+   "hours": 5.4744,
+   "mcts256_strict_leaf10": 0.96913
+  },
+  {
+   "gen": 38,
+   "raw_strict": 0.92112,
+   "mcts256_strict": 0.9635,
+   "mcts256_keeps": 0.98585,
+   "value_accuracy": 0.84307,
+   "hours": 5.69815,
+   "mcts256_strict_leaf10": 0.96913
+  },
+  {
+   "gen": 39,
+   "raw_strict": 0.91671,
+   "mcts256_strict": 0.96374,
+   "mcts256_keeps": 0.9872,
+   "value_accuracy": 0.84757,
+   "hours": 5.92441,
+   "mcts256_strict_leaf10": 0.9706
+  },
+  {
+   "gen": 40,
+   "raw_strict": 0.91769,
+   "mcts256_strict": 0.96227,
+   "mcts256_keeps": 0.98518,
+   "value_accuracy": 0.84757,
+   "hours": 6.15148,
+   "mcts256_strict_leaf10": 0.96962
+  }
+ ]
 }

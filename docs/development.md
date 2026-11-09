@@ -23,6 +23,7 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `src/c4a0/main.py` | The CLI: `train`, `play`, `eval`, `build-suite`, `label`, `ceiling`. |
 | `scripts/converge_report.py` | Score curves per run, read from each generation's `metadata.json`. |
 | `scripts/plot_progress.py` | The README progress graph, from `docs/data/training-progress.json`. |
+| `scripts/plot_architecture.py` | The README network diagram, with parameter counts from the default network. |
 | `scripts/alapin` | Runs jobs on a remote GPU machine: `sync`, `run`, `status`, `stop`, `fetch`. |
 
 ## Tasks
