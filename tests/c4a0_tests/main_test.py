@@ -37,6 +37,7 @@ def _plain(output: str) -> str:
                 "bf16": False,
                 "compile": False,
                 "train_steps": None,
+                "train_anneal_epochs": 8,
                 "value_hidden": 256,
             },
         ),
@@ -66,6 +67,9 @@ def _plain(output: str) -> str:
                 "7",
                 "--train-patience",
                 "2",
+                "--train-anneal-epochs",
+                "0",
+                "--mirror-inference",
             ],
             {
                 "root_noise_alpha": 0.3,
@@ -80,6 +84,7 @@ def _plain(output: str) -> str:
                 "bf16": True,
                 "compile": True,
                 "train_steps": 5,
+                "train_anneal_epochs": None,
                 "value_hidden": 17,
             },
         ),
@@ -104,6 +109,7 @@ def test_train_cli_forwards_experiment_flags(
     net = captured["model_config"]
     assert isinstance(net, main.ModelConfig)
     assert net.value_hidden == config.value_hidden
+    assert net.mirror_inference == ("--mirror-inference" in flags)
 
 
 @pytest.mark.parametrize("command", ["train", "ceiling"])
@@ -115,8 +121,14 @@ def test_head_options_reject_invalid_values(command: str, flags: list[str]) -> N
     assert flags[0] in _plain(result.output)
 
 
-def test_ceiling_head_options_reach_model_pickle_and_report(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "anneal_flags,anneal", [([], 40), (["--anneal-epochs", "0"], None)]
+)
+def test_ceiling_options_reach_model_pickle_and_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    anneal_flags: list[str],
+    anneal: int | None,
 ) -> None:
     import json
     import pickle
@@ -147,7 +159,8 @@ def test_ceiling_head_options_reach_model_pickle_and_report(
         patience: int,
         anneal_epochs: int | None,
     ) -> tuple[ConnectFourNet, int]:
-        assert anneal_epochs is None
+        assert anneal_epochs == anneal
+        assert model.hparams["n_residual_blocks"] == 1
         assert model.hparams["value_hidden"] == 17
         return model.eval(), 0
 
@@ -165,11 +178,13 @@ def test_ceiling_head_options_reach_model_pickle_and_report(
             "1",
             "--conv-filter-size",
             "8",
+            *anneal_flags,
         ],
     )
     assert result.exit_code == 0, result.output
     report = json.loads((output / "report.json").read_text())
     assert report["net"]["value_hidden"] == 17
+    assert report["anneal_epochs"] == anneal
     with (output / "model.pkl").open("rb") as f:
         restored = pickle.load(f)
     assert restored.hparams["value_hidden"] == 17
@@ -246,7 +261,7 @@ def test_train_defaults_and_device_selection(
     assert config.c_ply_penalty == 0.01
     net = captured["model_config"]
     assert isinstance(net, ModelConfig)
-    assert net.n_residual_blocks == 4
+    assert net.n_residual_blocks == 8
     assert net.conv_filter_size == 64
     evaluation = captured["eval_config"]
     assert isinstance(evaluation, EvalConfig)

@@ -67,7 +67,7 @@ def train(
     c_ply_penalty: float = 0.01,
     self_play_batch_size: int = 2000,
     training_batch_size: int = 2000,
-    n_residual_blocks: int = 4,
+    n_residual_blocks: int = 8,
     conv_filter_size: int = 64,
     value_hidden: int = typer.Option(256, min=1, help="Value head hidden width."),
     lr_schedule: list[float] = typer.Option(
@@ -90,20 +90,26 @@ def train(
         help="Plies of exact search on each MCTS leaf in self-play and eval; 0 disables.",
     ),
     replay_gens: int = typer.Option(8, min=1),
-    train_max_epochs: int = typer.Option(20, min=1),
-    train_patience: int = typer.Option(3, min=1),
+    train_max_epochs: int = typer.Option(
+        20, min=1, help="Epoch cap with --train-anneal-epochs 0."
+    ),
+    train_patience: int = typer.Option(
+        3, min=1, help="Early-stopping patience with --train-anneal-epochs 0."
+    ),
     bf16: bool = typer.Option(False, help="BF16 autocast for self-play and training."),
     compile: bool = typer.Option(False, help="Compile the self-play network forward."),
     train_steps: int | None = typer.Option(
         None, min=1, help="Fixed optimizer steps; publish the final model."
     ),
-    train_anneal_epochs: int | None = typer.Option(
-        None,
-        min=1,
-        help="Train exactly this many epochs per generation, cosine-annealing the rate to 1%.",
+    train_anneal_epochs: int = typer.Option(
+        8,
+        min=0,
+        help="Train exactly this many epochs per generation, cosine-annealing the rate to "
+        "1%. 0 trains at a constant rate with early stopping.",
     ),
     mirror_inference: bool = typer.Option(
-        False, help="Average each network call with its left-right mirror."
+        False,
+        help="Average each network call with its left-right mirror (2x inference cost).",
     ),
     eval_mcts_iterations: list[int] = typer.Option(
         default_factory=lambda: [64, 256], show_default="64 256"
@@ -149,7 +155,7 @@ def train(
         bf16=bf16,
         compile=compile,
         train_steps=train_steps,
-        train_anneal_epochs=train_anneal_epochs,
+        train_anneal_epochs=train_anneal_epochs or None,
     )
     training_loop(
         base_dir=base_dir,
@@ -234,18 +240,21 @@ def label(
 def ceiling(
     labels: Path,
     out_dir: Path,
-    n_residual_blocks: int = 1,
-    conv_filter_size: int = 32,
+    n_residual_blocks: int = 8,
+    conv_filter_size: int = 64,
     value_hidden: int = typer.Option(256, min=1, help="Value head hidden width."),
     lr: float = 2e-3,
     l2_reg: float = 4e-4,
     batch_size: int = 4096,
-    max_epochs: int = 100,
-    patience: int = 10,
-    anneal_epochs: int | None = typer.Option(
-        None,
-        min=1,
-        help="Train exactly this many epochs, cosine-annealing the rate to 1% (no early stop).",
+    max_epochs: int = typer.Option(100, help="Epoch cap with --anneal-epochs 0."),
+    patience: int = typer.Option(
+        10, help="Early-stopping patience with --anneal-epochs 0."
+    ),
+    anneal_epochs: int = typer.Option(
+        40,
+        min=0,
+        help="Train exactly this many epochs, cosine-annealing the rate to 1%. 0 trains at "
+        "a constant rate, early-stopping on dev loss.",
     ),
     seed: int = 0,
     c_exploration: float = 2.0,
@@ -257,7 +266,7 @@ def ceiling(
 ) -> None:
     """
     Supervised ceiling: trains the self-play architecture on solver labels (train split only),
-    early-stopping on dev loss, and scores the saved model on dev (and test with --report-test,
+    cosine-annealed for --anneal-epochs (or early-stopping on dev loss with 0), and scores the saved model on dev (and test with --report-test,
     once the configuration is chosen). Writes model.pkl and report.json to out_dir.
     """
     train = read_labels(labels)
@@ -265,6 +274,7 @@ def ceiling(
         raise typer.BadParameter(f"{labels} is a {train.recipe.split} file, not train")
     dev = load_suite(Split.DEV)
     torch.manual_seed(seed)
+    anneal = anneal_epochs or None
     config = ModelConfig(
         value_hidden=value_hidden,
         n_residual_blocks=n_residual_blocks,
@@ -280,7 +290,7 @@ def ceiling(
         batch_size,
         max_epochs,
         patience,
-        anneal_epochs,
+        anneal,
     )
     out_dir.mkdir(parents=True, exist_ok=True)
     model_path = out_dir / "model.pkl"
@@ -299,7 +309,7 @@ def ceiling(
         train_sha256=hashlib.sha256(labels.read_bytes()).hexdigest(),
         n_train=len(train),
         epochs=epochs,
-        anneal_epochs=anneal_epochs,
+        anneal_epochs=anneal,
         batch_size=batch_size,
         seed=seed,
         c_ply_penalty=c_ply_penalty,

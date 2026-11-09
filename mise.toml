@@ -132,8 +132,7 @@ timeout 900 uv run --locked python src/c4a0/main.py train \
   --lr-schedule 0 \
   --lr-schedule 0.001 \
   --l2-reg 0 \
-  --train-max-epochs 2 \
-  --train-patience 1 \
+  --train-anneal-epochs 2 \
   --eval-mcts-iterations 4 \
   --max-gens 1
 '''
