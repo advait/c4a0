@@ -130,6 +130,8 @@ run = "uv run --locked python scripts/render_hero.py"
 description = "Build the browser player into web/dist: the search as WebAssembly, the final model's weights and the page"
 depends = ["install"]
 run = [
+  # The tools entry's `targets` is not applied when CI restores a cached toolchain.
+  "rustup target add wasm32-unknown-unknown",
   "cargo build --manifest-path rust/Cargo.toml -p c4a0_web --release --target wasm32-unknown-unknown",
   "rm -rf web/dist",
   "wasm-bindgen --target web --no-typescript --out-dir web/dist/pkg rust/target/wasm32-unknown-unknown/release/c4a0_web.wasm",
