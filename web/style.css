@@ -44,7 +44,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px;
   background: transparent; border: 0; cursor: pointer; color: var(--ink2);
 }
-.icon:hover:enabled { background: var(--card); color: var(--ink); }
+a.icon:hover, .icon:hover:enabled { background: var(--card); color: var(--ink); }
+.icon .mark { fill: currentColor; stroke: none; }
 .icon:disabled { opacity: .3; cursor: default; }
 
 /* Menu: a dropdown on wide screens, a bottom sheet on phones. */
