@@ -4,8 +4,10 @@ min_version = "2026.1.6"
 dir = "{{config_root}}"
 
 [tools]
-rust = "stable"
+rust = { version = "stable", targets = "wasm32-unknown-unknown" }
 uv = "0.13.7"
+# Must equal the wasm-bindgen crate version in rust/web/Cargo.toml.
+"github:wasm-bindgen/wasm-bindgen" = "0.2.130"
 
 [env]
 UV_LINK_MODE = "copy"
@@ -62,7 +64,7 @@ depends = ["test:rust", "test:python"]
 [tasks."test:rust"]
 description = "Run Rust unit and property tests"
 dir = "{{config_root}}/rust"
-run = "cargo test"
+run = "cargo test --workspace"
 
 [tasks."test:python"]
 description = "Run Python tests"
@@ -121,6 +123,29 @@ run = [
 description = "Regenerate the README hero GIF (images/hero.gif) from models/c4a0-final.pkl and the real search"
 depends = ["install"]
 run = "uv run --locked python scripts/render_hero.py"
+
+# Browser player (web/, published to https://c4a0.advait.lol)
+
+[tasks."web:build"]
+description = "Build the browser player into web/dist: the search as WebAssembly, the final model's weights and the page"
+depends = ["install"]
+run = [
+  "cargo build --manifest-path rust/Cargo.toml -p c4a0_web --release --target wasm32-unknown-unknown",
+  "rm -rf web/dist",
+  "wasm-bindgen --target web --no-typescript --out-dir web/dist/pkg rust/target/wasm32-unknown-unknown/release/c4a0_web.wasm",
+  "uv run --locked python scripts/export_web.py web/dist/model",
+  "cp web/index.html web/app.js web/net.js web/style.css web/CNAME web/dist/",
+]
+
+[tasks.web]
+description = "Build the browser player and serve it at http://localhost:8000"
+depends = ["web:build"]
+run = "uv run --locked python -m http.server --bind 127.0.0.1 --directory web/dist 8000"
+
+[tasks."web:test"]
+description = "Check the browser player in headless Chrome: GPU output against PyTorch, then a full game"
+depends = ["web:build"]
+run = "uv run --locked python scripts/web_test.py web/dist"
 
 [tasks."train:smoke"]
 description = "Run a fast CPU end-to-end smoke training job"

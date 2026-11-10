@@ -11,22 +11,42 @@ crate-type = ["cdylib", "rlib"]
 name = "c4native"
 path = "src/bin/c4native.rs"
 
+[workspace]
+members = [".", "web"]
+
+[features]
+# The Python extension, self-play and the TUI. The web engine builds without them.
+default = ["python"]
+python = [
+  "dep:pyo3",
+  "dep:numpy",
+  "dep:ratatui",
+  "dep:crossbeam",
+  "dep:crossbeam-channel",
+  "dep:num_cpus",
+  "dep:indicatif",
+  "dep:parking_lot",
+  "dep:env_logger",
+  "dep:serde_cbor",
+]
+
 [dependencies]
-pyo3 = { version = "0.29.0", features = ["extension-module"] }
+pyo3 = { optional = true, version = "0.29.0", features = ["extension-module"] }
 approx = "0.5.1"
 more-asserts = "0.3.1"
-crossbeam = "0.8.4"
-crossbeam-channel = "0.5.15"
-num_cpus = "1.17.0"
-rand = "0.10.1"
-indicatif = "0.18.5"
-numpy = "0.29.0"
+crossbeam = { version = "0.8.4", optional = true }
+crossbeam-channel = { version = "0.5.15", optional = true }
+num_cpus = { version = "1.17.0", optional = true }
+# Seeded generators only: no OS randomness, so the search also builds for wasm32.
+rand = { version = "0.10.1", default-features = false, features = ["std", "std_rng"] }
+indicatif = { version = "0.18.5", optional = true }
+numpy = { version = "0.29.0", optional = true }
 serde = { version = "1.0.228", features = ["derive"] }
-serde_cbor = "0.11.2"
-ratatui = "0.30.2"
-parking_lot = "0.12.5"
+serde_cbor = { version = "0.11.2", optional = true }
+ratatui = { version = "0.30.2", optional = true }
+parking_lot = { version = "0.12.5", optional = true }
 log = "0.4.33"
-env_logger = "0.11.11"
+env_logger = { version = "0.11.11", optional = true }
 
 [dev-dependencies]
 proptest = "1.11.0"

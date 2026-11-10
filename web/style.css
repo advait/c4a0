@@ -1,0 +1,76 @@
+/* The palette of scripts/figure_theme.py, so the page matches the README figures. */
+:root {
+  --surface: #fcfcfb; --card: #f3f2ee; --ink: #0b0b0b; --ink2: #52514e; --muted: #8a897f;
+  --line: #d6d5ce; --blue: #2a78d6; --orange: #eb6834; --stone-a: #0b0b0b; --stone-b: #fcfcfb;
+  --cell: min(64px, 12vw);
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #1a1a19; --card: #242423; --ink: #f0efec; --ink2: #c3c2b7; --muted: #8f8e86;
+    --line: #3a3a37; --blue: #3987e5; --orange: #d95926; --stone-a: #f0efec; --stone-b: #1a1a19;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; background: var(--surface); color: var(--ink);
+  font: 15px/1.5 "DejaVu Sans", Verdana, system-ui, sans-serif;
+  display: grid; place-items: center;
+}
+main { display: flex; gap: 48px; padding: 32px 24px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
+aside { width: 320px; }
+.kicker {
+  margin: 0 0 6px; font: 11px/1.4 "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+}
+.kicker b { color: var(--ink); letter-spacing: .25em; }
+h1 { font-size: 30px; margin: 14px 0 6px; }
+.sides { color: var(--ink2); display: flex; align-items: center; gap: 6px; margin: 0 0 26px; }
+.sides .swatch:last-of-type { margin-left: 14px; }
+.swatch { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--ink2); display: inline-block; }
+.swatch.first { background: var(--stone-a); }
+.swatch.second { background: var(--stone-b); }
+.count { font-size: 64px; font-weight: 700; line-height: 1; margin: 4px 0 14px; font-variant-numeric: tabular-nums; }
+.count small { font: 14px "DejaVu Sans Mono", Menlo, monospace; color: var(--muted); font-weight: 400; }
+body:not([data-phase="thinking"]) .count { color: var(--ink2); }
+.detail { color: var(--ink2); min-height: 6em; }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0; }
+button {
+  font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 12px; cursor: pointer;
+}
+.controls button:hover { border-color: var(--ink2); }
+body[data-phase="thinking"] .controls button { opacity: .5; cursor: wait; }
+.foot { color: var(--muted); font-size: 13px; }
+.foot a { color: var(--blue); }
+
+.bars { display: grid; grid-template-columns: repeat(7, var(--cell)); height: 150px; padding: 0 12px; align-items: end; }
+.bar { position: relative; height: 100%; margin: 0 8px; border-bottom: 2px solid var(--line); }
+.bar span { position: absolute; bottom: 0; left: 0; right: 0; }
+.visits { background: var(--blue); border-radius: 3px 3px 0 0; transition: height .15s; }
+.prior { border: 1.6px solid var(--ink2); border-bottom: 0; border-radius: 4px 4px 0 0; left: -2px !important; right: -2px !important; z-index: 1; }
+.pct { bottom: auto !important; top: -20px; text-align: center; font: 11px "DejaVu Sans Mono", Menlo, monospace; color: var(--ink2); }
+
+.board {
+  display: grid; grid-template-columns: repeat(7, var(--cell)); padding: 12px; margin-top: 12px;
+  background: var(--card); border: 1.5px solid var(--line); border-radius: 16px;
+}
+.col { position: relative; display: grid; padding: 0; border: 0; background: none; border-radius: 10px; }
+.col:enabled:hover { background: color-mix(in srgb, var(--blue) 10%, transparent); }
+.col:disabled { cursor: default; }
+.cell {
+  width: calc(var(--cell) * .72); height: calc(var(--cell) * .72); margin: calc(var(--cell) * .14);
+  border-radius: 50%; background: var(--surface); border: 1.5px solid var(--line);
+}
+.cell.first, .cell.second { border: 2px solid var(--ink2); }
+.cell.first { background: var(--stone-a); }
+.cell.second { background: var(--stone-b); }
+.cell.last { box-shadow: 0 0 0 3px var(--card), 0 0 0 5px var(--muted); }
+.cell.won { box-shadow: 0 0 0 3px var(--card), 0 0 0 5px var(--blue); }
+.ghost {
+  position: absolute; left: calc(var(--cell) * .14); top: calc(var(--row) * var(--cell) + var(--cell) * .14);
+  width: calc(var(--cell) * .72); height: calc(var(--cell) * .72); border-radius: 50%;
+  border: 2px dashed var(--ink2); opacity: 0; pointer-events: none;
+}
+.ghost.first { background: color-mix(in srgb, var(--stone-a) 35%, transparent); }
+.col:enabled:hover .ghost { opacity: 1; }

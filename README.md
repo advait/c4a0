@@ -8,6 +8,8 @@
 
 **A 605K-parameter network that learns near-perfect Connect Four strictly through self-play.** No human games, no opening book, no solver in the training loop: it starts from random weights, plays itself, and learns from its own search. After 6 hours on one GPU it picks the solver-optimal move (the fastest win, or the slowest loss) in 97% of held-out positions, and keeps the game result (a won position stays won, a drawn one stays drawn) in 99% of them.
 
+**[Play it in your browser at c4a0.advait.lol.](https://c4a0.advait.lol)** The real network runs on your GPU through WebGPU, searching each move with the exact agent from the results table below.
+
 The animation above is the real final network on a real position. Its first instinct, column 4 at 72%, loses. Search tests that instinct one walk down the tree at a time, takes the lead with column 3 at iteration 73, and ends with 83% of its visits on it: the only winning move. That is the whole idea of AlphaZero in one move: a network that guesses, a search that checks, and a training loop that teaches the network to guess what the search found.
 
 ## Results
@@ -38,7 +40,7 @@ mise install
 mise run play
 ```
 
-`play` opens a terminal UI against the final network (`models/c4a0-final.pkl`), searching 1,400 MCTS iterations per move without the optional leaf search or mirror averaging used in the results table. The first run builds the Rust extension and the Python environment; there is no separate build step.
+`play` opens a terminal UI against the final network (`models/c4a0-final.pkl`), searching 1,400 MCTS iterations per move without the optional leaf search or mirror averaging used in the results table. The first run builds the Rust extension and the Python environment; there is no separate build step. `mise run web` serves the browser player locally at http://localhost:8000.
 
 ![Terminal UI](images/tui.png)
 

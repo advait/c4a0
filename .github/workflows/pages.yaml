@@ -1,0 +1,50 @@
+name: Browser player
+
+# Builds web/ against models/c4a0-final.pkl, checks it in headless Chrome, and publishes it to
+# GitHub Pages (https://c4a0.advait.lol) from master.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tools with mise
+        uses: jdx/mise-action@v3
+        with:
+          version: 2026.1.6
+          install: true
+          cache: true
+
+      - name: Build and check the player
+        env:
+          CHROME: google-chrome
+        run: mise run web:test
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web/dist
+
+  deploy:
+    if: github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

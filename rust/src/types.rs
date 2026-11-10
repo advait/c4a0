@@ -1,10 +1,12 @@
 use core::panic;
 use std::array;
 
+#[cfg(feature = "python")]
 use numpy::{
     ndarray::{Array0, Array3},
     PyArray0, PyArray1, PyArray3,
 };
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -35,18 +37,14 @@ pub struct EvalPosResult {
 
 /// Metadata about a game.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[pyclass(from_py_object)]
+#[cfg_attr(feature = "python", pyclass(from_py_object, get_all))]
 pub struct GameMetadata {
-    #[pyo3(get)]
     pub game_id: u64,
-
-    #[pyo3(get)]
     pub player0_id: ModelID,
-
-    #[pyo3(get)]
     pub player1_id: ModelID,
 }
 
+#[cfg(feature = "python")]
 #[pymethods]
 impl GameMetadata {
     #[new]
@@ -61,16 +59,13 @@ impl GameMetadata {
 
 /// The finished result of a game.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[pyclass(from_py_object)]
+#[cfg_attr(feature = "python", pyclass(from_py_object, get_all))]
 pub struct GameResult {
-    #[pyo3(get)]
     pub metadata: GameMetadata,
-
-    #[pyo3(get)]
     pub samples: Vec<Sample>,
 }
 
-#[pymethods]
+#[cfg_attr(feature = "python", pymethods)]
 impl GameResult {
     /// Returns the score of the game from the perspective of Player 0.
     /// If Player 0 wins, 1.0. If Player 0 loses, 0.0. If it's a draw, 0.5.
@@ -101,7 +96,7 @@ impl GameResult {
 
 /// A training sample generated via self-play.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[pyclass(from_py_object)]
+#[cfg_attr(feature = "python", pyclass(from_py_object))]
 pub struct Sample {
     pub pos: Pos,
     pub policy: Policy,
@@ -109,7 +104,7 @@ pub struct Sample {
     pub q_no_penalty: QValue,
 }
 
-#[pymethods]
+#[cfg_attr(feature = "python", pymethods)]
 impl Sample {
     /// Returns a new sample that is flipped horizontally.
     pub fn flip_h(&self) -> Sample {
@@ -122,6 +117,7 @@ impl Sample {
     }
 
     /// [numpy] representation of the sample.
+    #[cfg(feature = "python")]
     pub fn to_numpy<'py>(
         &self,
         py: Python<'py>,

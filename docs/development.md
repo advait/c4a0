@@ -14,6 +14,8 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `rust/src/native_solver/`, `rust/src/bin/c4native.rs` | The clean-room solver that labels every position, its self-generated opening book, and a benchmark. See [native-solver.md](native-solver.md). |
 | `rust/src/pybridge.rs` | The PyO3 API. Its stubs are `src/c4a0_rust/__init__.pyi`. |
 | `rust/src/tui.rs`, `rust/src/interactive_play.rs` | The terminal UI behind `mise run play`. |
+| `rust/web/` | The search compiled to WebAssembly for the browser player, built without the default `python` feature (PyO3, self-play, TUI). |
+| `web/` | The browser player published to https://c4a0.advait.lol: `net.js` runs the network on WebGPU, `app.js` drives the search and the page. |
 | `src/c4a0/nn.py` | The residual network with AlphaZero-style policy and value heads, its loss and the inference callback. |
 | `src/c4a0/training.py` | `GenConfig`, `TrainingGen` metadata, the generation loop, replay. |
 | `src/c4a0/evaluation.py` | Suite scoring: strict and keeps-the-result, raw network and MCTS, by ply bucket. |
@@ -23,6 +25,8 @@ This page describes the code layout, tasks, tooling and training options. For in
 | `scripts/converge_report.py` | Score curves per run, read from each generation's `metadata.json`. |
 | `scripts/plot_progress.py` | The README progress graph, from `docs/data/training-progress.json`. |
 | `scripts/plot_architecture.py` | The README network diagram, with parameter counts from the default network. |
+| `scripts/export_web.py` | Exports a model for `web/`: weights with BatchNorm folded in, a layer manifest, and PyTorch reference outputs the page checks its GPU against on load. |
+| `scripts/web_test.py` | Runs the built player in headless Chrome: the GPU check, then a full game. |
 | `scripts/render_hero.py` | The README hero GIF: MCTS on one dev position with the final model, every number verified (`mise run hero`). |
 | `scripts/alapin` | Runs jobs on a remote GPU machine: `sync`, `run`, `status`, `stop`, `fetch`. |
 
@@ -33,6 +37,7 @@ This page describes the code layout, tasks, tooling and training options. For in
 | Task | Does |
 |---|---|
 | `train`, `play`, `eval`, `report`, `plot` | Usage tasks. Extra arguments go after `--`. |
+| `web`, `web:build`, `web:test` | Serve, build (`web/dist`) and check the browser player. `.github/workflows/pages.yaml` runs `web:test` on every push and publishes `web/dist` to GitHub Pages from master. |
 | `check` | Ruff lint and format check, ty, Rust tests, Python tests. Run it before every commit. |
 | `ci` | `check` plus `train:smoke`. CI runs this on every push. |
 | `train:smoke` | One tiny CPU run through self-play, annealed training, saving and evaluation. |

@@ -1,21 +1,30 @@
 #![allow(dead_code)]
-mod analysis;
+pub mod analysis;
 pub mod c4r;
+#[cfg(feature = "python")]
 mod interactive_play;
 pub mod labels;
-mod mcts;
+pub mod mcts;
 mod minimax;
 pub mod native_solver;
+#[cfg(feature = "python")]
 mod pybridge;
+#[cfg(feature = "python")]
 mod self_play;
+#[cfg(feature = "python")]
 mod tui;
-mod types;
+pub mod types;
 mod utils;
 
+#[cfg(feature = "python")]
 use c4r::Pos;
+#[cfg(feature = "python")]
 use env_logger::Env;
+#[cfg(feature = "python")]
 use pybridge::PlayGamesResult;
+#[cfg(feature = "python")]
 use pyo3::prelude::*;
+#[cfg(feature = "python")]
 use types::{GameMetadata, GameResult, Sample};
 
 /// A Python module implemented in Rust.
@@ -23,6 +32,7 @@ use types::{GameMetadata, GameResult, Sample};
 /// Maturin installs this extension as `c4a0_rust._native`; the Python
 /// `c4a0_rust` package re-exports the native API for backwards-compatible
 /// top-level imports.
+#[cfg(feature = "python")]
 #[pymodule(gil_used = true)]
 #[pyo3(name = "_native")]
 fn c4a0_rust(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {

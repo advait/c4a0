@@ -1,0 +1,12 @@
+[package]
+name = "c4a0_web"
+version = "0.1.0"
+edition = "2021"
+description = "The c4a0 search compiled to WebAssembly for the browser player (web/)."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+c4a0_rust = { path = "..", default-features = false }
+wasm-bindgen = "=0.2.130"  # pinned: the CLI in mise.toml must match
