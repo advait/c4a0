@@ -35,23 +35,27 @@ The test split played no part in any decision. Most of the remaining misses are 
 
 ## Try it
 
-Install [mise](https://mise.jdx.dev/getting-started.html), which brings Rust, uv and Python 3.11 for the project. Rust also needs the system C linker `cc` (on Debian or Ubuntu, `sudo apt install build-essential`; on macOS, `xcode-select --install`). Then, from the repository root:
+**[Play at c4a0.advait.lol.](https://c4a0.advait.lol)** Nothing to install: the network runs on your GPU through WebGPU, and every move is the agent from the results table. The bars over the board show the network's first instinct and where the search went; the card beside it shows c4a0's two values for the position.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="images/web-dark.png">
+  <img alt="The browser player six moves into a game. Bars over the board show c4a0's last search put all its visits on column 6. Beside the board, c4a0's evaluation reads c4a0 ahead, game ends around move 31, with its expected result at +0.89 and its speed-adjusted value at +0.62." src="images/web-light.png">
+</picture>
+
+To run it from source, install [mise](https://mise.jdx.dev/getting-started.html), which brings Rust, uv and Python 3.11 for the project. Rust also needs the system C linker `cc` (on Debian or Ubuntu, `sudo apt install build-essential`; on macOS, `xcode-select --install`). Then, from the repository root:
 
 ```sh
 mise trust
 mise install
-mise play
+mise web        # http://localhost:8000
 ```
 
-`play` opens a terminal UI against the final network (`models/c4a0-final.pkl`), searching 1,400 MCTS iterations per move without the optional leaf search or mirror averaging used in the results table. The first run builds the Rust extension and the Python environment; there is no separate build step. `mise web` serves the browser player locally at http://localhost:8000.
-
-![Terminal UI](images/tui.png)
+The first run builds the Rust extension, the WebAssembly search and the Python environment; there is no separate build step.
 
 To train your own from scratch (a GPU is strongly recommended; on Linux the locked PyTorch build includes CUDA):
 
 ```sh
 mise train                      # resumes from training/ if it exists
-mise play -- --model latest     # play your newest generation
 mise report training            # score curve per generation
 ```
 
