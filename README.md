@@ -5,7 +5,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="images/hero-dark.gif">
-    <img alt="Animated Connect Four position, filled stones to move. The network's prior puts 72% on column 4, which loses. Bars over each column fill as 256 MCTS iterations run; column 3, the only winning move, takes the lead at iteration 73 and ends with 83% of the visits, which a perfect solver confirms at the end." src="images/hero-light.gif" width="800">
+    <img alt="Animated Connect Four position, violet to move. The network's prior puts 72% on column 4, which loses. Bars over each column fill as 256 MCTS iterations run; column 3, the only winning move, takes the lead at iteration 73 and ends with 83% of the visits, which a perfect solver confirms at the end." src="images/hero-light.gif" width="800">
   </picture>
 </p>
 

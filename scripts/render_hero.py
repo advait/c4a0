@@ -233,7 +233,9 @@ W, H = 800, 634
 
 @dataclass(frozen=True)
 class Palette:
-    """figure_theme's colors as RGB. `best` is what search finds, `fav` the network's instinct."""
+    """figure_theme's colors as RGB. `best` (violet) is what search finds, `fav` (grey) the
+    network's losing instinct. The mover's stones are violet and the opponent's mint, each as
+    (glow, base, deep) for the glossy gradient."""
 
     bg: RGB
     card: RGB
@@ -241,21 +243,26 @@ class Palette:
     ink: RGB
     ink2: RGB
     muted: RGB
+    hole: RGB
     best: RGB
     fav: RGB
-    stone_a: RGB
-    stone_b: RGB
+    mover: tuple[RGB, RGB, RGB]
+    opponent: tuple[RGB, RGB, RGB]
 
     @classmethod
     def of(cls, theme: str) -> Palette:
         t = THEMES[theme]
         rgb = lambda key: tuple(int(t[key][i : i + 2], 16) for i in (1, 3, 5))  # noqa: E731
+        shades = lambda hue: (rgb(f"{hue}_glow"), rgb(hue), rgb(f"{hue}_deep"))  # noqa: E731
         return cls(
-            *(rgb(k) for k in ("surface", "card", "line", "ink", "ink2", "muted")),
-            rgb("blue"),
-            rgb("orange"),
-            rgb("stone_a"),
-            rgb("stone_b"),
+            *(
+                rgb(k)
+                for k in ("surface", "card", "line", "ink", "ink2", "muted", "hole")
+            ),
+            rgb("violet"),
+            rgb("ink2"),
+            shades("violet"),
+            shades("mint"),
         )
 
 
@@ -359,12 +366,34 @@ class Canvas:
         return self.im.resize((W, H), Image.Resampling.LANCZOS)
 
 
-def stone(cv: Canvas, cx: float, cy: float, mover: bool) -> None:
-    """The network diagram's stones: the mover's filled, the opponent's hollow."""
-    p = cv.p
-    cv.circle(
-        cx, cy, 18.5, fill=p.stone_a if mover else p.stone_b, outline=p.ink2, width=2
+STONE_R = 20.0
+
+
+@functools.cache
+def stone_sprite(shades: tuple[RGB, RGB, RGB]) -> tuple[Image.Image, Image.Image]:
+    """A glossy stone at 2x as (color, mask): the web player's radial gradient, glow at 9%,
+    base at 42%, deep rim at 100%, centred up and to the left like its CSS."""
+    size = int(2 * STONE_R * S)
+    yy, xx = np.mgrid[0:size, 0:size].astype(np.float64) + 0.5
+    hx, hy, reach = 0.34 * size, 0.28 * size, 0.78 * size
+    d = np.hypot(xx - hx, yy - hy) / reach
+    stops = np.array([0.09, 0.42, 1.0])
+    color = np.stack(
+        [np.interp(d, stops, [c[i] for c in shades]) for i in range(3)], axis=-1
     )
+    r = np.hypot(xx - size / 2, yy - size / 2)
+    mask = np.clip(size / 2 - r + 0.5, 0, 1) * 255
+    return (
+        Image.fromarray(color.round().astype(np.uint8)),
+        Image.fromarray(mask.astype(np.uint8), "L"),
+    )
+
+
+def stone(cv: Canvas, cx: float, cy: float, mover: bool) -> None:
+    """The web player's stones: violet for the side to move, mint for the opponent."""
+    color, mask = stone_sprite(cv.p.mover if mover else cv.p.opponent)
+    corner = (round((cx - STONE_R) * S), round((cy - STONE_R) * S))
+    cv.im.paste(color, corner, mask)
 
 
 def draw_board(
@@ -374,7 +403,7 @@ def draw_board(
     p = cv.p
     x0, x1 = BX0 - 12, BX0 + 7 * CELL + 12
     y0, y1 = BOARD_Y, BOARD_Y + 6 * CELL + 24
-    cv.rect((x0, y0, x1, y1), fill=p.card, outline=p.line, width=1.5, r=16)
+    cv.rect((x0, y0, x1, y1), fill=p.card, outline=p.line, width=1.5, r=20)
     for c in range(7):  # a wash over the columns the latest iterations went down
         if hot[c] > 0.01:
             box = (BX0 + c * CELL + 4, y0 + 8, BX0 + (c + 1) * CELL - 4, y1 - 8)
@@ -383,9 +412,7 @@ def draw_board(
         for r in range(6):
             v = int(D.board[r, c])
             if v == 0:
-                cv.circle(
-                    col_cx(c), hole_cy(r), 18.5, fill=p.bg, outline=p.line, width=1.5
-                )
+                cv.circle(col_cx(c), hole_cy(r), STONE_R, fill=p.hole)
             else:
                 stone(cv, col_cx(c), hole_cy(r), v == D.mover)
     if drop is not None:
@@ -396,7 +423,7 @@ def draw_board(
             b = min(drop - 1.0, 1.0)
             cy = land - 7 * math.sin(b * math.pi) * (1 - b)
         stone(cv, col_cx(c), cy, True)
-        cv.circle(col_cx(c), cy, 23, outline=p.best, width=2.5)
+        cv.circle(col_cx(c), cy, STONE_R + 4, outline=p.best, width=2.5)
 
 
 def draw_bars(
@@ -465,7 +492,7 @@ def draw_iterations(cv: Canvas, D: Search, n: int) -> None:
     for it in range(2, N_ITERS + 1):
         r, c = divmod(it - 2, WALK_COLS)
         x, y = WALK_X + c * WALK_CELL, WALK_Y + r * WALK_CELL
-        fill = move_color(D, p, int(D.visited[it])) if it <= n else p.card
+        fill = move_color(D, p, int(D.visited[it])) if it <= n else p.hole
         cv.rect(
             (x + 1.5, y + 1.5, x + WALK_CELL - 1.5, y + WALK_CELL - 1.5),
             fill=fill,
@@ -617,7 +644,7 @@ def main() -> None:
     )
 
     intro = (
-        f"Filled stones to move. The network's instinct: column {fav}.",
+        f"Violet to move. The network's instinct: column {fav}.",
         f"Its policy head puts {p_fav}% on column {fav} and {p_best}% on column {best} "
         "(hollow bars).",
     )

@@ -23,9 +23,13 @@ DATA = ROOT / "docs/data/training-progress.json"
 
 # (theme color, data key, legend label), in the fixed categorical order.
 LINES = [
-    ("blue", "mcts256_strict_leaf10", "Network + MCTS-256 + 10-ply exact leaf search"),
-    ("orange", "mcts256_strict", "Network + MCTS-256"),
-    ("green", "raw_strict", "Network alone (policy argmax)"),
+    (
+        "violet",
+        "mcts256_strict_leaf10",
+        "Network + MCTS-256 + 10-ply exact leaf search",
+    ),
+    ("mint", "mcts256_strict", "Network + MCTS-256"),
+    ("ink2", "raw_strict", "Network alone (policy argmax)"),
 ]
 
 

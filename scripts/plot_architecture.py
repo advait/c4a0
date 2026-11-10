@@ -74,7 +74,7 @@ def blocks(net: ConnectFourNet, n_blocks: int, filters: int) -> dict[str, Block]
                 Layer("log-softmax"),
             ),
             count(net.conv_policy),
-            "blue",
+            "violet",
         ),
         "value": Block(
             "Value head",
@@ -85,7 +85,7 @@ def blocks(net: ConnectFourNet, n_blocks: int, filters: int) -> dict[str, Block]
                 Layer("Linear 256 → 2 · tanh"),
             ),
             count(net.conv_value),
-            "orange",
+            "mint",
         ),
     }
 
@@ -129,11 +129,11 @@ def block_svg(
     out = []
     for i in range(stacked, 0, -1):
         out.append(
-            f'<rect x="{x + 4 * i}" y="{y - 4 * i}" width="{w}" height="{h}" rx="10" '
+            f'<rect x="{x + 4 * i}" y="{y - 4 * i}" width="{w}" height="{h}" rx="14" '
             f'fill="{t["card"]}" stroke="{t["line"]}"/>'
         )
     out.append(
-        f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="10" fill="{t["card"]}" '
+        f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="14" fill="{t["card"]}" '
         f'stroke="{t["line"]}"/>'
     )
     out.append(
@@ -160,24 +160,33 @@ def block_svg(
     return "\n".join(out), h
 
 
+def stone_gradients(t: dict[str, str]) -> str:
+    """The browser player's glossy stones: a highlight up and to the left, a deep rim."""
+    return "".join(
+        f'<radialGradient id="stone-{hue}" cx="34%" cy="28%" r="78%">'
+        f'<stop offset="9%" stop-color="{t[hue + "_glow"]}"/>'
+        f'<stop offset="42%" stop-color="{t[hue]}"/>'
+        f'<stop offset="100%" stop-color="{t[hue + "_deep"]}"/></radialGradient>'
+        for hue in ("violet", "mint")
+    )
+
+
 def board_svg(x: float, y: float, cell: float, t: dict[str, str]) -> str:
     out = [
-        f'<rect x="{x}" y="{y}" width="{cell * 7}" height="{cell * 6}" rx="8" '
+        f'<rect x="{x}" y="{y}" width="{cell * 7}" height="{cell * 6}" rx="10" '
         f'fill="{t["card"]}" stroke="{t["line"]}"/>'
     ]
     for r in range(6):
         for c in range(7):
             cx, cy = x + cell * (c + 0.5), y + cell * (5 - r + 0.5)
             out.append(
-                f'<circle cx="{cx}" cy="{cy}" r="{cell * 0.36}" fill="{t["surface"]}" '
-                f'stroke="{t["line"]}"/>'
+                f'<circle cx="{cx}" cy="{cy}" r="{cell * 0.39}" fill="{t["hole"]}"/>'
             )
-    for r, c, mover in STONES:
+    for r, c, mover in STONES:  # the mover is the side the network evaluates for
         cx, cy = x + cell * (c + 0.5), y + cell * (5 - r + 0.5)
+        stone = "violet" if mover else "mint"
         out.append(
-            f'<circle cx="{cx}" cy="{cy}" r="{cell * 0.36}" '
-            f'fill="{t["stone_a"] if mover else t["stone_b"]}" stroke="{t["ink2"]}" '
-            f'stroke-width="1.4"/>'
+            f'<circle cx="{cx}" cy="{cy}" r="{cell * 0.39}" fill="url(#stone-{stone})"/>'
         )
     return "\n".join(out)
 
@@ -196,7 +205,7 @@ def render(theme_name: str, net: ConnectFourNet, config: ModelConfig) -> Path:
         f"and without a ply penalty). {total:,} parameters.</title>",
         f'<defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" '
         f'markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" '
-        f'fill="{t["muted"]}"/></marker></defs>',
+        f'fill="{t["muted"]}"/></marker>{stone_gradients(t)}</defs>',
         f'<rect width="{W}" height="{H}" fill="{t["surface"]}"/>',
         text(24, 36, "The network", t["ink"], 18, bold=True),
         text(
@@ -236,11 +245,11 @@ def render(theme_name: str, net: ConnectFourNet, config: ModelConfig) -> Path:
     parts.append(arrow([(645, mid), (664, mid), (664, vy), (686, vy)], t["muted"]))
     # Outputs.
     parts.append(
-        output(690, 86 + policy_h + 22, "prior: where search looks first", "blue", t)
+        output(690, 86 + policy_h + 22, "prior: where search looks first", "violet", t)
     )
     oy = 106 + policy_h + 34 + value_h + 22
-    parts.append(output(690, oy, "q_penalty: faster wins worth more", "orange", t))
-    parts.append(output(690, oy + 19, "q_no_penalty: outcome alone", "orange", t))
+    parts.append(output(690, oy, "q_penalty: faster wins worth more", "mint", t))
+    parts.append(output(690, oy + 19, "q_no_penalty: outcome alone", "mint", t))
     parts.append("</svg>")
     out = ROOT / f"images/architecture-{theme_name}.svg"
     out.write_text("\n".join(parts) + "\n")
