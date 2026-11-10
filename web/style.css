@@ -1,8 +1,11 @@
-/* The palette of scripts/figure_theme.py, so the page matches the README figures. */
+/* The palette of scripts/figure_theme.py, so the page matches the README figures. Blue is c4a0,
+   orange is you, on every bar that has a side. */
 :root {
   --surface: #fcfcfb; --card: #f3f2ee; --ink: #0b0b0b; --ink2: #52514e; --muted: #8a897f;
   --line: #d6d5ce; --blue: #2a78d6; --orange: #eb6834; --stone-a: #0b0b0b; --stone-b: #fcfcfb;
-  --cell: min(64px, 12vw);
+  --mono: "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  /* Seven columns fill the width on phones, capped at 64px. */
+  --cell: min(64px, calc((100vw - 32px - 28px) / 7));
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -13,50 +16,87 @@
 }
 * { box-sizing: border-box; }
 body {
-  margin: 0; min-height: 100vh; background: var(--surface); color: var(--ink);
+  margin: 0; min-height: 100dvh; background: var(--surface); color: var(--ink);
   font: 15px/1.5 "DejaVu Sans", Verdana, system-ui, sans-serif;
-  display: grid; place-items: center;
+  -webkit-text-size-adjust: 100%;
 }
-main { display: flex; gap: 48px; padding: 32px 24px; flex-wrap: wrap; justify-content: center; align-items: flex-start; }
-aside { width: 320px; }
+p { margin: 0; }
+
+/* Desktop: the board and its search bars on the left, everything else on the right. */
+.layout {
+  display: grid; justify-content: center; align-items: end;
+  grid-template-columns: auto 340px; column-gap: 48px;
+  grid-template-areas: "bars head" "board side";
+  padding: 32px 24px max(24px, env(safe-area-inset-bottom));
+}
+.head { grid-area: head; padding-bottom: 8px; }
+.bars { grid-area: bars; }
+.board { grid-area: board; align-self: start; }
+.side { grid-area: side; align-self: start; display: grid; gap: 18px; }
+
 .kicker {
-  margin: 0 0 6px; font: 11px/1.4 "DejaVu Sans Mono", Menlo, Consolas, monospace;
-  letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+  font: 11px/1.4 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
 }
 .kicker b { color: var(--ink); letter-spacing: .25em; }
-h1 { font-size: 30px; margin: 14px 0 6px; }
-.sides { color: var(--ink2); display: flex; align-items: center; gap: 6px; margin: 0 0 26px; }
-.sides .swatch:last-of-type { margin-left: 14px; }
+h1 { font-size: 30px; line-height: 1.15; margin: 12px 0 8px; }
+.sides { color: var(--ink2); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sides #them { margin-left: 12px; }
+.move { margin-left: auto; font: 12px var(--mono); color: var(--muted); }
 .swatch { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--ink2); display: inline-block; }
 .swatch.first { background: var(--stone-a); }
 .swatch.second { background: var(--stone-b); }
-.count { font-size: 64px; font-weight: 700; line-height: 1; margin: 4px 0 14px; font-variant-numeric: tabular-nums; }
-.count small { font: 14px "DejaVu Sans Mono", Menlo, monospace; color: var(--muted); font-weight: 400; }
+
+.count { font-size: 56px; font-weight: 700; line-height: 1; margin-top: 4px; font-variant-numeric: tabular-nums; }
+.count small { font: 14px var(--mono); color: var(--muted); font-weight: 400; }
 body:not([data-phase="thinking"]) .count { color: var(--ink2); }
-.detail { color: var(--ink2); min-height: 6em; }
-.controls { display: flex; gap: 8px; flex-wrap: wrap; margin: 18px 0; }
+
+/* Evaluation: two diverging bars on one You-to-c4a0 axis, then the history strip. */
+.eval { display: grid; gap: 12px; padding: 14px 16px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; }
+.summary { font-weight: 700; min-height: 3em; }
+.meter-label { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink2); margin-bottom: 4px; }
+.num { font: 13px var(--mono); color: var(--ink); font-variant-numeric: tabular-nums; }
+.axis { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
+.end { font: 11px var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+.end.you { color: var(--orange); }
+.end.them { color: var(--blue); }
+.track { position: relative; height: 14px; border-radius: 7px; background: var(--surface); border: 1px solid var(--line); overflow: hidden; }
+.track::after { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 2px; margin-left: -1px; background: var(--ink2); }
+.fill { position: absolute; top: 0; bottom: 0; transition: left .2s, width .2s; }
+.fill[data-side="them"] { background: var(--blue); }
+.fill[data-side="you"] { background: var(--orange); }
+#steer .track { height: 8px; }
+.note { font-size: 12px; color: var(--muted); }
+.history { display: flex; align-items: center; gap: 2px; height: 40px; position: relative; }
+.history::before { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: var(--line); }
+.tick { flex: 0 1 10px; height: 100%; position: relative; }
+.tick::after { content: ""; position: absolute; left: 0; right: 0; height: calc(var(--v) * 50%); border-radius: 2px; }
+.tick[data-side="them"]::after { bottom: 50%; background: var(--blue); }
+.tick[data-side="you"]::after { top: 50%; background: var(--orange); }
+
+.detail { color: var(--ink2); font-size: 13px; }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; }
 button {
   font: inherit; color: var(--ink); background: var(--card); border: 1px solid var(--line);
-  border-radius: 8px; padding: 7px 12px; cursor: pointer;
+  border-radius: 8px; padding: 9px 14px; cursor: pointer; touch-action: manipulation;
 }
 .controls button:hover { border-color: var(--ink2); }
 body[data-phase="thinking"] .controls button { opacity: .5; cursor: wait; }
 .foot { color: var(--muted); font-size: 13px; }
 .foot a { color: var(--blue); }
 
-.bars { display: grid; grid-template-columns: repeat(7, var(--cell)); height: 150px; padding: 0 12px; align-items: end; }
-.bar { position: relative; height: 100%; margin: 0 8px; border-bottom: 2px solid var(--line); }
+/* Search bars over the board: hollow prior, filled share of visits. */
+.bars { display: grid; grid-template-columns: repeat(7, var(--cell)); height: 150px; padding: 0 13.5px; align-items: end; }
+.bar { position: relative; height: calc(100% - 22px); margin: 0 calc(var(--cell) * .14); border-bottom: 2px solid var(--line); }
 .bar span { position: absolute; bottom: 0; left: 0; right: 0; }
 .visits { background: var(--blue); border-radius: 3px 3px 0 0; transition: height .15s; }
 .prior { border: 1.6px solid var(--ink2); border-bottom: 0; border-radius: 4px 4px 0 0; left: -2px !important; right: -2px !important; z-index: 1; }
-.pct { bottom: auto !important; top: -20px; text-align: center; font: 11px "DejaVu Sans Mono", Menlo, monospace; color: var(--ink2); }
+.pct { bottom: auto !important; top: -20px; text-align: center; font: 11px var(--mono); color: var(--ink2); white-space: nowrap; }
 
 .board {
-  display: grid; grid-template-columns: repeat(7, var(--cell)); padding: 12px; margin-top: 12px;
-  background: var(--card); border: 1.5px solid var(--line); border-radius: 16px;
+  display: grid; grid-template-columns: repeat(7, var(--cell)); padding: 12px; margin-top: 10px;
+  background: var(--card); border: 1.5px solid var(--line); border-radius: 16px; width: max-content;
 }
 .col { position: relative; display: grid; padding: 0; border: 0; background: none; border-radius: 10px; }
-.col:enabled:hover { background: color-mix(in srgb, var(--blue) 10%, transparent); }
 .col:disabled { cursor: default; }
 .cell {
   width: calc(var(--cell) * .72); height: calc(var(--cell) * .72); margin: calc(var(--cell) * .14);
@@ -73,4 +113,23 @@ body[data-phase="thinking"] .controls button { opacity: .5; cursor: wait; }
   border: 2px dashed var(--ink2); opacity: 0; pointer-events: none;
 }
 .ghost.first { background: color-mix(in srgb, var(--stone-a) 35%, transparent); }
-.col:enabled:hover .ghost { opacity: 1; }
+@media (hover: hover) {
+  .col:enabled:hover { background: color-mix(in srgb, var(--blue) 10%, transparent); }
+  .col:enabled:hover .ghost { opacity: 1; }
+}
+
+/* Phones: one column. Status first, then the bars, the board and the evaluation right under it. */
+@media (max-width: 760px) {
+  .layout {
+    grid-template-columns: auto; grid-template-areas: "head" "bars" "board" "side";
+    padding: 16px 16px max(20px, env(safe-area-inset-bottom)); justify-content: center;
+  }
+  h1 { font-size: 24px; margin: 8px 0 4px; }
+  .bars { height: 88px; margin-top: 8px; }
+  .pct { font-size: 10px; top: -16px; }
+  .side { margin-top: 16px; gap: 14px; }
+  .thinking { display: flex; align-items: baseline; gap: 10px; }
+  .count { font-size: 28px; }
+  .controls button { flex: 1 1 140px; }
+  .summary { min-height: 0; }
+}

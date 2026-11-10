@@ -19,7 +19,8 @@ const state = {
   phase: "loading", // loading | human | thinking | over | error
   moves: "", // 0-indexed columns, first player first
   human: 0, // 0: the human plays first
-  search: null, // { prior, policy, visits, value } of c4a0's latest search
+  search: null, // c4a0's latest search: see `think`
+  history: [], // { ply, qPenalty, qNoPenalty, proven } at each c4a0 move
   message: "",
 };
 
@@ -58,10 +59,36 @@ function winningLine(cells, moves) {
   return [];
 }
 
-function verdict(value) {
-  if (value > 0.3) return "expects to win";
-  if (value < -0.3) return "expects to lose";
-  return "sees an even game";
+/**
+ * c4a0's two root values in words. Both are from c4a0's side. A decisive result that ends on
+ * ply n scores q_penalty = ±(1 - 0.01 n), so once proven the ending move is exact, and before
+ * that q_penalty / q_no_penalty estimates it.
+ */
+function assess(s) {
+  const penalty = Search.ply_penalty();
+  const { qPenalty: qp, qNoPenalty: qn } = s;
+  if (s.proven) {
+    const end = Math.round((1 - Math.abs(qp)) / penalty);
+    if (qn === 0) return "Proven draw: neither side can force a win.";
+    return qn > 0
+      ? `Proven: c4a0 wins by move ${end}, whatever you play.`
+      : `Proven: you can win by move ${end}. c4a0 will make it as long as it can.`;
+  }
+  if (Math.abs(qn) < 0.3) return "c4a0 sees an even game.";
+  const end = Math.min(42, Math.max(s.ply + 1, Math.round((1 - qp / qn) / penalty)));
+  return `c4a0 expects to ${qn > 0 ? "win" : "lose"}, around move ${end}.`;
+}
+
+const signed = (v) => `${v >= 0 ? "+" : "−"}${Math.abs(v).toFixed(2)}`;
+
+/** A bar from the center: right toward c4a0 for positive values, left toward you. */
+function meter(el, v) {
+  const fill = el.querySelector(".fill");
+  const x = v ?? 0;
+  fill.style.left = `${50 + Math.min(x, 0) * 50}%`;
+  fill.style.width = `${Math.abs(x) * 50}%`;
+  fill.dataset.side = x >= 0 ? "them" : "you";
+  el.querySelector(".num").textContent = v === undefined ? "–" : signed(v);
 }
 
 function render() {
@@ -129,12 +156,27 @@ function render() {
   }[state.phase];
   $("status").textContent = status;
   $("iterations").textContent = s ? `${s.visits}` : "0";
+  $("move").textContent = state.moves.length ? `Move ${state.moves.length}` : "";
+  meter($("result"), s?.qNoPenalty);
+  meter($("steer"), s?.qPenalty);
+  $("summary").textContent = s ? assess(s) : "c4a0's evaluation appears once it starts thinking.";
+  document.querySelector(".history-wrap").hidden = state.history.length === 0;
+  $("history").replaceChildren(
+    ...state.history.map((h) => {
+      const tick = document.createElement("span");
+      tick.className = "tick";
+      tick.dataset.side = h.qNoPenalty >= 0 ? "them" : "you";
+      tick.style.setProperty("--v", String(Math.abs(h.qNoPenalty)));
+      tick.title = `Move ${h.ply + 1}: ${signed(h.qNoPenalty)}`;
+      return tick;
+    }),
+  );
   $("detail").textContent =
     state.phase === "error"
       ? state.message
       : s
-        ? `After ${s.visits} iterations c4a0 ${verdict(s.value)} (value ${s.value >= 0 ? "+" : ""}${s.value.toFixed(2)}). Hollow bars are the network's first instinct; filled bars are where the search went.`
-        : "Click a column to drop a stone.";
+        ? "Top bars: hollow is the network's first instinct for each column, filled is the share of the search's iterations."
+        : "Tap a column to drop a stone.";
   document.body.dataset.phase = state.phase;
 }
 
@@ -158,6 +200,8 @@ async function advance() {
     state.phase = "thinking";
     render();
     const move = await think(state.moves, (s) => { state.search = s; render(); });
+    const { qPenalty, qNoPenalty, proven } = state.search;
+    state.history.push({ ply: state.moves.length, qPenalty, qNoPenalty, proven });
     state.moves += move;
   }
 }
@@ -167,7 +211,18 @@ async function think(moves, report) {
   const search = new Search(moves, ITERATIONS, LEAF_DEPTH);
   const legal = legal_moves(moves);
   let prior = null;
-  const snapshot = () => ({ prior, policy: search.policy(), visits: search.visits(), value: search.value() });
+  const snapshot = () => {
+    const [qPenalty, qNoPenalty] = search.values();
+    return {
+      ply: moves.length,
+      prior,
+      policy: search.policy(),
+      visits: search.visits(),
+      qPenalty,
+      qNoPenalty,
+      proven: search.proven(),
+    };
+  };
   try {
     for (let leaf; (leaf = search.next_leaf()); ) {
       const r = await net.evaluate(leaf);
@@ -189,7 +244,7 @@ async function think(moves, report) {
 
 function newGame(human) {
   if (state.phase === "thinking" || state.phase === "loading" || state.phase === "error") return;
-  Object.assign(state, { moves: "", human, search: null });
+  Object.assign(state, { moves: "", human, search: null, history: [] });
   advance();
 }
 

@@ -117,9 +117,23 @@ impl Search {
         self.game.root_visit_count()
     }
 
-    /// Expected result for the player to move, in [-1, 1] (no ply penalty).
-    pub fn value(&self) -> f32 {
-        self.game.root_q(C_PLY_PENALTY).1
+    /// The root's values for the player to move, each in [-1, 1]: `[q_penalty, q_no_penalty]`.
+    /// `q_no_penalty` is the expected result; `q_penalty` shrinks a decisive result by 0.01 per
+    /// ply the game lasts, which is what the search steers by.
+    pub fn values(&self) -> Vec<f32> {
+        let (q_penalty, q_no_penalty) = self.game.root_q(C_PLY_PENALTY);
+        vec![q_penalty, q_no_penalty]
+    }
+
+    /// Whether search proved the result, which makes [Self::values] exact: a proven win or loss
+    /// ends at ply `(1 - |q_penalty|) / 0.01`.
+    pub fn proven(&self) -> bool {
+        self.game.root_is_proven()
+    }
+
+    /// The ply penalty per ply, for turning `q_penalty` into an ending ply.
+    pub fn ply_penalty() -> f32 {
+        C_PLY_PENALTY
     }
 
     /// The most-visited legal column, lowest index on ties: the move the evaluation scores.
@@ -172,6 +186,19 @@ mod tests {
     #[test]
     fn spends_the_budget() {
         assert_eq!(search("", 50, 0).visits(), 50);
+    }
+
+    #[test]
+    fn a_proven_win_reports_its_ending_ply() {
+        // First player to move with three stacked in column 0 wins with stone 7.
+        let mut s = Search::new("010101", 64, 2).unwrap();
+        assert!(s.next_leaf().is_none());
+        assert!(s.proven());
+        let [q_penalty, q_no_penalty] = s.values()[..] else {
+            panic!()
+        };
+        assert_eq!(q_no_penalty, 1.0);
+        assert_eq!(((1.0 - q_penalty) / C_PLY_PENALTY).round(), 7.0);
     }
 
     #[test]

@@ -2,24 +2,52 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
   <title>Play c4a0: Connect Four learned through self-play alone</title>
   <meta name="description" content="Play Connect Four against a 605K-parameter AlphaZero-style network trained only through self-play, running on your GPU.">
   <link rel="stylesheet" href="style.css">
   <script type="module" src="app.js"></script>
 </head>
 <body data-phase="loading">
-  <main>
-    <section class="play" aria-label="Board">
-      <div id="bars" class="bars" aria-hidden="true"></div>
-      <div id="board" class="board"></div>
-    </section>
-    <aside>
+  <main class="layout">
+    <header class="head">
       <p class="kicker"><b>C4A0</b> · <span id="params">605,406</span>-parameter network · trained by self-play only</p>
       <h1 id="status">Loading the network…</h1>
-      <p class="sides"><span id="you" class="swatch first"></span> You <span id="them" class="swatch second"></span> c4a0</p>
-      <p class="kicker">MCTS iteration</p>
-      <p class="count"><span id="iterations">0</span><small id="budget"></small></p>
+      <p class="sides">
+        <span id="you" class="swatch first"></span> You
+        <span id="them" class="swatch second"></span> c4a0
+        <span id="move" class="move"></span>
+      </p>
+    </header>
+
+    <div id="bars" class="bars" aria-hidden="true"></div>
+    <div id="board" class="board"></div>
+
+    <section class="side">
+      <div class="thinking">
+        <p class="kicker">MCTS iteration</p>
+        <p class="count"><span id="iterations">0</span><small id="budget"></small></p>
+      </div>
+
+      <section class="eval" aria-label="c4a0's evaluation">
+        <p id="summary" class="summary"></p>
+        <div id="result" class="meter">
+          <p class="meter-label"><span>Expected result</span><span class="num"></span></p>
+          <div class="axis"><span class="end you">You</span><div class="track"><span class="fill"></span></div><span class="end them">c4a0</span></div>
+        </div>
+        <div id="steer" class="meter">
+          <p class="meter-label"><span>Counting game length</span><span class="num"></span></p>
+          <div class="axis"><span class="end you">You</span><div class="track"><span class="fill"></span></div><span class="end them">c4a0</span></div>
+        </div>
+        <p class="note">The second bar shrinks a win or loss by 0.01 for every move the game lasts. Search maximizes it, so c4a0 takes the fastest win and drags out a loss.</p>
+        <div class="history-wrap" hidden>
+          <p class="meter-label"><span>Expected result after each c4a0 move</span></p>
+          <div id="history" class="history"></div>
+        </div>
+      </section>
+
       <p id="detail" class="detail"></p>
       <div class="controls">
         <button id="first">New game, you first</button>
@@ -30,7 +58,7 @@
         network on your GPU (WebGPU) about one position, plus an exact 10-ply search at every leaf.
         Nothing leaves your browser. <a href="https://github.com/advait/c4a0">How it works</a>
       </p>
-    </aside>
+    </section>
   </main>
 </body>
 </html>

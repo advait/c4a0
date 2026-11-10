@@ -370,6 +370,11 @@ impl MctsGame {
         root.proof.is_none() && root.visit_count < n_iterations
     }
 
+    /// Whether the root's outcome is proven, so [Self::root_q] is exact.
+    pub fn root_is_proven(&self) -> bool {
+        self.root.borrow().proof.is_some()
+    }
+
     /// Whether the leaf needs a network evaluation. A proven leaf backs up its exact value, so
     /// [Self::on_received_policy] ignores whatever is passed for it.
     pub fn leaf_needs_eval(&self) -> bool {
