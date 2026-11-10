@@ -3,62 +3,68 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#fcfcfb" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1a1a19" media="(prefers-color-scheme: dark)">
-  <title>Play c4a0: Connect Four learned through self-play alone</title>
+  <meta name="theme-color" content="#f6f5f1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>c4a0 · Connect Four learned through self-play</title>
   <meta name="description" content="Play Connect Four against a 605K-parameter AlphaZero-style network trained only through self-play, running on your GPU.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='11' cy='21' r='8' fill='%2313b79a'/%3E%3Ccircle cx='21' cy='11' r='8' fill='%236c5ce7'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
   <script type="module" src="app.js"></script>
 </head>
 <body data-phase="loading">
-  <main class="layout">
-    <header class="head">
-      <p class="kicker"><b>C4A0</b> · <span id="params">605,406</span>-parameter network · trained by self-play only</p>
-      <h1 id="status">Loading the network…</h1>
-      <p class="sides">
-        <span id="you" class="swatch first"></span> You
-        <span id="them" class="swatch second"></span> c4a0
-        <span id="move" class="move"></span>
-      </p>
+  <div class="app">
+    <header class="topbar">
+      <span class="brand"><span class="logo" aria-hidden="true"><i></i><i></i></span>c4a0</span>
+      <span class="move" id="move"></span>
+      <button class="icon" id="undo" title="Undo (U)" aria-label="Undo">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+      </button>
+      <button class="icon" popovertarget="menu" title="Menu" aria-label="Menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
     </header>
 
-    <div id="bars" class="bars" aria-hidden="true"></div>
-    <div id="board" class="board"></div>
+    <div id="menu" class="menu" popover>
+      <button data-action="new-you"><span class="chip you"></span>New game · you first<kbd>N</kbd></button>
+      <button data-action="new-them"><span class="chip them"></span>New game · c4a0 first</button>
+      <button data-action="undo" id="menu-undo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>Undo move<kbd>U</kbd></button>
+      <hr>
+      <a href="https://github.com/advait/c4a0" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>How it works
+      </a>
+      <p class="about"><span id="params">605,406</span> parameters · trained by self-play only · runs on your GPU</p>
+    </div>
 
-    <section class="side">
-      <div class="thinking">
-        <p class="kicker">MCTS iteration</p>
-        <p class="count"><span id="iterations">0</span><small id="budget"></small></p>
-      </div>
-
-      <section class="eval" aria-label="c4a0's evaluation">
-        <p id="summary" class="summary"></p>
-        <div id="result" class="meter">
-          <p class="meter-label"><span>Expected result</span><span class="num"></span></p>
-          <div class="axis"><span class="end you">You</span><div class="track"><span class="fill"></span></div><span class="end them">c4a0</span></div>
+    <main class="stage">
+      <section class="play">
+        <div class="status" aria-live="polite">
+          <h1 id="status">Loading</h1>
+          <button id="again" class="primary" hidden>Play again</button>
+          <div class="progress" aria-hidden="true"><span id="progress"></span></div>
         </div>
-        <div id="steer" class="meter">
-          <p class="meter-label"><span>Counting game length</span><span class="num"></span></p>
-          <div class="axis"><span class="end you">You</span><div class="track"><span class="fill"></span></div><span class="end them">c4a0</span></div>
-        </div>
-        <p class="note">The second bar shrinks a win or loss by 0.01 for every move the game lasts. Search maximizes it, so c4a0 takes the fastest win and drags out a loss.</p>
-        <div class="history-wrap" hidden>
-          <p class="meter-label"><span>Expected result after each c4a0 move</span></p>
-          <div id="history" class="history"></div>
-        </div>
+        <div id="bars" class="bars" aria-hidden="true"></div>
+        <div id="board" class="board" role="grid" aria-label="Board"></div>
       </section>
 
-      <p id="detail" class="detail"></p>
-      <div class="controls">
-        <button id="first">New game, you first</button>
-        <button id="second">New game, c4a0 first</button>
-      </div>
-      <p class="foot">
-        Every move runs the agent from the results table: 256 search iterations, each asking the
-        network on your GPU (WebGPU) about one position, plus an exact 10-ply search at every leaf.
-        Nothing leaves your browser. <a href="https://github.com/advait/c4a0">How it works</a>
-      </p>
-    </section>
-  </main>
+      <section class="eval" aria-label="c4a0's evaluation">
+        <p id="verdict" class="verdict">–</p>
+        <div class="axis-labels"><span class="you">You</span><span class="them">c4a0</span></div>
+        <div id="result" class="meter" title="Expected result: +1 c4a0 wins, −1 you win">
+          <span class="label">Result</span><div class="track"><span class="fill"></span></div><span class="num"></span>
+        </div>
+        <div id="steer" class="meter" title="Result shrunk by 0.01 per move the game lasts: what the search maximizes">
+          <span class="label">Speed</span><div class="track"><span class="fill"></span></div><span class="num"></span>
+        </div>
+        <div id="history" class="history" aria-label="Expected result after each c4a0 move"></div>
+        <p class="legend"><i class="prior"></i>instinct <i class="visits"></i>search</p>
+      </section>
+    </main>
+
+    <div id="error" class="error" hidden>
+      <h2>Can't run here</h2>
+      <p id="error-message"></p>
+    </div>
+  </div>
 </body>
 </html>
